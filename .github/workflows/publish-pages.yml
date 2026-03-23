@@ -40,7 +40,7 @@ jobs:
           out-file-path: site/public/firmware
 
       - name: Build Astro site
-        uses: withastro/action@v5
+        uses: withastro/action@v6
         with:
           path: ./site
 
