@@ -76,6 +76,7 @@ export default defineConfig({
                 { label: 'RPM PI Control', translations: { de: 'RPM PI-Regelung' }, slug: 'reference/modules/rpm-pi-control' },
                 { label: 'RPM Status LEDs', translations: { de: 'RPM Status-LEDs' }, slug: 'reference/modules/rpm-status-leds' },
                 { label: 'Stall Guard', translations: { de: 'Blockierschutz' }, slug: 'reference/modules/stall-guard' },
+                { label: 'USR Buttons', translations: { de: 'USR-Tasten' }, slug: 'reference/modules/usr-buttons' },
               ],
             },
             { label: 'Fan Compatibility', translations: { de: 'Lüfter-Kompatibilität' }, slug: 'reference/fan-compatibility' },
