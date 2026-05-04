@@ -6,6 +6,16 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   site: 'https://fancontroller.arthofer.dev',
   vite: { plugins: [tailwindcss()] },
+  redirects: {
+    '/rev-1-0': '/reference/hardware/rev-1-0/',
+    '/rev-2-0': '/reference/hardware/rev-2-0/',
+    '/rev-3-0': '/reference/hardware/rev-3-0/',
+    '/rev-3-1': '/reference/hardware/rev-3-x/',
+    '/rev-3-2': '/reference/hardware/rev-3-x/',
+    '/rev-3-3': '/reference/hardware/rev-3-x/',
+    '/rev-3-x': '/reference/hardware/rev-3-x/',
+    '/rev-4-0': '/reference/hardware/rev-4-0/',
+  },
   integrations: [
     starlight({
       // Starlight v0.38 route middleware registration
