@@ -65,25 +65,3 @@ captive_portal:
 
 # Sets up the improv via serial client for Wi-Fi provisioning.
 improv_serial:
-
-# Optional: NeoPixel LED strip support
-light:
-  - platform: esp32_rmt_led_strip
-    rgb_order: GRB
-    chipset: WS2812
-    pin: GPIO02
-    num_leds: 5 # default, increase if needed
-    id: neopixel_light
-    name: "NeoPixel Light"
-    effects:
-      - pulse:
-      - random:
-      - strobe:
-      - flicker:
-      - addressable_rainbow:
-      - addressable_color_wipe:
-      - addressable_scan:
-      - addressable_twinkle:
-      - addressable_random_twinkle:
-      - addressable_fireworks:
-      - addressable_flicker:
