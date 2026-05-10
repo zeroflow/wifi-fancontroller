@@ -234,6 +234,7 @@ light:
     pin: GPIO03
     num_leds: 5
     id: status_leds
+    rmt_symbols: 48
     internal: True
 
   # Board Status LED
@@ -297,3 +298,25 @@ light:
       - id: status_leds
         from: 4
         to: 4
+
+  # External Neopixel Port, use !extend to change number if desired
+  - platform: esp32_rmt_led_strip
+    rgb_order: GRB
+    name: "Neopixel Port"
+    chipset: WS2812
+    pin: GPIO02
+    num_leds: 32
+    id: neopixel_leds
+    rmt_symbols: 48
+    effects:
+      - pulse:
+      - random:
+      - strobe:
+      - flicker:
+      - addressable_rainbow:
+      - addressable_color_wipe:
+      - addressable_scan:
+      - addressable_twinkle:
+      - addressable_random_twinkle:
+      - addressable_fireworks:
+      - addressable_flicker:

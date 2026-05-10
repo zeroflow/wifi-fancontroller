@@ -30,6 +30,7 @@ esp32:
 # Enable logging
 logger:
   id: logger_component
+  level: INFO
 
 # API is a requirement of the dashboard import
 api:
