@@ -112,6 +112,7 @@ fan:
 sensor:
   # Temperature & Humidity Sensor
   - platform: hdc1080
+    id: temperature_sensor
     temperature:
       name: "Temperature"
       id: fancontroller_temperature
