@@ -21,6 +21,7 @@ esphome:
 # After adoption, the device uses the core yaml without the factory-specific features
 dashboard_import:
   package_import_url: github://zeroflow/wifi-fancontroller/fancontroller-rev3.0-esp32s2.yaml@main
+  import_full_config: true
 
 # Sets up the improv via serial client for Wi-Fi provisioning
 # Note: ESP32-S2 does not support Bluetooth LE provisioning (esp32_improv)

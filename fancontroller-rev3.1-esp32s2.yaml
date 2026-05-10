@@ -20,7 +20,7 @@ esphome:
 
 dashboard_import:
   package_import_url: github://zeroflow/wifi-fancontroller/fancontroller-rev3.1-esp32s2.yaml@main
-  import_full_config: false
+  import_full_config: true
 
 esp32:
   board: esp32-s2-saola-1

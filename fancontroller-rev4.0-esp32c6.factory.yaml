@@ -22,6 +22,7 @@ esphome:
 # After adoption, the device uses the core yaml without the factory-specific features
 dashboard_import:
   package_import_url: github://zeroflow/wifi-fancontroller/fancontroller-rev4.0-esp32c6.yaml@dev
+  import_full_config: true
 
 # Sets up Bluetooth LE (Only on ESP32) to allow the user
 # to provision wifi credentials to the device.
