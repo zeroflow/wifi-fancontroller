@@ -1,0 +1,46 @@
+# Shared cross-module globals
+# Included by hardware packages - do not include directly in user configs.
+
+globals:
+  # Safety floors: set by stall_guard, respected by temperature modules.
+  # Default 0.0 = no floor active.
+  - id: fan1_safety_floor
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: fan2_safety_floor
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: fan3_safety_floor
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: fan4_safety_floor
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+
+  # LED override: when true, rpm_status_leds skips LED updates.
+  - id: auto_led_override
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+  # Per-fan manual override: when true, temperature modules skip auto-control.
+  - id: usr_override_fan1
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: usr_override_fan2
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: usr_override_fan3
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: usr_override_fan4
+    type: bool
+    restore_value: no
+    initial_value: 'false'

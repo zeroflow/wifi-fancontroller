@@ -18,7 +18,7 @@ Choose Linear when you want straightforward temperature-based fan control withou
 For more precise temperature targeting, consider [Temperature PID](/reference/modules/temperature-pid/). For finer control over the speed curve shape, see [Temperature Curve](/reference/modules/temperature-curve/). The [modules overview](/reference/modules/) has a comparison table.
 
 :::tip[Works with Stall Guard]
-This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature Linear will respect during recovery. No extra configuration needed — just include both modules.
+This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature Linear will respect during recovery. No extra configuration needed, just include both modules.
 :::
 
 ## Configuration

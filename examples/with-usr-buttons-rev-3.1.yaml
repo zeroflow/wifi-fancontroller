@@ -1,0 +1,66 @@
+# Example: Hardware Rev 3.1 with USR Buttons + RGB Status LEDs
+#
+# This example shows how to use the USR buttons for manual fan speed control
+# combined with the RGB status LEDs module for visual fan speed feedback.
+# The two modules coordinate automatically - button selection mode temporarily
+# takes over the LEDs, then returns control to rpm_status_leds on timeout.
+
+packages:
+  # Include the hardware-specific configuration
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+
+  # Include the RPM status LEDs module
+  # Displays fan speed as LED colors (red=slow, green=fast)
+  rpm_status_leds:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/rpm_status_leds.yaml
+        vars:
+          full_rpm: "2500"
+
+  # Include the USR buttons module
+  # USR1: select fan, USR2: speed up, USR3: speed down
+  usr_buttons:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/usr_buttons.yaml
+        vars:
+          friendly_name: "My Fan Controller"
+          speed_step: "10"
+          override_timeout: "30s"
+
+esphome:
+  name: my-fancontroller
+  friendly_name: My Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:

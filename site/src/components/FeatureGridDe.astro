@@ -1,0 +1,165 @@
+---
+import FeatureCard from './FeatureCard.astro';
+---
+
+<div class="feature-grid-wrapper">
+  <section class="feature-section">
+    <h2 class="section-heading">Warum diese Lüftersteuerung?</h2>
+    <div class="feature-grid feature-grid-3">
+      <FeatureCard
+        icon="🌡️"
+        title="Intelligente Klimaregelung"
+        description="Integrierter HDC1080 Temperatur- und Luftfeuchtigkeitssensor mit PID-, linearer oder kurvenbasierter Automation. Deine Lüfter reagieren auf echte Bedingungen, nicht auf Vermutungen."
+      />
+      <FeatureCard
+        icon="🏠"
+        title="Home Assistant nativ"
+        description="ESPHome-basierte Firmware sorgt für sofortige Home Assistant Erkennung. Steuere Lüfter vom Dashboard, erstelle Automationen und behalte alles im Blick."
+      />
+      <FeatureCard
+        icon="🔧"
+        title="Hackbar und erweiterbar"
+        description="Qwiic/I²C Erweiterungsport, NeoPixel RGB-LEDs, 3 User-Buttons und vollständig Open-Source YAML-Konfigurationen. Mach sie dir zu eigen."
+      />
+    </div>
+  </section>
+
+  <section class="feature-section">
+    <h2 class="section-heading">Ausstattung im Überblick</h2>
+    <div class="feature-grid feature-grid-3">
+      <FeatureCard
+        icon="💨"
+        title="4x PWM-Lüfterausgänge"
+        description="Bis zu vier 4-Pin PWM-Lüfter unabhängig voneinander mit präziser Drehzahlregelung ansteuern."
+      />
+      <FeatureCard
+        icon="🌡️"
+        title="Temperatur- & Feuchtesensor"
+        description="Onboard HDC1080 liefert genaue Temperatur- und Luftfeuchtigkeitswerte für deine Automationen."
+      />
+      <FeatureCard
+        icon="💡"
+        title="RGB-Status-LEDs"
+        description="Pro Lüfter eine NeoPixel-LED zeigt den Status auf einen Blick. Farben und Effekte vollständig anpassbar."
+      />
+      <FeatureCard
+        icon="🔌"
+        title="Qwiic / I²C Erweiterung"
+        description="Standard-Qwiic-Anschluss für zusätzliche Sensoren, Displays oder weitere Peripherie."
+      />
+      <FeatureCard
+        icon="⚡"
+        title="USB-C Flashing"
+        description="Moderner USB-C-Anschluss für Erstflashing der Firmware und Serial-Debugging."
+      />
+      <FeatureCard
+        icon="📡"
+        title="OTA-Updates"
+        description="Firmware kabellos per WLAN aktualisieren. Nach der Ersteinrichtung sind keine Kabel mehr nötig."
+      />
+      <FeatureCard
+        icon="🎛️"
+        title="3 User-Buttons"
+        description="Physische Taster für manuelle Eingriffe, Modiwechsel oder eigene Automationen."
+      />
+      <FeatureCard
+        icon="🍃"
+        title="Sparsam: 0,25 W im Leerlauf"
+        description="Energiesparendes Design mit nur 0,25 W Leerlaufaufnahme. Immer an, ohne schlechtes Gewissen."
+      />
+      <FeatureCard
+        icon="📝"
+        title="Vollständig anpassbar"
+        description="Open-Source ESPHome-YAML. Module hinzufügen, Verhalten ändern oder eigene Steuerlogik bauen."
+      />
+    </div>
+  </section>
+
+  <section class="cta-section">
+    <h2 class="cta-heading">Bereit für dein Setup-Upgrade?</h2>
+    <p class="cta-description">Hol dir die WiFi Lüftersteuerung und übernimm die Kontrolle über deine Kühlung.</p>
+    <a href="https://www.elecrow.com/wifi-fancontroller1.html" class="cta-button">
+      Jetzt kaufen – $35.99
+    </a>
+  </section>
+</div>
+
+<style>
+  .feature-grid-wrapper {
+    max-width: 72rem;
+    margin: 2rem auto 0;
+    padding: 0 1rem;
+  }
+
+  .feature-section {
+    margin-bottom: 3rem;
+  }
+
+  .section-heading {
+    font-size: 1.75rem;
+    font-weight: 700;
+    text-align: center;
+    color: var(--sl-color-white);
+    margin-bottom: 1.5rem;
+  }
+
+  .feature-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .feature-grid > :global(*) {
+    margin-top: 0;
+  }
+
+  @media (min-width: 640px) {
+    .feature-grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 768px) {
+    .feature-grid-3 {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  .cta-section {
+    text-align: center;
+    padding: 3rem 1rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+    margin-top: 2rem;
+  }
+
+  .cta-heading {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--sl-color-white);
+    margin-bottom: 0.5rem;
+  }
+
+  .cta-description {
+    font-size: 1.1rem;
+    color: var(--sl-color-gray-2);
+    margin-bottom: 1.5rem;
+  }
+
+  .cta-button {
+    display: inline-block;
+    background: var(--sl-color-accent);
+    color: var(--sl-color-black);
+    font-weight: 600;
+    font-size: 1.1rem;
+    padding: 0.75rem 2rem;
+    border-radius: 0.5rem;
+    text-decoration: none;
+    transition: opacity 0.2s ease;
+  }
+
+  .cta-button:hover {
+    opacity: 0.9;
+    text-decoration: none;
+  }
+</style>

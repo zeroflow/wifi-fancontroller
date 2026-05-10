@@ -1,0 +1,130 @@
+---
+const faqs = [
+  {
+    question: "What fans are compatible?",
+    answer: "Any standard 4-pin PWM fan that runs on 12V. This includes popular choices like Noctua NF-A12x25, NF-F12, Arctic P12 PWM, and be quiet! Silent Wings. The board supports up to 4 fans with a combined draw of 2.5A."
+  },
+  {
+    question: "Does it work with 5V fans?",
+    answer: "No, the board is designed for 12V fans only. The barrel jack input is 12V DC, which is passed through directly to the fan headers. Using 5V fans requires a separate voltage converter."
+  },
+  {
+    question: "How many fans can I control independently?",
+    answer: "Up to 4 fans, each with independent PWM speed control and individual RPM monitoring. Every fan can run at a different speed based on temperature thresholds or manual settings."
+  },
+  {
+    question: "Do I need Home Assistant?",
+    answer: "Home Assistant gives you the best experience with auto-discovery and dashboard integration, but it's not strictly required. The controller runs standalone with ESPHome firmware - temperature-based automation works locally on the device without any server."
+  },
+  {
+    question: "Can I use it to cool a server rack or network cabinet?",
+    answer: "Yes, that's the most popular use case. Mount 120mm PWM fans (e.g. Noctua) in your rack and let the built-in temperature sensor automate fan speed. Many users cool rack-mounted servers, NAS enclosures, and network equipment this way, a straightforward smart home automation for any home lab."
+  },
+  {
+    question: "How is firmware updated?",
+    answer: "Over-the-air (OTA) via WiFi - no cables needed after initial setup. You can also update via USB-C. The board ships pre-flashed with ESPHome factory firmware."
+  },
+  {
+    question: "Is the hardware open source?",
+    answer: "Yes - the ESPHome firmware configs and the hardware schematics are published on GitHub. Only the Gerber/production files are not public. The board also features standard Qwiic/I2C and GPIO expansion ports for custom modifications."
+  },
+  {
+    question: "What sensors are built in?",
+    answer: "An HDC1080 temperature and humidity sensor is integrated on the board. You can add external sensors via the Qwiic (I2C) expansion port - for example, an additional temperature probe placed directly in the airflow."
+  }
+];
+
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": faqs.map(faq => ({
+    "@type": "Question",
+    "name": faq.question,
+    "acceptedAnswer": {
+      "@type": "Answer",
+      "text": faq.answer
+    }
+  }))
+};
+---
+
+<script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
+
+<section class="faq-section">
+  <h2 class="faq-heading">Frequently Asked Questions</h2>
+  <div class="faq-list">
+    {faqs.map(faq => (
+      <details class="faq-item">
+        <summary class="faq-question">{faq.question}</summary>
+        <p class="faq-answer">{faq.answer}</p>
+      </details>
+    ))}
+  </div>
+</section>
+
+<style>
+  .faq-section {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 2rem 1rem 3rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+
+  .faq-heading {
+    font-size: 1.75rem;
+    font-weight: 700;
+    text-align: center;
+    color: var(--sl-color-white);
+    margin-bottom: 1.5rem;
+  }
+
+  .faq-list {
+    max-width: 48rem;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .faq-item {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    padding: 0;
+    background: var(--sl-color-gray-6);
+  }
+
+  .faq-question {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--sl-color-white);
+    cursor: pointer;
+    padding: 1rem 1.25rem;
+    list-style: none;
+  }
+
+  .faq-question::marker,
+  .faq-question::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-question::before {
+    content: "+";
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin-right: 0.75rem;
+    color: var(--sl-color-accent);
+    transition: transform 0.2s ease;
+    display: inline-block;
+  }
+
+  details[open] > .faq-question::before {
+    content: "\2212";
+  }
+
+  .faq-answer {
+    color: var(--sl-color-gray-2);
+    line-height: 1.6;
+    padding: 0 1.25rem 1rem;
+    margin: 0;
+  }
+</style>

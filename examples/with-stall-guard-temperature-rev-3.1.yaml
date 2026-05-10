@@ -70,7 +70,7 @@ captive_portal:
 
 # How it works:
 # 1. temperature_linear controls fan speed based on temperature readings
-# 2. stall_guard monitors RPM — if a fan reports 0 RPM while on, it's stalled
+# 2. stall_guard monitors RPM - if a fan reports 0 RPM while on, it's stalled
 # 3. During stall recovery, stall_guard sets a safety floor and raises fan speed
 # 4. temperature_linear respects the floor: max(temperature_speed, safety_floor)
 # 5. Press "Clear Stall Warnings" to reset floors after investigating the cause

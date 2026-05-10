@@ -10,21 +10,61 @@ The Rev 3.x series is the latest generation of the WiFi Fan Controller. All 3.1,
 
 Key features over Rev 3.0: RGB status LEDs (SK6805) for board status and per-fan visual feedback.
 
+## Hardware Package Import
+
+Add this to your ESPHome config to import the hardware package for your board revision:
+
+<Tabs>
+  <TabItem label="Rev 3.3">
+    ```yaml
+    packages:
+      hardware:
+        url: https://github.com/zeroflow/wifi-fancontroller
+        ref: main
+        files: [hardware-rev-3.3.yaml]
+    ```
+  </TabItem>
+  <TabItem label="Rev 3.2">
+    ```yaml
+    packages:
+      hardware:
+        url: https://github.com/zeroflow/wifi-fancontroller
+        ref: main
+        files: [hardware-rev-3.2.yaml]
+    ```
+  </TabItem>
+  <TabItem label="Rev 3.1">
+    ```yaml
+    packages:
+      hardware:
+        url: https://github.com/zeroflow/wifi-fancontroller
+        ref: main
+        files: [hardware-rev-3.1.yaml]
+    ```
+  </TabItem>
+</Tabs>
+
 ## Board Photos
 
 ### Rev 3.3
 
-![Rev 3.3 front](/images/board_rev3.3_front.jpg)
-![Rev 3.3 back](/images/board_rev3.3_back.jpg)
+![ESP32-S2 WiFi Fan Controller Rev 3.3 PCB front - 4 PWM fan headers, HDC1080 sensor, RGB LEDs, Qwiic port](/images/board_rev3.3_front.jpg)
+![ESP32-S2 WiFi Fan Controller Rev 3.3 PCB back - CE marking, SMD expansion pads](/images/board_rev3.3_back.jpg)
 
-### Rev 3.2
+<details>
+<summary>Rev 3.2</summary>
 
-![Rev 3.2 front](/images/board_rev3.2_front.png)
-![Rev 3.2 back](/images/board_rev3.2_back.png)
+![ESP32-S2 WiFi Fan Controller Rev 3.2 PCB front](/images/board_rev3.2_front.png)
+![ESP32-S2 WiFi Fan Controller Rev 3.2 PCB back](/images/board_rev3.2_back.png)
 
-### Rev 3.1
+</details>
 
-![Rev 3.1 board](/images/board_rev3.1.jpg)
+<details>
+<summary>Rev 3.1</summary>
+
+![ESP32-S2 WiFi Fan Controller Rev 3.1 PCB - first revision with per-fan RGB status LEDs](/images/board_rev3.1.jpg)
+
+</details>
 
 ## Specifications
 
@@ -39,7 +79,7 @@ Key features over Rev 3.0: RGB status LEDs (SK6805) for board status and per-fan
 - **Expansion:** QWIIC I2C, I2C port (100mil), NeoPixel port (5V, max 2A), SMD expansion header
 
 <Aside type="note" title="NeoPixel framework requirement">
-The NeoPixel port requires the `arduino` framework, since GPIO42 requires use of the `fastled_clockless` platform, which is not supported on `esp-idf`.
+The NeoPixel port on GPIO42 requires the `arduino` framework. The `esp32_rmt_led_strip` platform used for this pin does not work reliably with `esp-idf` on the ESP32-S2.
 </Aside>
 
 ## Factory Firmware Installation
@@ -51,7 +91,7 @@ Select your board revision and click the button to flash the factory firmware di
     <FlashButton manifest="/firmware/fancontroller-r3-3.manifest.json" label="Flash Rev 3.3 Factory Firmware" />
   </TabItem>
   <TabItem label="Rev 3.2">
-    <FlashButton manifest="/firmware/fancontroller-r3.2.manifest.json" label="Flash Rev 3.2 Factory Firmware" />
+    <FlashButton manifest="/firmware/fancontroller-r3-2.manifest.json" label="Flash Rev 3.2 Factory Firmware" />
   </TabItem>
   <TabItem label="Rev 3.1">
     <FlashButton manifest="/firmware/fancontroller-r3-1.manifest.json" label="Flash Rev 3.1 Factory Firmware" />
@@ -62,8 +102,10 @@ Select your board revision and click the button to flash the factory firmware di
 The ESP32-S2 has known USB reliability issues. If the flash button doesn't detect your board:
 1. Try a different USB cable (data cable, not charge-only)
 2. Hold BOOT button while plugging in USB
-3. Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative web flasher
+3. Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative web flasher (flash binary at address 0x0)
 4. As last resort, use `esptool.py` CLI: `esptool.py --chip esp32s2 write_flash 0x0 firmware.bin`
+
+Download prebuilt binaries: [Rev 3.1](/firmware/fancontroller-r3-1-esp32s2.factory.bin) / [Rev 3.2](/firmware/fancontroller-r3-2-esp32s2.factory.bin) / [Rev 3.3](/firmware/fancontroller-r3-3-esp32s2.factory.bin)
 </Aside>
 
 <Aside type="caution" title="USB-C is for flashing only">

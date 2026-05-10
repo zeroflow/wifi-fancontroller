@@ -1,0 +1,103 @@
+---
+---
+
+<div
+  class="trust-strip-wrapper"
+  role="region"
+  aria-label="Trust and certification badges"
+>
+  <span class="trust-chip">CE RED Compliant</span>
+
+  <a
+    href="https://devices.esphome.io/devices/Arthofer-Engineering-Wifi-Fancontroller/"
+    target="_blank"
+    rel="noopener"
+    class="trust-badge-link"
+  >
+    <img
+      src="/images/made-for-esphome-black.svg"
+      alt="Made for ESPHome, view on ESPHome device listing"
+      width="120"
+      height="36"
+      loading="lazy"
+      class="trust-badge-img trust-badge-light"
+    />
+    <img
+      src="/images/made-for-esphome-white.svg"
+      alt=""
+      aria-hidden="true"
+      width="120"
+      height="36"
+      loading="lazy"
+      class="trust-badge-img trust-badge-dark"
+    />
+  </a>
+
+  <span class="trust-chip">Open Firmware</span>
+</div>
+
+<style>
+  .trust-strip-wrapper {
+    max-width: 72rem;
+    margin: 2rem auto 1.5rem;
+    padding: 0 1rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .trust-chip {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    background: #ffffff;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 7px;
+    padding: 0 0.9rem;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sl-color-gray-1, #1a1a1a);
+    line-height: 1.4;
+    white-space: nowrap;
+  }
+
+  :global([data-theme='dark']) .trust-chip {
+    background: var(--sl-color-bg);
+    border-color: var(--sl-color-gray-5);
+    color: var(--sl-color-white);
+  }
+
+  .trust-badge-link {
+    display: inline-flex;
+    align-items: center;
+    height: 36px;
+    line-height: 0;
+    text-decoration: none;
+    border-radius: 0.375rem;
+    transition: opacity 0.2s ease;
+  }
+
+  .trust-badge-link:hover {
+    opacity: 0.85;
+  }
+
+  .trust-badge-img {
+    display: block;
+    height: 36px;
+    width: auto;
+    /* Override Starlight's .sl-markdown-content sibling spacing rule which applies
+       margin-top: 1rem to the second img (trust-badge-dark) when it follows the first
+       img (trust-badge-light) via the adjacent-sibling combinator. In dark mode the
+       dark variant is visible and receives this margin, pushing it 16px below the
+       container top and making the badge appear taller than the surrounding chips. */
+    margin-top: 0;
+  }
+
+  /* Starlight sets data-theme="light" or "dark" on <html>. Show the matching variant. */
+  :global([data-theme='light']) .trust-badge-dark,
+  :global([data-theme='dark']) .trust-badge-light {
+    display: none;
+  }
+</style>

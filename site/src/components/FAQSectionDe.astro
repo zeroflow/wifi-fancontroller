@@ -1,0 +1,131 @@
+---
+const faqs = [
+  {
+    question: "Welche Lüfter sind kompatibel?",
+    answer: "Alle gängigen 4-Pin PWM-Lüfter für 12 V. Beliebte Modelle wie Noctua NF-A12x25, NF-F12, Arctic P12 PWM und be quiet! Silent Wings funktionieren einwandfrei. Die Platine unterstützt bis zu 4 Lüfter mit einer Gesamtstromaufnahme von 2,5 A."
+  },
+  {
+    question: "Funktioniert sie mit 5-V-Lüftern?",
+    answer: "Nein, das Board ist ausschließlich für 12-V-Lüfter ausgelegt. Die Hohlsteckerbuchse führt 12 V DC und wird direkt an die Lüfteranschlüsse durchgereicht. Für 5-V-Lüfter wäre ein zusätzlicher Spannungswandler nötig."
+  },
+  {
+    question: "Wie viele Lüfter lassen sich unabhängig ansteuern?",
+    answer: "Bis zu 4 Lüfter, jeder mit unabhängiger PWM-Drehzahlregelung und individueller RPM-Messung. Jeder Lüfter kann auf Basis von Temperaturschwellen oder manuellen Einstellungen mit unterschiedlicher Drehzahl laufen."
+  },
+  {
+    question: "Brauche ich Home Assistant?",
+    answer: "Home Assistant bietet das beste Erlebnis mit automatischer Erkennung und Dashboard-Integration, ist aber nicht zwingend erforderlich. Die Steuerung läuft eigenständig mit ESPHome-Firmware. Temperaturbasierte Automatik funktioniert lokal auf dem Gerät, ganz ohne Server."
+  },
+  {
+    question: "Kann ich damit ein Server-Rack oder einen Netzwerkschrank kühlen?",
+    answer: "Ja, das ist der häufigste Anwendungsfall. Baue 120-mm-PWM-Lüfter (z. B. Noctua) in dein Rack ein und lass den integrierten Temperatursensor die Drehzahl automatisch regeln. Viele Nutzer kühlen so Rackserver, NAS-Gehäuse und Netzwerkgeräte, eine einfache Smart-Home-Automatisierung für jeden Home-Lab."
+  },
+  {
+    question: "Wie wird die Firmware aktualisiert?",
+    answer: "Over-the-air (OTA) per WLAN. Nach der Ersteinrichtung sind keine Kabel mehr nötig. Alternativ geht es auch per USB-C. Das Board wird mit vorinstallierter ESPHome-Factory-Firmware ausgeliefert."
+  },
+  {
+    question: "Ist die Hardware Open Source?",
+    answer: "Ja, die ESPHome-Firmware-Konfigurationen und die Hardware-Schaltpläne sind auf GitHub veröffentlicht. Nur die Gerber-/Produktionsdateien sind nicht öffentlich. Das Board verfügt außerdem über Standard-Qwiic/I²C- und GPIO-Erweiterungsanschlüsse für eigene Modifikationen."
+  },
+  {
+    question: "Welche Sensoren sind integriert?",
+    answer: "Ein HDC1080 Temperatur- und Luftfeuchtigkeitssensor ist auf dem Board integriert. Über den Qwiic-(I²C-)Erweiterungsport kannst du weitere Sensoren anschließen, zum Beispiel einen zusätzlichen Temperaturfühler direkt im Luftstrom."
+  }
+];
+
+const faqSchema = {
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "inLanguage": "de",
+  "mainEntity": faqs.map(faq => ({
+    "@type": "Question",
+    "name": faq.question,
+    "acceptedAnswer": {
+      "@type": "Answer",
+      "text": faq.answer
+    }
+  }))
+};
+---
+
+<script type="application/ld+json" set:html={JSON.stringify(faqSchema)} />
+
+<section class="faq-section">
+  <h2 class="faq-heading">Häufig gestellte Fragen</h2>
+  <div class="faq-list">
+    {faqs.map(faq => (
+      <details class="faq-item">
+        <summary class="faq-question">{faq.question}</summary>
+        <p class="faq-answer">{faq.answer}</p>
+      </details>
+    ))}
+  </div>
+</section>
+
+<style>
+  .faq-section {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 2rem 1rem 3rem;
+    border-top: 1px solid var(--sl-color-gray-5);
+  }
+
+  .faq-heading {
+    font-size: 1.75rem;
+    font-weight: 700;
+    text-align: center;
+    color: var(--sl-color-white);
+    margin-bottom: 1.5rem;
+  }
+
+  .faq-list {
+    max-width: 48rem;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .faq-item {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    padding: 0;
+    background: var(--sl-color-gray-6);
+  }
+
+  .faq-question {
+    font-weight: 600;
+    font-size: 1.05rem;
+    color: var(--sl-color-white);
+    cursor: pointer;
+    padding: 1rem 1.25rem;
+    list-style: none;
+  }
+
+  .faq-question::marker,
+  .faq-question::-webkit-details-marker {
+    display: none;
+  }
+
+  .faq-question::before {
+    content: "+";
+    font-weight: 700;
+    font-size: 1.2rem;
+    margin-right: 0.75rem;
+    color: var(--sl-color-accent);
+    transition: transform 0.2s ease;
+    display: inline-block;
+  }
+
+  details[open] > .faq-question::before {
+    content: "\2212";
+  }
+
+  .faq-answer {
+    color: var(--sl-color-gray-2);
+    line-height: 1.6;
+    padding: 0 1.25rem 1rem;
+    margin: 0;
+  }
+</style>

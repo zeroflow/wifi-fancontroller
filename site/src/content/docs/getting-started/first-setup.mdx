@@ -1,6 +1,6 @@
 ---
 title: First Setup
-description: Flash firmware, connect to WiFi, and adopt your fan controller into Home Assistant
+description: Connect your WiFi Fan Controller to WiFi, wire up your fans, and adopt it into Home Assistant
 ---
 
 import FlashButton from '../../../components/FlashButton.astro';
@@ -10,73 +10,30 @@ import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
 Get yours from the [Elecrow store](https://www.elecrow.com/wifi-fancontroller1.html).
 </Aside>
 
-This guide walks you through the complete first-time setup of your WiFi Fan Controller -- from unboxing to a working fan controller in Home Assistant.
+Your board ships with factory firmware already flashed. This guide walks you from unboxing to a working fan controller in Home Assistant, covering WiFi provisioning, fan wiring, and Home Assistant adoption.
+
+<Aside type="note" title="Already flashed from the factory">
+Every WiFi Fan Controller is flashed with factory firmware before shipping. First-time users can skip straight to WiFi provisioning below. If you ever need to re-flash (corruption, recovery, or a custom ESPHome build), the "Re-flash firmware" section at the bottom of this page covers it.
+</Aside>
 
 ## What You'll Need
 
 - WiFi Fan Controller board
-- USB-C data cable (not charge-only)
+- USB-C data cable (not charge-only), used for serial-based WiFi provisioning
 - 12V DC power supply (5.5x2.1mm barrel jack)
 - One or more PWM fans (4-pin)
-- Computer with **Chrome** or **Edge** browser (required for Web Serial flashing)
 
 ## Setup Steps
 
 <Steps>
 
-1. **Flash the factory firmware**
+1. **Connect to WiFi**
 
-   Connect your board to your computer via USB-C and click the flash button for your hardware revision below.
+   Connect the board to your computer with a USB-C data cable.
 
-   <Tabs syncKey="revision">
-     <TabItem label="Rev 3.3">
-       <FlashButton manifest="/firmware/fancontroller-r3-3.manifest.json" label="Flash Rev 3.3" />
+   Open a tool that speaks Improv Serial (for example [improv-wifi.com/serial/](https://www.improv-wifi.com/serial/) in Chrome or Edge), or open a serial console connected to the board.
 
-       See [Rev 3.x hardware details](/reference/hardware/rev-3-x/) for board specs and pin layout.
-     </TabItem>
-     <TabItem label="Rev 3.2">
-       <FlashButton manifest="/firmware/fancontroller-r3.2.manifest.json" label="Flash Rev 3.2" />
-
-       See [Rev 3.x hardware details](/reference/hardware/rev-3-x/) for board specs and pin layout.
-     </TabItem>
-     <TabItem label="Rev 3.1">
-       <FlashButton manifest="/firmware/fancontroller-r3-1.manifest.json" label="Flash Rev 3.1" />
-
-       See [Rev 3.x hardware details](/reference/hardware/rev-3-x/) for board specs and pin layout.
-     </TabItem>
-     <TabItem label="Rev 3.0">
-       <FlashButton manifest="/firmware/fancontroller-r3-0.manifest.json" label="Flash Rev 3.0" />
-
-       See [Rev 3.0 hardware details](/reference/hardware/rev-3-0/) for board specs and pin layout.
-     </TabItem>
-     <TabItem label="Rev 2.0">
-       <FlashButton manifest="/firmware/fancontroller-r2-0.manifest.json" label="Flash Rev 2.0" />
-
-       See [Rev 2.0 hardware details](/reference/hardware/rev-2-0/) for board specs and pin layout.
-     </TabItem>
-     <TabItem label="Rev 1.0">
-       Rev 1.0 uses an ESP32 with a serial header instead of USB-C. You'll need a USB-to-serial adapter (3.3V FTDI or similar) connected to the programming header.
-
-       Flash using [ESPHome CLI](https://esphome.io/guides/installing_esphome) or [ESPWEBTOOL](https://esptool.spacehuhn.com/).
-
-       See [Rev 1.0 hardware details](/reference/hardware/rev-1-0/) for board specs and pin layout.
-     </TabItem>
-   </Tabs>
-
-   <Aside type="caution" title="USB not detected? (ESP32-S2)">
-   The ESP32-S2 (Rev 2.0+) has known USB reliability issues on some systems. Try these steps:
-
-   - Use a different USB-C cable (must be a **data** cable, not charge-only)
-   - Hold the **BOOT** button while plugging in the USB cable
-   - Try a different USB port (avoid USB hubs)
-   - Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative flash tool
-   </Aside>
-
-2. **Connect to WiFi**
-
-   The factory firmware includes **ESP Improv Serial** for easy WiFi provisioning.
-
-   After flashing, the serial console will prompt you to enter your WiFi credentials. Enter your **2.4 GHz** WiFi network name and password -- 5 GHz networks are not supported by any board revision.
+   Enter your **2.4 GHz** WiFi network name and password. 5 GHz networks are not supported by any board revision.
 
    Once connected, the board displays its IP address in the serial output.
 
@@ -84,7 +41,7 @@ This guide walks you through the complete first-time setup of your WiFi Fan Cont
    If WiFi connection fails, the board creates a fallback hotspot called **"Fan Controller Fallback"**. Connect to this hotspot from your phone or laptop to reconfigure WiFi credentials.
    </Aside>
 
-3. **Connect your fans**
+2. **Connect your fans**
 
    - Connect your **12V DC power supply** to the board's power input (5.5x2.1mm barrel jack)
    - Plug your **PWM fans** (4-pin) into the fan headers (Fan 1 through Fan 4)
@@ -94,7 +51,7 @@ This guide walks you through the complete first-time setup of your WiFi Fan Cont
    The USB-C port is for flashing and serial communication only. Fans require 12V DC power through the barrel jack connector. The USB-C port provides only 5V to the ESP32 microcontroller.
    </Aside>
 
-4. **Adopt in Home Assistant**
+3. **Adopt in Home Assistant**
 
    Your fan controller is automatically discovered by Home Assistant via the ESPHome integration.
 
@@ -106,3 +63,61 @@ This guide walks you through the complete first-time setup of your WiFi Fan Cont
    See [Home Assistant Integration](/getting-started/home-assistant/) for dashboard setup and automation examples.
 
 </Steps>
+
+## Re-flash firmware (optional)
+
+You only need this section if:
+
+- The factory firmware was corrupted (board will not boot or is not discovered on a fresh network)
+- You want to reset to a known-good factory image
+- You are installing a custom ESPHome build you compiled yourself
+
+Most customers never need to re-flash. For routine firmware updates, use OTA through the [ESPHome Dashboard](/getting-started/firmware-updates/). No cables needed.
+
+Re-flashing uses the Web Serial API and requires a Chrome or Edge browser plus a USB-C data cable.
+
+<Tabs syncKey="revision">
+  <TabItem label="Rev 3.3">
+    <FlashButton manifest="/firmware/fancontroller-r3-3.manifest.json" label="Flash Rev 3.3" />
+
+    See [Rev 3.x hardware details](/reference/hardware/rev-3-x/) for board specs and pin layout.
+  </TabItem>
+  <TabItem label="Rev 3.2">
+    <FlashButton manifest="/firmware/fancontroller-r3-2.manifest.json" label="Flash Rev 3.2" />
+
+    See [Rev 3.x hardware details](/reference/hardware/rev-3-x/) for board specs and pin layout.
+  </TabItem>
+  <TabItem label="Rev 3.1">
+    <FlashButton manifest="/firmware/fancontroller-r3-1.manifest.json" label="Flash Rev 3.1" />
+
+    See [Rev 3.x hardware details](/reference/hardware/rev-3-x/) for board specs and pin layout.
+  </TabItem>
+  <TabItem label="Rev 3.0">
+    <FlashButton manifest="/firmware/fancontroller-r3-0.manifest.json" label="Flash Rev 3.0" />
+
+    See [Rev 3.0 hardware details](/reference/hardware/rev-3-0/) for board specs and pin layout.
+  </TabItem>
+  <TabItem label="Rev 2.0">
+    <FlashButton manifest="/firmware/fancontroller-r2-0.manifest.json" label="Flash Rev 2.0" />
+
+    See [Rev 2.0 hardware details](/reference/hardware/rev-2-0/) for board specs and pin layout.
+  </TabItem>
+  <TabItem label="Rev 1.0">
+    Rev 1.0 uses an ESP32 with a serial header instead of USB-C. You'll need a USB-to-serial adapter (3.3V FTDI or similar) connected to the programming header.
+
+    <FlashButton manifest="/firmware/fancontroller-r1-0.manifest.json" label="Flash Rev 1.0" />
+
+    See [Rev 1.0 hardware details](/reference/hardware/rev-1-0/) for board specs and pin layout.
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="USB not detected? (ESP32-S2)">
+The ESP32-S2 (Rev 2.0+) has known USB reliability issues on some systems. Try these steps:
+
+- Use a different USB-C cable (must be a **data** cable, not charge-only)
+- Hold the **BOOT** button while plugging in the USB cable
+- Try a different USB port (avoid USB hubs)
+- Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative flash tool
+</Aside>
+
+After re-flashing, repeat the WiFi provisioning step above, then re-adopt in Home Assistant. See [Firmware Updates](/getting-started/firmware-updates/) for OTA updates.

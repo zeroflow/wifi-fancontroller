@@ -18,7 +18,7 @@ Choose Curve when you need more control points than the linear module's three zo
 For simpler threshold-based control, see [Temperature Linear](/reference/modules/temperature-linear/). For automatic temperature targeting, see [Temperature PID](/reference/modules/temperature-pid/). The [modules overview](/reference/modules/) has a comparison table.
 
 :::tip[Works with Stall Guard]
-This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature Curve will respect during recovery. No extra configuration needed — just include both modules.
+This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature Curve will respect during recovery. No extra configuration needed, just include both modules.
 :::
 
 ## Configuration

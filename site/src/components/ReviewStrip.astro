@@ -1,0 +1,98 @@
+---
+import { reviews } from '../data/reviews';
+
+// Per D-03: top 3 reviews for the minimal visible block (Lila, Jodan, Scott).
+// Ordering is encoded in site/src/data/reviews.ts (Lila first, Marius last).
+// Grow tent use case (Marius) naturally excluded as the 4th.
+const topReviews = reviews.slice(0, 3);
+
+function renderStars(rating: number): string {
+  const full = Math.floor(rating);
+  const hasHalf = rating - full >= 0.5;
+  const empty = 5 - full - (hasHalf ? 1 : 0);
+  return '★'.repeat(full) + (hasHalf ? '½' : '') + '☆'.repeat(empty);
+}
+---
+
+<section class="review-strip-wrapper" role="region" aria-label="Customer reviews">
+  <h2 class="review-heading">What Customers Say</h2>
+  <div class="review-list">
+    {topReviews.map((r) => (
+      <div class="review-item">
+        <span class="review-stars" aria-label={`${r.rating} out of 5 stars`}>{renderStars(r.rating)}</span>
+        <p class="review-quote">"{r.displayQuote}"</p>
+        <p class="review-author">- {r.reviewer}, verified Tindie buyer</p>
+      </div>
+    ))}
+  </div>
+</section>
+
+<style>
+  .review-strip-wrapper {
+    max-width: 72rem;
+    margin: 2rem auto 1.5rem;
+    padding: 0 1rem;
+  }
+
+  .review-heading {
+    font-size: 1.5rem;
+    font-weight: 700;
+    text-align: center;
+    color: var(--sl-color-white);
+    margin-bottom: 1.25rem;
+  }
+
+  .review-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+    gap: 1rem;
+    max-width: 60rem;
+    margin: 0 auto;
+  }
+
+  .review-item {
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+    padding: 1rem 1.25rem;
+    background: var(--sl-color-gray-6);
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    height: 100%;
+    margin: 0;
+  }
+
+  .review-item .review-quote {
+    flex: 1;
+  }
+
+  .review-stars {
+    color: var(--sl-color-accent);
+    font-size: 1rem;
+    line-height: 1.5;
+    letter-spacing: 0.1em;
+    display: block;
+    min-height: 1.5rem;
+  }
+
+  .review-quote {
+    color: var(--sl-color-gray-2);
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin: 0;
+    font-style: italic;
+  }
+
+  .review-author {
+    color: var(--sl-color-white);
+    font-size: 0.875rem;
+    font-weight: 500;
+    margin: 0;
+    margin-top: auto;
+  }
+
+  :global([data-theme='dark']) .review-item {
+    background: var(--sl-color-bg);
+    border-color: var(--sl-color-gray-5);
+  }
+</style>

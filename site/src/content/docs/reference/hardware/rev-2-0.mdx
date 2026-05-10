@@ -8,7 +8,19 @@ import { Aside } from '@astrojs/starlight/components';
 
 Rev 2.0 introduced USB-C flashing by switching from the ESP32 to the ESP32-S2. This eliminates the need for a separate USB-to-serial adapter.
 
-![Rev 2.0 board](/images/board_rev2.0.jpg)
+## Hardware Package Import
+
+Add this to your ESPHome config to import the hardware package:
+
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-2.0.yaml]
+```
+
+![ESP32-S2 WiFi Fan Controller Rev 2.0 PCB - upgraded to ESP32-S2 with USB-C flashing](/images/board_rev2.0.jpg)
 
 ## Specifications
 
@@ -30,7 +42,7 @@ Rev 2.0 introduced USB-C flashing by switching from the ESP32 to the ESP32-S2. T
 The ESP32-S2 has known USB reliability issues. If the flash button doesn't detect your board:
 1. Try a different USB cable (data cable, not charge-only)
 2. Hold BOOT button while plugging in USB
-3. Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative web flasher
+3. Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative web flasher (flash binary at address 0x0)
 4. As last resort, use `esptool.py` CLI: `esptool.py --chip esp32s2 write_flash 0x0 firmware.bin`
 
 [Download prebuilt binary](/firmware/fancontroller-r2-0-esp32s2.factory.bin)

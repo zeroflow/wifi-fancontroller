@@ -8,13 +8,25 @@ import { Aside } from '@astrojs/starlight/components';
 
 Rev 3.0 added Qwiic I2C connectivity, a NeoPixel expansion port, PWM signal buffering for improved fan signal integrity, and a bottom SMD expansion header. Unlike Rev 3.1+, it does not have RGB status LEDs.
 
+## Hardware Package Import
+
+Add this to your ESPHome config to import the hardware package:
+
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.0.yaml]
+```
+
 ### Front
 
-![Rev 3.0 board front](/images/board_rev3.0.jpg)
+![ESP32-S2 WiFi Fan Controller Rev 3.0 PCB front - Qwiic port, NeoPixel expansion, PWM buffering](/images/board_rev3.0.jpg)
 
 ### Back
 
-![Rev 3.0 board back](/images/board_rev3.0_back.jpg)
+![ESP32-S2 WiFi Fan Controller Rev 3.0 PCB back - SMD expansion header](/images/board_rev3.0_back.jpg)
 
 ## Specifications
 
@@ -29,7 +41,7 @@ Rev 3.0 added Qwiic I2C connectivity, a NeoPixel expansion port, PWM signal buff
 - **Expansion:** QWIIC I2C, I2C port (100mil), NeoPixel port (5V, max 2A), SMD expansion header
 
 <Aside type="note" title="NeoPixel framework requirement">
-The NeoPixel port requires the `arduino` framework, since GPIO42 requires use of the `fastled_clockless` platform, which is not supported on `esp-idf`.
+The NeoPixel port on GPIO42 requires the `arduino` framework. The `esp32_rmt_led_strip` platform used for this pin does not work reliably with `esp-idf` on the ESP32-S2.
 </Aside>
 
 ## Factory Firmware Installation
@@ -40,7 +52,7 @@ The NeoPixel port requires the `arduino` framework, since GPIO42 requires use of
 The ESP32-S2 has known USB reliability issues. If the flash button doesn't detect your board:
 1. Try a different USB cable (data cable, not charge-only)
 2. Hold BOOT button while plugging in USB
-3. Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative web flasher
+3. Use [ESPWEBTOOL](https://esptool.spacehuhn.com/) as an alternative web flasher (flash binary at address 0x0)
 4. As last resort, use `esptool.py` CLI: `esptool.py --chip esp32s2 write_flash 0x0 firmware.bin`
 
 [Download prebuilt binary](/firmware/fancontroller-r3-0-esp32s2.factory.bin)

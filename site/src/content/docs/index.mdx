@@ -1,13 +1,16 @@
 ---
-title: WiFi Fan Controller
-description: CE-certified ESP32 PWM fan controller for Home Assistant. Control up to 4 fans with temperature automation.
+title: ESP32 WiFi Fan Controller for Home Assistant
+description: CE-certified ESP32 smart home fan controller for Home Assistant. Control up to 4 fans independently with temperature automation, RPM monitoring, and ESPHome firmware.
 template: splash
+head:
+  - tag: title
+    content: "ESP32 WiFi Fan Controller - 4-Channel PWM for Home Assistant | ESPHome"
 hero:
-  title: WiFi Fan Controller
-  tagline: Smart fan control for your Home Assistant setup. Control up to 4 fans with temperature automation and seamless integration.
+  title: ESP32 WiFi Fan Controller
+  tagline: CE-certified 4-channel PWM fan controller with ESPHome firmware. Temperature automation, RPM monitoring, and seamless smart home integration with Home Assistant, out of the box.
   image:
-    file: ../../assets/board_rev3.3_front.jpg
-    alt: WiFi Fan Controller Rev 3.3 board
+    file: ../../assets/board_hero.png
+    alt: ESP32 WiFi Fan Controller PCB Rev 3.3 - 4 PWM fan headers, HDC1080 sensor, RGB LEDs
   actions:
     - text: "Buy Now \u2014 $35.99"
       link: https://www.elecrow.com/wifi-fancontroller1.html
@@ -18,6 +21,18 @@ hero:
       variant: secondary
 ---
 
+import FAQSection from '../../components/FAQSection.astro';
 import FeatureGrid from '../../components/FeatureGrid.astro';
+import ProductSchema from '../../components/ProductSchema.astro';
+import ReviewStrip from '../../components/ReviewStrip.astro';
+import TrustStrip from '../../components/TrustStrip.astro';
+
+<ProductSchema />
+
+<TrustStrip />
+
+<ReviewStrip />
 
 <FeatureGrid />
+
+<FAQSection />

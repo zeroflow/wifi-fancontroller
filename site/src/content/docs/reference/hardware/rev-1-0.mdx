@@ -8,7 +8,19 @@ import { Aside } from '@astrojs/starlight/components';
 
 The Rev 1.0 is the original WiFi Fan Controller design based on the ESP32-WROOM-32E. It features serial flashing via a dedicated header and includes two external input ports not found on later revisions.
 
-![Rev 1.0 board](/images/board_rev1.0.jpg)
+## Hardware Package Import
+
+Add this to your ESPHome config to import the hardware package:
+
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-1.0.yaml]
+```
+
+![ESP32 WiFi Fan Controller Rev 1.0 PCB - original design with 4 PWM fan headers and serial flashing](/images/board_rev1.0.jpg)
 
 ## Specifications
 

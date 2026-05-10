@@ -10,9 +10,9 @@ The controller uses standard 4-pin PWM fan headers. Fan type determines what is 
 | Fan type | Speed control | RPM sensing |
 |----------|--------------|-------------|
 | 4-pin PWM | Full range | Yes (tachometer wire) |
-| 3-pin DC (with tach) | None — runs at full speed | Yes |
-| 3-pin DC (no tach) | None — runs at full speed | No |
-| 2-pin | None — runs at full speed | No |
+| 3-pin DC (with tach) | None (runs at full speed) | Yes |
+| 3-pin DC (no tach) | None (runs at full speed) | No |
+| 2-pin | None (runs at full speed) | No |
 
 3-pin fans are physically compatible with 4-pin headers (the PWM pin simply has no contact), but the controller cannot slow them down. All speed control, temperature curves, and RPM-PI modules require a 4-pin PWM fan.
 

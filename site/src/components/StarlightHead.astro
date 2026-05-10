@@ -1,0 +1,85 @@
+---
+import type { Props } from '@astrojs/starlight/props';
+import Default from '@astrojs/starlight/components/Head.astro';
+import { getSegmentLabel, getHomeLabel } from '../lib/sidebarLabels';
+
+const { starlightRoute } = Astro.locals;
+const isSplash = starlightRoute.entry.data.template === 'splash';
+const siteUrl = 'https://fancontroller.arthofer.dev';
+
+type BreadcrumbItem = {
+  "@type": "ListItem";
+  position: number;
+  name: string;
+  item: string;
+};
+
+function buildBreadcrumbs(
+  id: string,
+  locale: string | undefined,
+  entryTitle: string
+): BreadcrumbItem[] {
+  // Strip locale prefix from id to avoid duplicate /de/de/ (Pitfall 4)
+  const cleanId = locale ? id.replace(new RegExp(`^${locale}/`), '') : id;
+  const segments = cleanId.split('/').filter(Boolean);
+
+  // Locale-aware URL base
+  const base = locale ? `${siteUrl}/${locale}/` : `${siteUrl}/`;
+  const homeName = getHomeLabel(locale);
+
+  const items: BreadcrumbItem[] = [
+    { "@type": "ListItem", position: 1, name: homeName, item: base },
+  ];
+
+  let cumPath = base;
+  segments.forEach((seg, idx) => {
+    cumPath += `${seg}/`;
+    // Use sidebar label (or acronym-preserving titleCase fallback) for
+    // intermediate segments; fall back to the frontmatter entry title for
+    // the leaf (D-11). entry.data.title is author-controlled and always
+    // has correct acronym capitalization (e.g. "ESP32 Rev 3.x"), which is
+    // the preferred source per Gemini review 14-REVIEWS.md Suggestion 2.
+    const isLeaf = idx === segments.length - 1;
+    const name = isLeaf && entryTitle
+      ? entryTitle
+      : getSegmentLabel(seg, locale);
+    items.push({ "@type": "ListItem", position: idx + 2, name, item: cumPath });
+  });
+
+  return items;
+}
+
+// Exclude blog routes (D-10). Match only exact "blog/..." or "<locale>/blog/..." -
+// reject partial matches like "blog-guide/..." that slip past a loose prefix check.
+const isBlogRoute = /^(?:[^/]+\/)?blog(?:\/|$)/.test(starlightRoute.id);
+const showBreadcrumb = !isSplash && !isBlogRoute;
+
+const breadcrumbItems = showBreadcrumb
+  ? buildBreadcrumbs(
+      starlightRoute.id,
+      starlightRoute.locale,
+      starlightRoute.entry.data.title
+    )
+  : null;
+---
+
+<Default {...Astro.props} />
+
+<meta name="google-site-verification" content="P83xJhFZfv9RTbpF6dGKSZ_j_ABOEBi7WpCwI6mrMCc" />
+
+{isSplash && (
+  <>
+    <meta property="og:image" content={`${siteUrl}/og/homepage.png`} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+  </>
+)}
+
+{/* BreadcrumbList JSON-LD for docs pages (D-10 scope: !splash !blog) */}
+{breadcrumbItems && (
+  <script type="application/ld+json" set:html={JSON.stringify({
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": breadcrumbItems
+  })} />
+)}

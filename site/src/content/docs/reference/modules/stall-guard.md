@@ -54,7 +54,7 @@ The module accepts these substitution variables in the `packages:` block:
 | `stall_guard_step_pct` | `"1"` | Initial value for Step % (adjustable at runtime via HA) |
 | `stall_guard_min_rpm` | `"1"` | Initial value for Min RPM (adjustable at runtime via HA) |
 
-The `stall_guard_grace_ticks`, `stall_guard_step_pct`, and `stall_guard_min_rpm` substitutions set the **initial values** for the corresponding Home Assistant number entities. Once the device boots, users can adjust these values at runtime through the Home Assistant UI — changes persist across reboots.
+The `stall_guard_grace_ticks`, `stall_guard_step_pct`, and `stall_guard_min_rpm` substitutions set the **initial values** for the corresponding Home Assistant number entities. Once the device boots, users can adjust these values at runtime through the Home Assistant UI, and changes persist across reboots.
 
 ## Runtime Configuration
 
@@ -77,7 +77,7 @@ These parameters can be adjusted at runtime through Home Assistant without refla
 | Fan 3 Stall Guard | ON | Enable/disable stall detection for fan 3 |
 | Fan 4 Stall Guard | ON | Enable/disable stall detection for fan 4 |
 
-All runtime settings use `restore_value` / `restore_mode` — changes made in the Home Assistant UI persist across reboots.
+All runtime settings use `restore_value` / `restore_mode`, so changes made in the Home Assistant UI persist across reboots.
 
 :::tip
 Disable stall guard for fan ports with nothing connected to avoid false stall warnings. With runtime switches, you can do this directly from the Home Assistant UI instead of reflashing.

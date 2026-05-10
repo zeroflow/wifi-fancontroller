@@ -3,9 +3,9 @@ title: Hardware Revisions
 description: Overview and comparison of WiFi Fan Controller hardware revisions
 ---
 
-The WiFi Fan Controller is available in several hardware revisions. All revisions share the same core features -- 4 PWM fan headers, an HDC1080 temperature and humidity sensor, and ESPHome-based firmware with Home Assistant integration.
+The WiFi Fan Controller has gone through several hardware revisions, each replacing the previous generation. All revisions share the same core features -- 4 PWM fan headers, an HDC1080 temperature and humidity sensor, and ESPHome-based firmware with Home Assistant integration.
 
-Choose your revision below for detailed specifications, pin assignments, and firmware installation. Note that fan behavior at low PWM duty cycles varies by model -- see the [Fan Compatibility](/reference/fan-compatibility/) page for details on which fans can spin down to 0 RPM.
+The **current revision is Rev 3.3**. Earlier revisions are documented here for existing owners.
 
 ## Revision Comparison
 
@@ -22,7 +22,7 @@ Choose your revision below for detailed specifications, pin assignments, and fir
 
 ## Revisions
 
-- **[Rev 3.x (3.1 / 3.2 / 3.3)](/reference/hardware/rev-3-x/)** -- Latest generation with RGB status LEDs, QWIIC expansion, and NeoPixel output. All three sub-revisions share identical firmware and pinout.
-- **[Rev 3.0](/reference/hardware/rev-3-0/)** -- Added QWIIC I2C, NeoPixel expansion, and PWM buffering. No RGB status LEDs.
-- **[Rev 2.0](/reference/hardware/rev-2-0/)** -- Introduced USB-C flashing with ESP32-S2.
-- **[Rev 1.0](/reference/hardware/rev-1-0/)** -- Original ESP32 design with serial flashing.
+- **[Rev 3.x (3.1 / 3.2 / 3.3)](/reference/hardware/rev-3-x/)** -- Current generation with RGB status LEDs, QWIIC expansion, and NeoPixel output. All three sub-revisions share identical firmware and pinout.
+- **[Rev 3.0](/reference/hardware/rev-3-0/)** -- Added QWIIC I2C, NeoPixel expansion, and PWM buffering. No RGB status LEDs. Replaced by Rev 3.1.
+- **[Rev 2.0](/reference/hardware/rev-2-0/)** -- Introduced USB-C flashing with ESP32-S2. Replaced by Rev 3.0.
+- **[Rev 1.0](/reference/hardware/rev-1-0/)** -- Original ESP32 design with serial flashing. Replaced by Rev 2.0.

@@ -1,0 +1,97 @@
+---
+import { reviews } from '../data/reviews';
+
+const schema = {
+  "@context": "https://schema.org",
+  "@type": "Product",
+  "name": "ESP32 WiFi Fan Controller",
+  "description": "CE-certified ESP32-S2 PWM fan controller for Home Assistant. Controls up to 4 fans independently with temperature automation, RPM monitoring, and ESPHome firmware.",
+  "image": "https://fancontroller.arthofer.dev/images/board_rev3.3_front.jpg",
+  "brand": {
+    "@type": "Brand",
+    "name": "zeroflow"
+  },
+  "sku": "WIFIFC-REV33",
+  "aggregateRating": {
+    "@type": "AggregateRating",
+    "ratingValue": (reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length).toFixed(2),
+    "reviewCount": String(reviews.length),
+    "bestRating": "5"
+  },
+  "review": reviews.map((r) => ({
+    "@type": "Review",
+    "author": { "@type": "Person", "name": r.reviewer },
+    "datePublished": r.datePublished,
+    "name": r.title,
+    "reviewRating": {
+      "@type": "Rating",
+      "ratingValue": String(r.rating),
+      "bestRating": "5",
+    },
+    "reviewBody": r.body,
+  })),
+  "offers": [
+    {
+      "@type": "Offer",
+      "url": "https://www.elecrow.com/wifi-fancontroller1.html",
+      "priceCurrency": "USD",
+      "price": "35.99",
+      "availability": "https://schema.org/InStock",
+      "seller": {
+        "@type": "Organization",
+        "name": "Elecrow"
+      },
+      "shippingDetails": {
+        "@type": "OfferShippingDetails",
+        "shippingDestination": {
+          "@type": "DefinedRegion",
+          "addressCountry": "US"
+        },
+        "deliveryTime": {
+          "@type": "ShippingDeliveryTime",
+          "handlingTime": {
+            "@type": "QuantitativeValue",
+            "minValue": "1",
+            "maxValue": "3",
+            "unitCode": "d"
+          },
+          "transitTime": {
+            "@type": "QuantitativeValue",
+            "minValue": "7",
+            "maxValue": "14",
+            "unitCode": "d"
+          }
+        }
+      },
+      "hasMerchantReturnPolicy": {
+        "@type": "MerchantReturnPolicy",
+        "applicableCountry": "US",
+        "returnPolicyCategory": "https://schema.org/MerchantReturnFiniteReturnWindow",
+        "merchantReturnDays": "30",
+        "returnMethod": "https://schema.org/ReturnByMail",
+        "returnFees": "https://schema.org/ReturnShippingFees"
+      }
+    },
+    {
+      "@type": "Offer",
+      "url": "https://www.tindie.com/products/zeroflow/esp32-wifi-fancontroller/",
+      "priceCurrency": "USD",
+      "price": "54.99",
+      "availability": "https://schema.org/InStock",
+      "seller": {
+        "@type": "Organization",
+        "name": "Tindie"
+      }
+    }
+  ],
+  "additionalProperty": [
+    { "@type": "PropertyValue", "name": "MCU", "value": "ESP32-S2" },
+    { "@type": "PropertyValue", "name": "Fan Channels", "value": "4x PWM" },
+    { "@type": "PropertyValue", "name": "Firmware", "value": "ESPHome" },
+    { "@type": "PropertyValue", "name": "Sensor", "value": "HDC1080 (Temperature & Humidity)" },
+    { "@type": "PropertyValue", "name": "Certification", "value": "CE" }
+  ]
+};
+---
+
+<script type="application/ld+json" set:html={JSON.stringify(schema)} />

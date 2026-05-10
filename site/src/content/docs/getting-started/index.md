@@ -13,7 +13,7 @@ Pick one up from the [Elecrow store](https://www.elecrow.com/wifi-fancontroller1
 
 ### [First Setup](/getting-started/first-setup/)
 
-Flash the factory firmware, connect to WiFi, wire up your fans, and adopt the board into Home Assistant. Start here if you just received your board.
+Connect your board to WiFi, wire up your fans, and adopt it into Home Assistant. Start here if you just received your board. Firmware comes pre-flashed from the factory.
 
 ### [Home Assistant Integration](/getting-started/home-assistant/)
 

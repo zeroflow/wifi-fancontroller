@@ -47,77 +47,85 @@ interval:
             lambda: 'return ${fan1_led_enabled};'
           then:
             - lambda: |-
-                float rpm = id(fan1_speed).state;
-                if (isnan(rpm)) rpm = 0;
-                if (rpm < 0) rpm = 0;
-                if (rpm > ${full_rpm}) rpm = ${full_rpm};
-                float f = rpm / float(${full_rpm});
-                float hue = f * 120.0f; // 0° = red, 120° = green
-                float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
-                float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
-                auto led = id(fan1_led).turn_on();
-                led.set_transition_length(0);
-                led.set_rgb(r, g, 0.0);
-                led.set_brightness(${brightness});
-                led.set_effect("none");
-                led.perform();
+                if (!id(auto_led_override)) {
+                  float rpm = id(fan1_speed).state;
+                  if (isnan(rpm)) rpm = 0;
+                  if (rpm < 0) rpm = 0;
+                  if (rpm > ${full_rpm}) rpm = ${full_rpm};
+                  float f = rpm / float(${full_rpm});
+                  float hue = f * 120.0f; // 0° = red, 120° = green
+                  float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
+                  float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
+                  auto led = id(fan1_led).turn_on();
+                  led.set_transition_length(0);
+                  led.set_rgb(r, g, 0.0);
+                  led.set_brightness(${brightness});
+                  led.set_effect("none");
+                  led.perform();
+                }
       # Fan 2 LED color based on RPM
       - if:
           condition:
             lambda: 'return ${fan2_led_enabled};'
           then:
             - lambda: |-
-                float rpm = id(fan2_speed).state;
-                if (isnan(rpm)) rpm = 0;
-                if (rpm < 0) rpm = 0;
-                if (rpm > ${full_rpm}) rpm = ${full_rpm};
-                float f = rpm / float(${full_rpm});
-                float hue = f * 120.0f; // 0° = red, 120° = green
-                float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
-                float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
-                auto led = id(fan2_led).turn_on();
-                led.set_transition_length(0);
-                led.set_rgb(r, g, 0.0);
-                led.set_brightness(${brightness});
-                led.set_effect("none");
-                led.perform();
+                if (!id(auto_led_override)) {
+                  float rpm = id(fan2_speed).state;
+                  if (isnan(rpm)) rpm = 0;
+                  if (rpm < 0) rpm = 0;
+                  if (rpm > ${full_rpm}) rpm = ${full_rpm};
+                  float f = rpm / float(${full_rpm});
+                  float hue = f * 120.0f; // 0° = red, 120° = green
+                  float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
+                  float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
+                  auto led = id(fan2_led).turn_on();
+                  led.set_transition_length(0);
+                  led.set_rgb(r, g, 0.0);
+                  led.set_brightness(${brightness});
+                  led.set_effect("none");
+                  led.perform();
+                }
       # Fan 3 LED color based on RPM
       - if:
           condition:
             lambda: 'return ${fan3_led_enabled};'
           then:
             - lambda: |-
-                float rpm = id(fan3_speed).state;
-                if (isnan(rpm)) rpm = 0;
-                if (rpm < 0) rpm = 0;
-                if (rpm > ${full_rpm}) rpm = ${full_rpm};
-                float f = rpm / float(${full_rpm});
-                float hue = f * 120.0f; // 0° = red, 120° = green
-                float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
-                float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
-                auto led = id(fan3_led).turn_on();
-                led.set_transition_length(0);
-                led.set_rgb(r, g, 0.0);
-                led.set_brightness(${brightness});
-                led.set_effect("none");
-                led.perform();
+                if (!id(auto_led_override)) {
+                  float rpm = id(fan3_speed).state;
+                  if (isnan(rpm)) rpm = 0;
+                  if (rpm < 0) rpm = 0;
+                  if (rpm > ${full_rpm}) rpm = ${full_rpm};
+                  float f = rpm / float(${full_rpm});
+                  float hue = f * 120.0f; // 0° = red, 120° = green
+                  float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
+                  float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
+                  auto led = id(fan3_led).turn_on();
+                  led.set_transition_length(0);
+                  led.set_rgb(r, g, 0.0);
+                  led.set_brightness(${brightness});
+                  led.set_effect("none");
+                  led.perform();
+                }
       # Fan 4 LED color based on RPM
       - if:
           condition:
             lambda: 'return ${fan4_led_enabled};'
           then:
             - lambda: |-
-                float rpm = id(fan4_speed).state;
-                if (isnan(rpm)) rpm = 0;
-                if (rpm < 0) rpm = 0;
-                if (rpm > ${full_rpm}) rpm = ${full_rpm};
-                float f = rpm / float(${full_rpm});
-                float hue = f * 120.0f; // 0° = red, 120° = green
-                float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
-                float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
-                auto led = id(fan4_led).turn_on();
-                led.set_transition_length(0);
-                led.set_rgb(r, g, 0.0);
-                led.set_brightness(${brightness});
-                led.set_effect("none");
-                led.perform();
+                if (!id(auto_led_override)) {
+                  float rpm = id(fan4_speed).state;
+                  if (isnan(rpm)) rpm = 0;
+                  if (rpm < 0) rpm = 0;
+                  if (rpm > ${full_rpm}) rpm = ${full_rpm};
+                  float f = rpm / float(${full_rpm});
+                  float hue = f * 120.0f; // 0° = red, 120° = green
+                  float r = (hue < 60.0f) ? 1.0f : (120.0f - hue) / 60.0f;
+                  float g = (hue < 60.0f) ? hue / 60.0f : 1.0f;
+                  auto led = id(fan4_led).turn_on();
+                  led.set_transition_length(0);
+                  led.set_rgb(r, g, 0.0);
+                  led.set_brightness(${brightness});
+                  led.set_effect("none");
+                  led.perform();
+                }

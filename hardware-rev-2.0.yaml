@@ -10,24 +10,8 @@
 #   packages:
 #     fancontroller: github://zeroflow/wifi-fancontroller/hardware-rev-2.0.yaml@main
 
-# Safety floor globals
-globals:
-  - id: fan1_safety_floor
-    type: float
-    restore_value: no
-    initial_value: '0.0'
-  - id: fan2_safety_floor
-    type: float
-    restore_value: no
-    initial_value: '0.0'
-  - id: fan3_safety_floor
-    type: float
-    restore_value: no
-    initial_value: '0.0'
-  - id: fan4_safety_floor
-    type: float
-    restore_value: no
-    initial_value: '0.0'
+packages:
+  globals: !include modules/globals.yaml
 
 # I2C Bus
 i2c:
@@ -88,6 +72,7 @@ fan:
 sensor:
   # Temperature & Humidity Sensor
   - platform: hdc1080
+    id: temperature_sensor
     temperature:
       name: "Temperature"
       id: fancontroller_temperature

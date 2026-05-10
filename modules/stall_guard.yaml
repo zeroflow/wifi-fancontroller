@@ -12,7 +12,7 @@
 # temperature_curve, temperature_pid). During stall recovery, this module sets
 # the fan{1-4}_safety_floor globals defined in the hardware package. Temperature
 # modules respect these floors and will not command a fan speed below the floor.
-# Commanding a fan OFF (0%) is always honored — the floor only applies to non-zero speeds.
+# Commanding a fan OFF (0%) is always honored - the floor only applies to non-zero speeds.
 #
 # IMPORTANT: Do NOT use this module together with rpm_pi_control.
 # rpm_pi_control writes directly to pwm_fanX outputs and will conflict.
@@ -295,7 +295,7 @@ interval:
             lambda: 'return id(stall_guard_fan1_enabled).state;'
           then:
             - lambda: |-
-                // Skip if fan is commanded OFF — auto-clear stall state
+                // Skip if fan is commanded OFF - auto-clear stall state
                 if (!id(fan1).state) {
                   id(stall_guard_fan1_grace_count) = 0;
                   if (id(stall_guard_fan1_active)) {
@@ -308,11 +308,11 @@ interval:
                   }
                   return;
                 }
-                // Fan is commanded ON — check RPM
+                // Fan is commanded ON - check RPM
                 float rpm = id(fan1_speed).state;
                 if (isnan(rpm)) rpm = 0;
                 if (rpm > id(stall_guard_min_rpm_number).state) {
-                  // Fan is spinning — reset grace count, leave stall_active unchanged
+                  // Fan is spinning - reset grace count, leave stall_active unchanged
                   id(stall_guard_fan1_grace_count) = 0;
                   return;
                 }
@@ -321,7 +321,7 @@ interval:
                 if (id(stall_guard_fan1_grace_count) < (int)id(stall_guard_grace_ticks_number).state) {
                   return;  // Still in grace period
                 }
-                // Grace expired — declare/continue stall
+                // Grace expired - declare/continue stall
                 // Initialize raised_pct from fan entity speed on first stall tick
                 if (!id(stall_guard_fan1_active)) {
                   id(stall_guard_fan1_raised_pct) = (float)id(fan1).speed;
@@ -349,7 +349,7 @@ interval:
             lambda: 'return id(stall_guard_fan2_enabled).state;'
           then:
             - lambda: |-
-                // Skip if fan is commanded OFF — auto-clear stall state
+                // Skip if fan is commanded OFF - auto-clear stall state
                 if (!id(fan2).state) {
                   id(stall_guard_fan2_grace_count) = 0;
                   if (id(stall_guard_fan2_active)) {
@@ -394,7 +394,7 @@ interval:
             lambda: 'return id(stall_guard_fan3_enabled).state;'
           then:
             - lambda: |-
-                // Skip if fan is commanded OFF — auto-clear stall state
+                // Skip if fan is commanded OFF - auto-clear stall state
                 if (!id(fan3).state) {
                   id(stall_guard_fan3_grace_count) = 0;
                   if (id(stall_guard_fan3_active)) {
@@ -439,7 +439,7 @@ interval:
             lambda: 'return id(stall_guard_fan4_enabled).state;'
           then:
             - lambda: |-
-                // Skip if fan is commanded OFF — auto-clear stall state
+                // Skip if fan is commanded OFF - auto-clear stall state
                 if (!id(fan4).state) {
                   id(stall_guard_fan4_grace_count) = 0;
                   if (id(stall_guard_fan4_active)) {

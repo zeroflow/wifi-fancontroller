@@ -61,6 +61,6 @@ captive_portal:
 # 5. Create HA automations on the binary sensors for notifications
 #
 # Configuration:
-#   stall_guard_interval  — How often to check RPM (compile-time, default: 5s)
+#   stall_guard_interval  - How often to check RPM (compile-time, default: 5s)
 #   Min RPM, step %, grace ticks, and per-fan enable/disable are adjustable
 #   at runtime via Home Assistant number and switch entities.

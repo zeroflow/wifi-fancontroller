@@ -6,6 +6,24 @@ interface Props {
 const { manifest, label } = Astro.props;
 ---
 <esp-web-install-button manifest={manifest}>
-  {label && <span slot="activate">{label}</span>}
+  {label && <button slot="activate" class="flash-button">{label}</button>}
 </esp-web-install-button>
 <script is:inline type="module" src="https://unpkg.com/esp-web-tools@8.0.6/dist/web/install-button.js?module"></script>
+
+<style>
+  .flash-button {
+    display: inline-block;
+    padding: 0.5rem 1.25rem;
+    background: var(--sl-color-accent);
+    color: var(--sl-color-black);
+    font-weight: 600;
+    font-size: 0.95rem;
+    border: none;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: opacity 0.2s ease;
+  }
+  .flash-button:hover {
+    opacity: 0.85;
+  }
+</style>

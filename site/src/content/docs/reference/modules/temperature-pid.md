@@ -26,7 +26,7 @@ Choose PID when you need precise temperature maintenance with automatic adjustme
 For simpler setups, consider [Temperature Linear](/reference/modules/temperature-linear/) (three-zone mapping) or [Temperature Curve](/reference/modules/temperature-curve/) (custom multi-point profile). See the [modules overview](/reference/modules/) for a comparison table.
 
 :::tip[Works with Stall Guard]
-This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature PID will respect during recovery — the safety floor takes precedence over both PID output and the minimum fan speed setting. No extra configuration needed — just include both modules.
+This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature PID will respect during recovery. The safety floor takes precedence over both PID output and the minimum fan speed setting. No extra configuration needed, just include both modules.
 :::
 
 ## Configuration

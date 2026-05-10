@@ -1,11 +1,54 @@
-version: '3.8'
-
 services:
   astro:
     image: node:22-alpine
     working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    command: >
+      sh -c "
+        mkdir -p public/firmware &&
+        if [ -z \"$$(ls -A public/firmware/*.json 2>/dev/null)\" ]; then
+          echo 'Fetching firmware files from latest GitHub release...' &&
+          wget -q -O /tmp/release.json https://api.github.com/repos/zeroflow/wifi-fancontroller/releases/latest &&
+          for url in $$(grep -o '\"browser_download_url\": \"[^\"]*\"' /tmp/release.json | cut -d'\"' -f4); do
+            echo \"  Downloading $$(basename $$url)\" &&
+            wget -q -P public/firmware \"$$url\";
+          done &&
+          rm -f /tmp/release.json &&
+          echo 'Firmware files ready.' ;
+        else
+          echo 'Firmware files already present, skipping download.' ;
+        fi &&
+        npm ci &&
+        npm run dev -- --host 0.0.0.0
+      "
     ports:
       - "4321:4321"
+    volumes:
+      - ./site:/app
+  astro-test:
+    image: node:22-alpine
+    working_dir: /app
+    profiles:
+      - test
+    command: >
+      sh -c "
+        mkdir -p public/firmware &&
+        if [ -z \"$$(ls -A public/firmware/*.json 2>/dev/null)\" ]; then
+          echo 'Fetching firmware files from latest GitHub release...' &&
+          wget -q -O /tmp/release.json https://api.github.com/repos/zeroflow/wifi-fancontroller/releases/latest &&
+          for url in $$(grep -o '\"browser_download_url\": \"[^\"]*\"' /tmp/release.json | cut -d'\"' -f4); do
+            echo \"  Downloading $$(basename $$url)\" &&
+            wget -q -P public/firmware \"$$url\";
+          done &&
+          rm -f /tmp/release.json &&
+          echo 'Firmware files ready.' ;
+        else
+          echo 'Firmware files already present, skipping download.' ;
+        fi &&
+        npm ci &&
+        npm run build &&
+        npx astro preview --host 0.0.0.0
+      "
+    ports:
+      - "4322:4321"
     volumes:
       - ./site:/app

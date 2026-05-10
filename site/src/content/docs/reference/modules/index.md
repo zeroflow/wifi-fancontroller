@@ -41,6 +41,7 @@ Modules define their configuration through `vars:` -- substitution variables tha
 | [RPM PI Control](/reference/modules/rpm-pi-control/) | Advanced | Exact RPM targeting per fan | 31 (numbers, sensors, switches, button) | All |
 | [RPM Status LEDs](/reference/modules/rpm-status-leds/) | Simple | Visual RPM feedback via board LEDs | 0 (writes to existing LED entities) | Rev 3.1+ |
 | [Stall Guard](/reference/modules/stall-guard/) | Simple | Fan stall detection and automatic recovery | 9 (binary sensors, text sensors, button) | All |
+| [USR Buttons](/reference/modules/usr-buttons/) | Simple | Physical button control of individual fan speeds | 5 (button, 4 switches) | Rev 3.1+ |
 
 ## Compatibility
 
@@ -58,14 +59,15 @@ You can only use **one** temperature control module at a time. These modules def
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
 
-| | Temp PID | Temp Linear | Temp Curve | RPM PI Control | RPM Status LEDs | Stall Guard |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Temperature PID** | -- | No | No | Yes | Yes | Yes |
-| **Temperature Linear** | No | -- | No | Yes | Yes | Yes |
-| **Temperature Curve** | No | No | -- | Yes | Yes | Yes |
-| **RPM PI Control** | Yes | Yes | Yes | -- | Yes | No |
-| **RPM Status LEDs** | Yes | Yes | Yes | Yes | -- | Yes |
-| **Stall Guard** | Yes | Yes | Yes | No | Yes | -- |
+| | Temp PID | Temp Linear | Temp Curve | RPM PI Control | RPM Status LEDs | Stall Guard | USR Buttons |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Temperature PID** | -- | No | No | Yes | Yes | Yes | Yes |
+| **Temperature Linear** | No | -- | No | Yes | Yes | Yes | Yes |
+| **Temperature Curve** | No | No | -- | Yes | Yes | Yes | Yes |
+| **RPM PI Control** | Yes | Yes | Yes | -- | Yes | No | Yes |
+| **RPM Status LEDs** | Yes | Yes | Yes | Yes | -- | Yes | Yes |
+| **Stall Guard** | Yes | Yes | Yes | No | Yes | -- | Yes |
+| **USR Buttons** | Yes | Yes | Yes | Yes | Yes | Yes | -- |
 
 ## Module List
 
@@ -86,3 +88,7 @@ Most modules can be combined freely. The two exceptions are: temperature modules
 ### Fan Safety
 
 - **[Stall Guard](/reference/modules/stall-guard/)** -- Detects fan stalls (0 RPM when commanded on) and automatically raises fan speed to attempt recovery. Works cooperatively with temperature modules via a safety floor mechanism. Flags persistent warnings in Home Assistant so you know to investigate.
+
+### Physical Controls
+
+- **[USR Buttons](/reference/modules/usr-buttons/)** -- Direct fan speed control via the three on-board USR buttons with per-fan RGB LED feedback. Manual overrides persist until cleared through Home Assistant. Requires Rev 3.1+ hardware.
