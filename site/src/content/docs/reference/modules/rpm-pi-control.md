@@ -26,7 +26,7 @@ The module accepts these substitution variables in the `packages:` block:
 | `friendly_name` | `"Fancontroller"` | Device name prefix for all HA entities |
 | `kp` | `"50"` | Proportional gain (UI-scaled, see [scaling section](#scaling-convention-x100000)) |
 | `ki` | `"10"` | Integral gain (UI-scaled, see [scaling section](#scaling-convention-x100000)) |
-| `update_interval` | `"1"` | Control loop interval in seconds |
+| `update_interval` | `"1s"` | Control loop interval (ESPHome time literal, e.g. `"1s"`, `"500ms"`) |
 
 Parameters like integral limit, deadband, PWM minimum, and setpoint change threshold are **not** YAML substitution variables. They are runtime-adjustable through Home Assistant number entities (see below).
 

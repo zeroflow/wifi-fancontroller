@@ -33,7 +33,10 @@
 #   - friendly_name: Device name prefix (default: "Fancontroller")
 #   - kp: Proportional gain coefficient scaled by 100000 (default: 50, actual: 0.0005)
 #   - ki: Integral gain coefficient scaled by 100000 (default: 10, actual: 0.0001)
-#   - update_interval: Control loop update interval in seconds (default: 1s)
+#   - update_interval: Control loop interval as an ESPHome time literal,
+#                      e.g. "1s", "500ms" (default: "1s"). dt for the PI math
+#                      is derived from real elapsed millis(), so the value here
+#                      only sets how often the loop runs.
 #
 # Features:
 #   - Individual target RPM setpoints for each of 4 fans
@@ -117,6 +120,13 @@ globals:
     type: float
     restore_value: no
     initial_value: '0.0'
+
+  # Last control-loop run timestamp (millis) for dt calculation from real
+  # elapsed time. Robust against scheduler jitter and WiFi-reconnect pauses.
+  - id: pi_last_run_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
 
 # Configuration numbers for PI parameters
 number:
@@ -425,7 +435,15 @@ interval:
           // Get PI parameters (scale down by 100000 for actual control values)
           float kp = id(pi_kp).state / 100000.0;
           float ki = id(pi_ki).state / 100000.0;
-          float dt = ${update_interval};
+          // dt from real elapsed time, not the configured interval. Handles
+          // scheduler jitter and WiFi-reconnect stalls. First run uses 1.0s
+          // fallback; long pauses are clamped to keep the integral term sane.
+          uint32_t now = millis();
+          float dt = (id(pi_last_run_ms) == 0)
+                       ? 1.0f
+                       : (now - id(pi_last_run_ms)) / 1000.0f;
+          id(pi_last_run_ms) = now;
+          dt = clamp(dt, 0.1f, 10.0f);
           float integral_limit = id(pi_integral_limit).state;
           float pwm_min = id(pwm_minimum_pi).state / 100.0;
           float deadband = id(pi_deadband).state;
