@@ -7,7 +7,7 @@
 #   When a safety module (e.g. stall_guard) sets a floor, this module
 #   will not command a running fan below that floor value.
 #   Commanding a fan OFF (0%) is always honored - the floor only applies to non-zero speeds.
-#   Safety floor takes precedence over both PID output and pwm_minimum.
+#   Safety floor takes precedence over both PID output and pwm_minimum_pid.
 #
 # Credit to https://github.com/patrickcollins12/esphome-fan-controller
 # 
@@ -166,7 +166,7 @@ number:
   - platform: template
     entity_category: config
     name: Fan Minimum Speed
-    id: pwm_minimum
+    id: pwm_minimum_pid
     unit_of_measurement: "%"
     restore_value: true
     min_value: 0
@@ -185,7 +185,7 @@ output:
         float write_val = 
           (id(manual_fan_control).state) ?
             id(manual_fan_control).speed : state*100.0;
-        float pwm_min = id(pwm_minimum).state;
+        float pwm_min = id(pwm_minimum_pid).state;
         if (write_val < pwm_min) {
           write_val = pwm_min;
         }

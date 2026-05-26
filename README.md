@@ -343,7 +343,7 @@ packages:
           friendly_name: "Server Rack"
           kp: "0.005"           # Proportional gain
           ki: "0.001"           # Integral gain
-          update_interval: "2"  # Update every 2 seconds (matches sensor update)
+          update_interval: "2s"  # Update every 2 seconds (matches sensor update)
 
 # REQUIRED: Override hardware sensors for faster updates
 sensor:

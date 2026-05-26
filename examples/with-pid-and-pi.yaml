@@ -1,9 +1,9 @@
-# Example: Hardware Rev 3.1 with RPM-based PI Control
+# Example: Hardware Rev 3.1 with Temperature based PID & RPM-based PI Control 
 #
-# This example shows how to use the RPM PI control module to maintain
-# precise fan speeds. The PI controller automatically adjusts PWM output
-# to keep fans running at the target RPM, regardless of load changes,
-# fan aging, or voltage variations.
+# This example shows how both a PID (temperature) and PI (speed) controler
+# can be used at the same time.
+# It is important, that after flashing, only one control mode is activated per fan.
+# So e.g., if "PID Control Fan 1" on ON, PI Control Fan 1 needs to be OFF.
 #
 # IMPORTANT: Hardware Rev 3.1 sensors update every 1s, which is fast enough
 # for stable PI control. No additional sensor filtering is required.
@@ -13,6 +13,10 @@ packages:
     url: https://github.com/zeroflow/wifi-fancontroller
     ref: main
     files: [hardware-rev-3.1.yaml]
+  temperature_pid:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/temperature_pid.yaml]
   rpm_pi_control:
     url: https://github.com/zeroflow/wifi-fancontroller
     ref: main

@@ -18,9 +18,9 @@
 #         - path: modules/rpm_pi_control.yaml]
 #           vars:
 #             friendly_name: "My Fan Controller"
-#             kp: "50"             # Proportional gain (scaled by 100000, actual: 0.0005)
-#             ki: "10"             # Integral gain (scaled by 100000, actual: 0.0001)
-#             update_interval: "1" # Control loop interval (matches 1s sensor update)
+#             kp: "50"              # Proportional gain (scaled by 100000, actual: 0.0005)
+#             ki: "10"              # Integral gain (scaled by 100000, actual: 0.0001)
+#             update_interval: "1s" # Control loop interval (matches 1s sensor update)
 #
 #   # OPTIONAL: Add filtering only if your fans have very noisy tachometer signals
 #   sensor:
@@ -33,7 +33,7 @@
 #   - friendly_name: Device name prefix (default: "Fancontroller")
 #   - kp: Proportional gain coefficient scaled by 100000 (default: 50, actual: 0.0005)
 #   - ki: Integral gain coefficient scaled by 100000 (default: 10, actual: 0.0001)
-#   - update_interval: Control loop update interval in seconds (default: 1)
+#   - update_interval: Control loop update interval in seconds (default: 1s)
 #
 # Features:
 #   - Individual target RPM setpoints for each of 4 fans
@@ -60,7 +60,7 @@ substitutions:
   friendly_name: "Fancontroller" # default
   kp: "50"      # Scaled by 100000, actual value: 0.0005
   ki: "10"      # Scaled by 100000, actual value: 0.0001
-  update_interval: "1"
+  update_interval: "1s"
 
 # Globals for storing PI controller state
 globals:
@@ -169,7 +169,7 @@ number:
     step: 1
     optimistic: true
     entity_category: config
-    id: pwm_minimum
+    id: pwm_minimum_pi
     unit_of_measurement: "%"
 
   # Deadband: error range where no control action is taken
@@ -419,7 +419,7 @@ button:
 # Main PI control loop
 interval:
   - id: pi_control_interval
-    interval: ${update_interval}s
+    interval: ${update_interval}
     then:
       - lambda: |-
           // Get PI parameters (scale down by 100000 for actual control values)
@@ -427,7 +427,7 @@ interval:
           float ki = id(pi_ki).state / 100000.0;
           float dt = ${update_interval};
           float integral_limit = id(pi_integral_limit).state;
-          float pwm_min = id(pwm_minimum).state / 100.0;
+          float pwm_min = id(pwm_minimum_pi).state / 100.0;
           float deadband = id(pi_deadband).state;
           float setpoint_threshold = id(pi_setpoint_threshold).state;
 

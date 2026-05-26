@@ -55,19 +55,23 @@ You can only use **one** temperature control module at a time. These modules def
 **Stall Guard** and **RPM PI Control** cannot be used together. RPM PI Control writes directly to PWM outputs, bypassing the fan entity that Stall Guard uses for recovery. RPM PI Control's feedback loop already handles stall-like scenarios through its closed-loop regulation.
 :::
 
+:::caution
+**Temperature PID** and **RPM PI Control** can run side by side, but only when each fan is assigned to one or the other. PID exposes `PID Control Fan 1`--`Fan 4` switches (default ON), PI exposes `PI Control Fan 1`--`Fan 4` switches (default OFF). If both are enabled for the same fan, the two loops fight over the PWM output. See [`examples/with-pid-and-pi.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-pid-and-pi.yaml) for a working split configuration.
+:::
+
 ### Compatibility matrix
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
 
 | | Temp PID | Temp Linear | Temp Curve | RPM PI Control | RPM Status LEDs | Stall Guard | USR Buttons |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Temperature PID** | -- | No | No | Yes | Yes | Yes | Yes |
-| **Temperature Linear** | No | -- | No | Yes | Yes | Yes | Yes |
-| **Temperature Curve** | No | No | -- | Yes | Yes | Yes | Yes |
-| **RPM PI Control** | Yes | Yes | Yes | -- | Yes | No | Yes |
-| **RPM Status LEDs** | Yes | Yes | Yes | Yes | -- | Yes | Yes |
-| **Stall Guard** | Yes | Yes | Yes | No | Yes | -- | Yes |
-| **USR Buttons** | Yes | Yes | Yes | Yes | Yes | Yes | -- |
+| **Temperature PID** | -- | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ |
+| **Temperature Linear** | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve** | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ |
+| **RPM PI Control** | ⚠️ | ✅ | ✅ | -- | ✅ | ❌ | ✅ |
+| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ |
+| **Stall Guard** | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ |
+| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
 
 ## Module List
 
