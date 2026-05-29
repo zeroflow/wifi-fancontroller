@@ -38,6 +38,10 @@
 #   - max_integral: Max integral term value (default: 0.0)
 #   - output_averaging_samples: Output averaging samples (default: 1)
 #   - derivative_averaging_samples: Derivative averaging samples (default: 5)
+#   - min_temperature: Minimum Temperature shown for the climate component range
+#   - max_temperature: Maximum Temperature shown for the climate component range
+#   - target_temperature_step: Granularity allowed in the climate component  input
+#   - current_temperature_step: Granularity shown in the climate component as current value
 #
 # Features:
 #   - Climate entity (thermostat) for Home Assistant integration
@@ -61,6 +65,10 @@ substitutions:
   max_integral: "0.0"
   output_averaging_samples: "1"
   derivative_averaging_samples: "5"
+  min_temperature: 20
+  max_temperature: 50
+  target_temperature_step: 0.1
+  current_temperature_step: 0.1
 
 number:
   ## OPTIONAL:
@@ -360,8 +368,11 @@ climate:
         
     # The extents of the HA Thermostat
     visual:
-      min_temperature: 20 °C
-      max_temperature: 50 °C
+      min_temperature: $min_temperature
+      max_temperature: $max_temperature
+      temperature_step:
+        target_temperature: $target_temperature_step
+        current_temperature: $current_temperature_step
   
     # Boot-time fallback only (internal 0-1 scale).
     # Overridden within milliseconds by the number entities above (which
