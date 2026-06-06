@@ -30,6 +30,8 @@ A CE-certified, ESP32-based PWM fan controller designed for home server racks, m
 
 * **Power**
   * 12V DC Barrel Input (5.5x2.1mm)
+  * Max total input current: 2.5A (set by the DC barrel jack -- applies to the sum of all fans plus board load, not per fan header)
+  * Size your 12V PSU to the combined draw of the fans you connect, with headroom
   * Low power operation: 0.25W typical, 0.07W deep sleep
 * **Fan Control**
   * 4× PWM Fan Outputs with RPM monitoring
