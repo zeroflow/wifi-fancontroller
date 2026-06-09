@@ -11,7 +11,7 @@ jobs:
       issues: write
     steps:
       - name: 'Auto-assign issue'
-        uses: pozil/auto-assign-issue@v3
+        uses: pozil/auto-assign-issue@v4
         with:
           assignees: zeroflow
           numOfAssignee: 1
