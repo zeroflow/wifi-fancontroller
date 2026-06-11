@@ -29,6 +29,7 @@ This table reflects user-reported observations. PWM behavior can vary between fi
 | Fan | RPM Range (per spec) | Spins down to 0 RPM |
 |-----|----------------------|---------------------|
 | [Arctic P12 Max](https://www.arctic.de/en/P12-Max/ACFAN00280A) | 400-3300 RPM | Yes (user reported) |
+| [Arctic S12038-4K](https://www.arctic.de/S12038-4K/ACFAN00296A) | 600-4000 RPM (400-4000 RPM tested) | No, holds 400 RPM when "off" (user reported, [#48](https://github.com/zeroflow/wifi-fancontroller/issues/48)); tested with 4 fans on rev 3.3, firmware 3.3 / ESPHome 2026.5.2 |
 | [Noctua NF-A14 Industrial PPC PWM 3000RPM](https://www.noctua.at/en/products/nf-a14-industrialppc-3000-pwm) | 0-3000 RPM | Yes (user reported) |
 | [Noctua NF-A12x25 120mm PWM](https://www.noctua.at/en/products/nf-a12x25-pwm) | 0-2000 RPM | Yes (user reported) |
 | [Noctua NF-A20 PWM](https://www.noctua.at/en/products/nf-a20-pwm) | 350-800 RPM | No (user reported) |
