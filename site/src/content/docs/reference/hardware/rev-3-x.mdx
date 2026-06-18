@@ -147,8 +147,26 @@ This pin table applies to all Rev 3.1, 3.2, and 3.3 boards.
 | GPIO37 | USR2 |
 | GPIO38 | USR1 |
 | GPIO42 | Neopixel Expansion Port |
+| GPIO43 | UART0 TX (U0TXD), Serial Flashing Header |
+| GPIO44 | UART0 RX (U0RXD), Serial Flashing Header |
 | GPIO45 | unused (strapping) |
 | GPIO46 | unused (strapping) |
+
+## Serial Flashing Header (TX/RX)
+
+In addition to the USB-C port, the board exposes the ESP32-S2 UART0 on a serial header for flashing and serial logs. This is the fallback path when USB-C is not detected (see the USB troubleshooting note above) and the channel ESPHome's `logger` uses by default.
+
+| Signal | Pin | Description |
+|--------|-----|-------------|
+| TX | GPIO43 | UART0 transmit (U0TXD), board to host |
+| RX | GPIO44 | UART0 receive (U0RXD), host to board |
+| GND | GND | Common ground (required for serial) |
+
+Connect a 3.3V USB-to-serial adapter (TX to RX, RX to TX, GND to GND). To enter the bootloader for flashing, hold BOOT (GPIO0) while resetting the board.
+
+<Aside type="caution" title="3.3V logic only">
+The ESP32-S2 UART pins are 3.3V. Do not connect a 5V serial adapter directly to TX/RX.
+</Aside>
 
 ## I2C Extension Port
 
@@ -161,6 +179,21 @@ The board offers an I2C extension port above Fan 4.
 | 3 | SCL | GPIO 34, 4.7k Pull-Up |
 | 4 | SDA | GPIO 33, 4.7k Pull-Up |
 | 5 | +3V3 | |
+
+## Qwiic Connector
+
+The board offers a Qwiic connector (standard JST-SH 4-pin, 1mm pitch) for solderless I2C expansion. It shares the **same I2C bus** as the 100mil I2C extension port and the onboard HDC1080 sensor, so addresses must not conflict across both ports.
+
+| Nr. | Pin | Description |
+|-----|-----|-------------|
+| 1 | GND | Black wire |
+| 2 | +3V3 | Red wire |
+| 3 | SDA | GPIO 33, blue wire, 4.7k Pull-Up |
+| 4 | SCL | GPIO 34, yellow wire, 4.7k Pull-Up |
+
+<Aside type="note" title="Shared I2C bus">
+The Qwiic port, the 100mil I2C extension port, and the onboard HDC1080 temperature/humidity sensor are all on the same I2C bus (GPIO33 SDA / GPIO34 SCL). Devices on any of these connectors share that bus.
+</Aside>
 
 ## SMD Expansion Port
 
