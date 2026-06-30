@@ -450,6 +450,10 @@ sensor:
             id: curve_proxy_output
             level: !lambda 'return x / 100.0;'
 
+# NOTE: The write_action lambda below is a verbatim copy of the one in
+# modules/temperature_curve.yaml (per-fan auto_control + usr_override +
+# safety_floor gating). ESPHome YAML cannot share lambda blocks across
+# modules, so every temperature module duplicates it. Keep the two in sync.
 output:
   - platform: template
     id: curve_proxy_output
