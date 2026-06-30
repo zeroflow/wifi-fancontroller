@@ -38,6 +38,7 @@ Modules define their configuration through `vars:` -- substitution variables tha
 | [Temperature PID](/reference/modules/temperature-pid/) | Advanced | Precise temperature target with automatic adjustment | 20 (climate, numbers, sensors, switches, fan, button) | All |
 | [Temperature Linear](/reference/modules/temperature-linear/) | Simple | Straightforward temperature-to-speed mapping | 10 (numbers, sensor, switches) | All |
 | [Temperature Curve](/reference/modules/temperature-curve/) | Medium | Custom multi-point fan profiles | 16 (numbers, sensor, switches, binary sensor) | All |
+| [Dual Curve](/reference/modules/dual-curve/) | Medium | Two switchable profiles (e.g. aggressive vs defensive) | 27 (numbers, sensor, switches, binary sensor) | All |
 | [RPM PI Control](/reference/modules/rpm-pi-control/) | Advanced | Exact RPM targeting per fan | 31 (numbers, sensors, switches, button) | All |
 | [RPM Status LEDs](/reference/modules/rpm-status-leds/) | Simple | Visual RPM feedback via board LEDs | 0 (writes to existing LED entities) | Rev 3.1+ |
 | [Stall Guard](/reference/modules/stall-guard/) | Simple | Fan stall detection and automatic recovery | 9 (binary sensors, text sensors, button) | All |
@@ -48,7 +49,7 @@ Modules define their configuration through `vars:` -- substitution variables tha
 ### Temperature modules are mutually exclusive
 
 :::caution
-You can only use **one** temperature control module at a time. These modules define overlapping internal component IDs -- PID and Linear both define `proxy_output`, while Linear and Curve both define `auto_control_fan1`--`auto_control_fan4` switches. Even where IDs don't conflict, running two temperature controllers simultaneously would cause unpredictable fan behavior.
+You can only use **one** temperature control module at a time (PID, Linear, Curve, or Dual Curve). These modules define overlapping internal component IDs -- PID and Linear both define `proxy_output`, while Linear, Curve, and Dual Curve all define `auto_control_fan1`--`auto_control_fan4` switches. Even where IDs don't conflict, running two temperature controllers simultaneously would cause unpredictable fan behavior.
 :::
 
 :::caution
@@ -63,15 +64,16 @@ You can only use **one** temperature control module at a time. These modules def
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
 
-| | Temp PID | Temp Linear | Temp Curve | RPM PI Control | RPM Status LEDs | Stall Guard | USR Buttons |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Temperature PID** | -- | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ |
-| **Temperature Linear** | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve** | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ |
-| **RPM PI Control** | ⚠️ | ✅ | ✅ | -- | ✅ | ❌ | ✅ |
-| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ |
-| **Stall Guard** | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ |
-| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
+| | Temp PID | Temp Linear | Temp Curve | Dual Curve | RPM PI Control | RPM Status LEDs | Stall Guard | USR Buttons |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Temperature PID** | -- | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ |
+| **Temperature Linear** | ❌ | -- | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve** | ❌ | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Dual Curve** | ❌ | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ |
+| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | -- | ✅ | ❌ | ✅ |
+| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ |
+| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ |
+| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
 
 ## Module List
 
@@ -82,6 +84,8 @@ Most modules can be combined freely. The two exceptions are: temperature modules
 - **[Temperature Linear](/reference/modules/temperature-linear/)** -- Simple three-zone mapping from temperature to fan speed. No complex tuning required -- set your thresholds and you're done.
 
 - **[Temperature Curve](/reference/modules/temperature-curve/)** -- Define a custom 5-point temperature-to-speed curve for precise control over how fans respond at different temperatures. Includes preset profiles for common scenarios.
+
+- **[Dual Curve](/reference/modules/dual-curve/)** -- Two complete 5-point curves (for example aggressive and defensive) switchable from Home Assistant with a single switch. Sensor-agnostic; pair the switch with an automation, such as flipping to the defensive curve on poor air quality.
 
 ### RPM Control
 
