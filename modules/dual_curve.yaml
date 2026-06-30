@@ -117,6 +117,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveA_temp1
+    mode: box
   - platform: template
     name: Curve A Speed 1
     icon: mdi:fan-off
@@ -129,6 +130,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveA_speed1
+    mode: box
   - platform: template
     name: Curve A Temperature 2
     icon: mdi:thermometer-low
@@ -141,6 +143,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveA_temp2
+    mode: box
   - platform: template
     name: Curve A Speed 2
     icon: mdi:fan-speed-1
@@ -153,6 +156,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveA_speed2
+    mode: box
   - platform: template
     name: Curve A Temperature 3
     icon: mdi:thermometer
@@ -165,6 +169,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveA_temp3
+    mode: box
   - platform: template
     name: Curve A Speed 3
     icon: mdi:fan-speed-2
@@ -177,6 +182,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveA_speed3
+    mode: box
   - platform: template
     name: Curve A Temperature 4
     icon: mdi:thermometer-high
@@ -189,6 +195,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveA_temp4
+    mode: box
   - platform: template
     name: Curve A Speed 4
     icon: mdi:fan-speed-3
@@ -201,6 +208,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveA_speed4
+    mode: box
   - platform: template
     name: Curve A Temperature 5
     icon: mdi:thermometer-chevron-up
@@ -213,6 +221,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveA_temp5
+    mode: box
   - platform: template
     name: Curve A Speed 5
     icon: mdi:fan-auto
@@ -225,6 +234,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveA_speed5
+    mode: box
   # ---- Curve B ----
   - platform: template
     name: Curve B Temperature 1
@@ -238,6 +248,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveB_temp1
+    mode: box
   - platform: template
     name: Curve B Speed 1
     icon: mdi:fan-off
@@ -250,6 +261,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveB_speed1
+    mode: box
   - platform: template
     name: Curve B Temperature 2
     icon: mdi:thermometer-low
@@ -262,6 +274,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveB_temp2
+    mode: box
   - platform: template
     name: Curve B Speed 2
     icon: mdi:fan-speed-1
@@ -274,6 +287,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveB_speed2
+    mode: box
   - platform: template
     name: Curve B Temperature 3
     icon: mdi:thermometer
@@ -286,6 +300,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveB_temp3
+    mode: box
   - platform: template
     name: Curve B Speed 3
     icon: mdi:fan-speed-2
@@ -298,6 +313,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveB_speed3
+    mode: box
   - platform: template
     name: Curve B Temperature 4
     icon: mdi:thermometer-high
@@ -310,6 +326,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveB_temp4
+    mode: box
   - platform: template
     name: Curve B Speed 4
     icon: mdi:fan-speed-3
@@ -322,6 +339,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveB_speed4
+    mode: box
   - platform: template
     name: Curve B Temperature 5
     icon: mdi:thermometer-chevron-up
@@ -334,6 +352,7 @@ number:
     unit_of_measurement: "°C"
     optimistic: true
     id: curveB_temp5
+    mode: box
   - platform: template
     name: Curve B Speed 5
     icon: mdi:fan-auto
@@ -346,6 +365,7 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curveB_speed5
+    mode: box
 
 switch:
   - platform: template
