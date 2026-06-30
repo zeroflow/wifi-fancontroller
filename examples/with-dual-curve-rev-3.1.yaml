@@ -1,0 +1,91 @@
+# Example: Hardware Rev 3.1 with Dual Temperature Curves
+#
+# This example shows the dual curve module: two complete 5-point curves
+# (A and B) selectable from Home Assistant via the "Curve Selection" switch.
+#
+# Intended use: an aggressive curve (A, switch off) and a defensive curve
+# (B, switch on) that spins up later. The module itself does not read any
+# sensor. To switch automatically, add a Home Assistant automation that
+# toggles the "Curve Selection" switch, for example based on an air-quality
+# sensor: poor air quality turns the switch on (defensive curve).
+
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  dual_curve:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/dual_curve.yaml]
+
+esphome:
+  name: my-fancontroller
+  friendly_name: My Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# Customize both curves here. Curve A is used when the "Curve Selection"
+# switch is OFF, curve B when it is ON. All 20 values are also adjustable
+# live in Home Assistant.
+substitutions:
+  # Curve A - aggressive (switch off): cools hard, early
+  curveA_temp1: "20.0"
+  curveA_speed1: "0.0"
+  curveA_temp2: "22.0"
+  curveA_speed2: "30.0"
+  curveA_temp3: "28.0"
+  curveA_speed3: "60.0"
+  curveA_temp4: "35.0"
+  curveA_speed4: "85.0"
+  curveA_temp5: "40.0"
+  curveA_speed5: "100.0"
+  # Curve B - defensive (switch on): stays quiet longer, spins up later
+  curveB_temp1: "25.0"
+  curveB_speed1: "0.0"
+  curveB_temp2: "35.0"
+  curveB_speed2: "25.0"
+  curveB_temp3: "45.0"
+  curveB_speed3: "50.0"
+  curveB_temp4: "50.0"
+  curveB_speed4: "65.0"
+  curveB_temp5: "55.0"
+  curveB_speed5: "80.0"
+
+# Tip: pair the "Curve Selection" switch with a Home Assistant automation.
+# Example (Home Assistant YAML, lives in HA, not here):
+#
+#   automation:
+#     - alias: "Defensive fan curve on poor air quality"
+#       trigger:
+#         - platform: numeric_state
+#           entity_id: sensor.living_room_pm2_5
+#           above: 35
+#       action:
+#         - service: switch.turn_on
+#           target: { entity_id: switch.my_fancontroller_curve_selection }
