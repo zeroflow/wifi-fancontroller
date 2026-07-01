@@ -28,6 +28,13 @@ Find solutions to common issues below. Each section is organized by symptom so y
 - **Manual add** -- go to **Settings > Devices & Services > Add Integration > ESPHome** and enter the device's IP address manually.
 - **Check HA logs** -- look in **Settings > System > Logs** for API connection errors related to the fan controller.
 
+## Web interface not reachable (port 80 refused)
+
+- **The web server is off by default** -- the firmware ships without the built-in web interface for security and memory reasons, so `http://<board-ip>` returns `ERR_CONNECTION_REFUSED`. This is expected, not a fault.
+- **Home Assistant does not need it** -- the board is controlled over the encrypted ESPHome API. Fan control, sensors, and automations all work without the web interface.
+- **Enable it yourself** -- add the `web_server` component (with authentication) to your own ESPHome config and re-flash. See [Web Interface](/reference/web-server/) for the exact configuration.
+- **`dashboard_import` won't do it** -- importing the package does not start a web server. You have to add the `web_server` block yourself.
+
 ## Temperature or humidity reads wrong
 
 - **Sensor accuracy** -- the HDC1080 sensor has a typical accuracy of +/- 0.2 C for temperature and +/- 2% for relative humidity. Small deviations from a reference thermometer are expected.

@@ -1,0 +1,79 @@
+---
+title: Web Interface
+description: Why the built-in ESPHome web server is disabled by default and how to enable it safely
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+ESPHome can serve a small built-in web page directly from the board, letting you view and control entities from any browser at `http://<board-ip>`. On the WiFi Fan Controller this **web server is disabled by default**, so nothing listens on port 80 and a browser will report `ERR_CONNECTION_REFUSED`.
+
+This page explains why it is off, and how to turn it on in your own ESPHome configuration.
+
+## Why it is off by default
+
+The firmware ships secure-by-default. The built-in web server is left out for two reasons:
+
+- **Security.** Without authentication, the web interface is an open control surface: anyone on your network can reach `http://<board-ip>` and change fan speeds or read sensor data. Shipping it enabled by default would expose that surface on every board without the owner's consent.
+- **Resources.** The web server component uses a significant amount of RAM and flash. Leaving it out keeps the default firmware lean, which matters on the ESP32-S2 used by Rev 2.0 and later.
+
+You don't need the web server for normal use. Home Assistant talks to the board over the encrypted ESPHome native API, which is fully independent of port 80. All fan control, sensors, and automations work whether or not the web interface is enabled.
+
+<Aside type="note" title="dashboard_import does not enable it">
+`dashboard_import` (with or without `import_full_config: true`) only tells the ESPHome Dashboard which package to base a new configuration on. It does not start a web server. To get the web interface back you have to add the `web_server` component to your configuration and re-flash or OTA the board, as shown below.
+</Aside>
+
+## Enabling the web interface
+
+The web server is a standard [ESPHome component](https://esphome.io/components/web_server/). Add it to your own device configuration (the YAML you edit in the ESPHome Dashboard / add-on), then install the update over the air.
+
+<Aside type="caution" title="Always set authentication">
+Without an `auth:` block the interface is completely open to anyone on your network. Always configure a username and password.
+</Aside>
+
+<Steps>
+
+1. **Add credentials to `secrets.yaml`**
+
+   ```yaml
+   web_server_username: "admin"
+   web_server_password: "choose-a-strong-password"
+   ```
+
+2. **Add the `web_server` component to your device configuration**
+
+   ```yaml
+   web_server:
+     port: 80
+     auth:
+       username: !secret web_server_username
+       password: !secret web_server_password
+   ```
+
+3. **Install the update**
+
+   Save and click **Install** in the ESPHome Dashboard to flash the board over the air. Once it reboots, open `http://<board-ip>` in a browser and log in with the credentials above.
+
+</Steps>
+
+## Configuration options
+
+The most useful `web_server` options for this board. See the [ESPHome web_server documentation](https://esphome.io/components/web_server/) for the complete list.
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `port` | `80` | TCP port the interface listens on. Use `80` for the standard `http://<board-ip>`. |
+| `auth` | none | `username` / `password` block that gates access. Strongly recommended -- always set it. |
+| `version` | `2` | Web UI version. `3` is the newest and adds entity grouping (`sorting_groups`); `2` is the well-tested default. |
+| `include_internal` | `false` | When `true`, also shows entities marked `internal` (for example the per-fan RGB LEDs on Rev 3.x). |
+| `local` | `false` | Serve the UI's JS/CSS from the board instead of a CDN, so it works without internet access. Uses more flash. |
+| `ota` | (platform) | OTA over the web moved to its own `web_server` OTA platform. Set `ota: false` here to disable web OTA; the standard ESPHome Dashboard OTA is unaffected. |
+
+<Aside type="tip" title="Memory">
+The web server takes up a lot of RAM. If the board becomes unstable after enabling it, drop other optional components or use `version: 2` with `local: false` to keep the footprint small.
+</Aside>
+
+## Related
+
+- [ESPHome web_server component](https://esphome.io/components/web_server/) -- full option reference
+- [Home Assistant Integration](/getting-started/home-assistant/) -- the primary, encrypted control path (no web server needed)
+- [Troubleshooting](/getting-started/troubleshooting/) -- other common issues

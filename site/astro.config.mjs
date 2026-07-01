@@ -80,6 +80,7 @@ export default defineConfig({
               ],
             },
             { label: 'Fan Compatibility', translations: { de: 'Lüfter-Kompatibilität' }, slug: 'reference/fan-compatibility' },
+            { label: 'Web Interface', translations: { de: 'Weboberfläche' }, slug: 'reference/web-server' },
           ],
         },
       ],
