@@ -79,6 +79,17 @@ export default defineConfig({
                 { label: 'USR Buttons', translations: { de: 'USR-Tasten' }, slug: 'reference/modules/usr-buttons' },
               ],
             },
+            {
+              label: 'Qwiic / STEMMA QT',
+              items: [
+                { label: 'General', slug: 'reference/qwiic' },
+                { label: 'Combining Modules', slug: 'reference/qwiic/combining' },
+                {
+                  label: 'Expansion Board Examples',
+                  autogenerate: { directory: 'reference/qwiic/examples' },
+                },
+              ],
+            },
             { label: 'Fan Compatibility', translations: { de: 'Lüfter-Kompatibilität' }, slug: 'reference/fan-compatibility' },
             { label: 'Web Interface', translations: { de: 'Weboberfläche' }, slug: 'reference/web-server' },
           ],
