@@ -23,52 +23,52 @@ globals:
 # Boot sequence: Status LED blue blinking
 esphome:
   on_boot:
-    then:
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.set_rgb(0.0, 0.0, 1.0); // blue
-          call.set_brightness(0.5);
-          call.set_effect("pulse");
-          call.perform();
-      - if:
-          condition:
-            lambda: 'return !id(init_done);'
-          then:
-            - lambda: 'id(init_done) = true;'
+    - then:
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.set_rgb(0.0, 0.0, 1.0); // blue
+            call.set_brightness(0.5);
+            call.set_effect("pulse");
+            call.perform();
+        - if:
+            condition:
+              lambda: 'return !id(init_done);'
+            then:
+              - lambda: 'id(init_done) = true;'
 
 # WiFi status callbacks
 wifi:
   on_connect:
-    then:
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.set_rgb(0.0, 1.0, 0.0); // green
-          call.set_brightness(0.5);
-          call.set_effect("none");
-          call.perform();
-      - delay: 60s
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.set_rgb(0.0, 1.0, 0.0); // green
-          call.set_brightness(0.1);
-          call.set_effect("none");
-          call.perform();
+    - then:
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.set_rgb(0.0, 1.0, 0.0); // green
+            call.set_brightness(0.5);
+            call.set_effect("none");
+            call.perform();
+        - delay: 60s
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.set_rgb(0.0, 1.0, 0.0); // green
+            call.set_brightness(0.1);
+            call.set_effect("none");
+            call.perform();
 
   on_disconnect:
-    then:
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.set_rgb(1.0, 0.0, 0.0); // red
-          call.set_brightness(0.25);
-          call.set_effect("pulse");
-          call.perform();
+    - then:
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.set_rgb(1.0, 0.0, 0.0); // red
+            call.set_brightness(0.25);
+            call.set_effect("pulse");
+            call.perform();
 
 # I2C Bus
 i2c:
-  sda: GPIO33
-  scl: GPIO34
-  scan: true
-  id: bus_a
+  - id: bus_a
+    sda: GPIO33
+    scl: GPIO34
+    scan: true
 
 # PWM Outputs for fans (internal only)
 output:

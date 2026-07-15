@@ -79,29 +79,29 @@ globals:
 # Validate both curves at boot
 esphome:
   on_boot:
-    priority: -100  # Run late, after numbers are initialized
-    then:
-      - lambda: |-
-          float a[5] = {${curveA_temp1}, ${curveA_temp2}, ${curveA_temp3}, ${curveA_temp4}, ${curveA_temp5}};
-          float b[5] = {${curveB_temp1}, ${curveB_temp2}, ${curveB_temp3}, ${curveB_temp4}, ${curveB_temp5}};
-          const char* names[2] = {"A", "B"};
-          float* curves[2] = {a, b};
-          bool all_ok = true;
-          for (int c = 0; c < 2; c++) {
-            for (int i = 0; i < 4; i++) {
-              if (curves[c][i] >= curves[c][i+1]) {
-                ESP_LOGW("dual_curve",
-                  "WARNING: Curve %s temperature point %d (%.1f) >= point %d (%.1f)! "
-                  "Curve will be auto-sorted at runtime, but consider fixing your configuration.",
-                  names[c], i+1, curves[c][i], i+2, curves[c][i+1]);
-                id(curve_config_warning) = true;
-                all_ok = false;
+    - priority: -100  # Run late, after numbers are initialized
+      then:
+        - lambda: |-
+            float a[5] = {${curveA_temp1}, ${curveA_temp2}, ${curveA_temp3}, ${curveA_temp4}, ${curveA_temp5}};
+            float b[5] = {${curveB_temp1}, ${curveB_temp2}, ${curveB_temp3}, ${curveB_temp4}, ${curveB_temp5}};
+            const char* names[2] = {"A", "B"};
+            float* curves[2] = {a, b};
+            bool all_ok = true;
+            for (int c = 0; c < 2; c++) {
+              for (int i = 0; i < 4; i++) {
+                if (curves[c][i] >= curves[c][i+1]) {
+                  ESP_LOGW("dual_curve",
+                    "WARNING: Curve %s temperature point %d (%.1f) >= point %d (%.1f)! "
+                    "Curve will be auto-sorted at runtime, but consider fixing your configuration.",
+                    names[c], i+1, curves[c][i], i+2, curves[c][i+1]);
+                  id(curve_config_warning) = true;
+                  all_ok = false;
+                }
               }
             }
-          }
-          if (all_ok) {
-            ESP_LOGI("dual_curve", "Both temperature curves validated OK");
-          }
+            if (all_ok) {
+              ESP_LOGI("dual_curve", "Both temperature curves validated OK");
+            }
 
 number:
   # ---- Curve A ----

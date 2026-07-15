@@ -72,32 +72,32 @@ globals:
 # Validate configuration at boot
 esphome:
   on_boot:
-    priority: -100  # Run late, after numbers are initialized
-    then:
-      - lambda: |-
-          // Check if temperature points are monotonically increasing
-          float temps[5] = {
-            ${curve_temp1}, ${curve_temp2}, ${curve_temp3},
-            ${curve_temp4}, ${curve_temp5}
-          };
+    - priority: -100  # Run late, after numbers are initialized
+      then:
+        - lambda: |-
+            // Check if temperature points are monotonically increasing
+            float temps[5] = {
+              ${curve_temp1}, ${curve_temp2}, ${curve_temp3},
+              ${curve_temp4}, ${curve_temp5}
+            };
 
-          bool is_monotonic = true;
-          for (int i = 0; i < 4; i++) {
-            if (temps[i] >= temps[i+1]) {
-              ESP_LOGW("temperature_curve",
-                "WARNING: Temperature point %d (%.1f°C) >= point %d (%.1f°C)! "
-                "Curve will be auto-sorted at runtime, but consider fixing your configuration.",
-                i+1, temps[i], i+2, temps[i+1]);
-              is_monotonic = false;
-              id(curve_config_warning) = true;
+            bool is_monotonic = true;
+            for (int i = 0; i < 4; i++) {
+              if (temps[i] >= temps[i+1]) {
+                ESP_LOGW("temperature_curve",
+                  "WARNING: Temperature point %d (%.1f°C) >= point %d (%.1f°C)! "
+                  "Curve will be auto-sorted at runtime, but consider fixing your configuration.",
+                  i+1, temps[i], i+2, temps[i+1]);
+                is_monotonic = false;
+                id(curve_config_warning) = true;
+              }
             }
-          }
 
-          if (is_monotonic) {
-            ESP_LOGI("temperature_curve",
-              "Temperature curve validated: %.1f°C → %.1f°C → %.1f°C → %.1f°C → %.1f°C",
-              temps[0], temps[1], temps[2], temps[3], temps[4]);
-          }
+            if (is_monotonic) {
+              ESP_LOGI("temperature_curve",
+                "Temperature curve validated: %.1f°C → %.1f°C → %.1f°C → %.1f°C → %.1f°C",
+                temps[0], temps[1], temps[2], temps[3], temps[4]);
+            }
 
 number:
   # Temperature Point 1

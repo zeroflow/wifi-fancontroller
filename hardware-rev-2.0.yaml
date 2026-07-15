@@ -15,10 +15,10 @@ packages:
 
 # I2C Bus
 i2c:
-  sda: GPIO33
-  scl: GPIO34
-  scan: true
-  id: bus_a
+  - id: bus_a
+    sda: GPIO33
+    scl: GPIO34
+    scan: true
 
 # Status LED
 status_led:

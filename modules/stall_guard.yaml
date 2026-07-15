@@ -272,18 +272,18 @@ switch:
 
 esphome:
   on_boot:
-    then:
-      - lambda: |-
-          // Publish initial states to avoid "Unavailable" in Home Assistant
-          id(fan1_stall_sensor).publish_state(false);
-          id(fan2_stall_sensor).publish_state(false);
-          id(fan3_stall_sensor).publish_state(false);
-          id(fan4_stall_sensor).publish_state(false);
-          id(fan1_stall_message).publish_state("OK");
-          id(fan2_stall_message).publish_state("OK");
-          id(fan3_stall_message).publish_state("OK");
-          id(fan4_stall_message).publish_state("OK");
-          ESP_LOGI("stall_guard", "Stall guard initialized");
+    - then:
+        - lambda: |-
+            // Publish initial states to avoid "Unavailable" in Home Assistant
+            id(fan1_stall_sensor).publish_state(false);
+            id(fan2_stall_sensor).publish_state(false);
+            id(fan3_stall_sensor).publish_state(false);
+            id(fan4_stall_sensor).publish_state(false);
+            id(fan1_stall_message).publish_state("OK");
+            id(fan2_stall_message).publish_state("OK");
+            id(fan3_stall_message).publish_state("OK");
+            id(fan4_stall_message).publish_state("OK");
+            ESP_LOGI("stall_guard", "Stall guard initialized");
 
 interval:
   - id: stall_guard_interval

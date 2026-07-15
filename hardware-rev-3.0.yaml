@@ -16,40 +16,40 @@ packages:
 # Boot sequence: Status LED slow pulse
 esphome:
   on_boot:
-    then:
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.set_effect("Slow Pulse");
-          call.perform();
+    - then:
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.set_effect("Slow Pulse");
+            call.perform();
 
 # WiFi status callbacks
 wifi:
   on_connect:
-    then:
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.set_brightness(1);
-          call.set_effect("none");
-          call.perform();
-      - delay: 60s
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.perform();
+    - then:
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.set_brightness(1);
+            call.set_effect("none");
+            call.perform();
+        - delay: 60s
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.perform();
 
   on_disconnect:
-    then:
-      - lambda: |-
-          auto call = id(status_led).turn_on();
-          call.set_brightness(1);
-          call.set_effect("Fast Pulse");
-          call.perform();
+    - then:
+        - lambda: |-
+            auto call = id(status_led).turn_on();
+            call.set_brightness(1);
+            call.set_effect("Fast Pulse");
+            call.perform();
 
 # I2C Bus
 i2c:
-  sda: GPIO33
-  scl: GPIO34
-  scan: true
-  id: bus_a
+  - id: bus_a
+    sda: GPIO33
+    scl: GPIO34
+    scan: true
 
 # PWM Outputs
 output:
