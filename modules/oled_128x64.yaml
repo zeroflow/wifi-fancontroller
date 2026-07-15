@@ -1,0 +1,67 @@
+# 128x64 OLED Display Module (SSD1306, Qwiic / STEMMA QT)
+#
+# Drives a Soldered 0.96" 128x64 monochrome OLED (SSD1306, I2C address 0x3C)
+# plugged into the Qwiic connector. Shows the onboard temperature and humidity
+# on the top row and all four fan RPMs in a 2x2 grid below.
+#
+# Requires the fancontroller hardware package, which provides:
+#   bus_a, fancontroller_temperature, fancontroller_humidity, fan1_speed..fan4_speed
+#
+# Usage:
+#   packages:
+#     hardware: ...            # your hardware-rev-*.yaml
+#     oled:
+#       url: https://github.com/zeroflow/wifi-fancontroller
+#       ref: main
+#       files:
+#         - modules/oled_128x64.yaml
+#
+# I2C bus speed (recommended, not enabled here):
+#   The display works at the default bus speed (50 kHz), but the screen refreshes
+#   noticeably slowly. For a smooth update we recommend raising the shared bus to
+#   400 kHz, which the SSD1306 and the onboard HDC1080 both handle without trouble.
+#
+#   This module does NOT change the bus speed by default, because the speed is
+#   shared by every device on the bus and a slower module (for example the SCD41,
+#   which tops out at 100 kHz) would break at 400 kHz. Pick a speed that suits
+#   every device you run, then add it to your own config. bus_a is defined in the
+#   hardware package, so modify it by id with !extend (needs the list-form i2c bus):
+#
+#     i2c:
+#       - id: !extend bus_a
+#         frequency: 400kHz
+#
+#   See the Combining Modules reference for details.
+
+font:
+  - file:
+      type: web
+      url: "https://raw.githubusercontent.com/fcambus/spleen/master/spleen-6x12.bdf"
+    id: oled_font_sm
+    glyphs: " !\"%'()+,-.0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+  - file:
+      type: web
+      url: "https://raw.githubusercontent.com/fcambus/spleen/master/spleen-8x16.bdf"
+    id: oled_font_md
+    glyphs: " %.0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz°"
+
+display:
+  - platform: ssd1306_i2c
+    id: oled
+    i2c_id: bus_a
+    model: "SSD1306 128x64"
+    address: 0x3C
+    update_interval: 1s
+    lambda: |-
+      // Header: temperature (left) and humidity (right), 8x16 font, rows 0-15
+      it.printf(0, 0, id(oled_font_md), TextAlign::TOP_LEFT, "%.1f°C", id(fancontroller_temperature).state);
+      it.printf(127, 0, id(oled_font_md), TextAlign::TOP_RIGHT, "%.0f%%", id(fancontroller_humidity).state);
+
+      // Divider line
+      it.line(0, 18, 127, 18);
+
+      // 2x2 RPM grid, 6x12 font, columns x=0 and x=66
+      it.printf(0,  24, id(oled_font_sm), "F1 %4.0frpm", id(fan1_speed).state);
+      it.printf(66, 24, id(oled_font_sm), "F2 %4.0frpm", id(fan2_speed).state);
+      it.printf(0,  40, id(oled_font_sm), "F3 %4.0frpm", id(fan3_speed).state);
+      it.printf(66, 40, id(oled_font_sm), "F4 %4.0frpm", id(fan4_speed).state);
