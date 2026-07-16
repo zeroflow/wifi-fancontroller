@@ -31,6 +31,60 @@ packages:
 
 Modules define their configuration through `vars:` -- substitution variables that let you customize behavior without editing the module YAML directly. Each module page documents all available variables with their defaults.
 
+### Customizing a module
+
+Because you pull a module in as a remote package, you never edit its file. Everything you might want to do falls into one of three operations, in rough order of difficulty:
+
+| I want to... | Mechanism | Example |
+|--------------|-----------|---------|
+| Add my own sensors or entities | Nothing special -- just write them. Lists merge. | A `dallas_temp` sensor with `one_wire_id: ow_bus` |
+| Configure the module (names, intervals) | `vars:` on the package, or top-level `substitutions:` | `ow_prefix: "Aquarium"` |
+| Change or remove an entity the module defines | `!extend <id>` / `!remove <id>` | `- id: !extend ow_device_count` |
+
+**Adding your own entities** needs no special syntax. ESPHome merges same-named lists (`sensor:`, `switch:`, and so on) across all packages and your config. Just declare your entity and point it at the module's bus or components by their `id`.
+
+**Configuring** a module is done through the substitution variables it exposes. Set them with `vars:` under the package's `files:` entry, or as top-level `substitutions:` in your own config. Each module page lists its variables and defaults.
+
+**Changing or removing** a module's own entity uses ESPHome's `!extend` and `!remove` tags, which reach into the merged config by `id`:
+
+```yaml
+# Replace one key on a module entity (keeps everything else):
+sensor:
+  - id: !extend ow_device_count
+    update_interval: 10s
+
+# Remove a module entity entirely:
+text_sensor:
+  - id: !remove ow_device_list
+```
+
+:::caution[`!extend` is not for adding]
+The single most common mistake: reaching for `!extend` to add something new. `!extend` only modifies an entity that **already exists** by `id`. To add a new entity you write it plainly and let the lists merge (row one above). Use `!extend` only to change an entity the module already defines.
+:::
+
+Two things to know about what `!extend` and `!remove` can reach:
+
+- They target **top-level component list items by their `id:`** (an entry directly under `sensor:`, `switch:`, `one_wire:`, and so on). A **nested** sub-ID, such as the `temperature:` block inside a combined sensor, is not a top-level entry and cannot be targeted this way.
+- They work against remote `github://` packages, not only local includes. The merge happens after the package is fetched, so the module's IDs are all reachable.
+
+### Substitution names are global
+
+Substitution names live in one shared namespace across every package. If two modules both defined a variable called `update_interval`, whichever loaded last would silently win, and you would get a value you did not choose with no error. To avoid this, module variables and IDs use a short module prefix: `ow_` for the DS2484 1-Wire module, `oled_` for the display, and so on. When you name your own substitutions, avoid those prefixes.
+
+### Two small tips
+
+- **The order of packages does not matter.** Merging is non-destructive, so listing the hardware package before or after a module makes no difference.
+- **While developing, pin `refresh: 0s`** on a package so ESPHome always re-fetches it. The default caches a remote package for a day, and it is easy to spend an hour debugging a version of the file you already changed.
+
+  ```yaml
+  packages:
+    ds2484:
+      url: https://github.com/zeroflow/wifi-fancontroller
+      ref: main
+      refresh: 0s
+      files: [modules/ds2484_onewire.yaml]
+  ```
+
 ## Module Comparison
 
 | Module | Complexity | Best Use Case | HA Entities Created | Revisions |

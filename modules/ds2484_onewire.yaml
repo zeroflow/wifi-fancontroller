@@ -1,0 +1,86 @@
+# DS2484 I2C-to-1-Wire Bridge Module (Qwiic / STEMMA QT)
+#
+# Adds a Maxim DS2484 1-Wire master (I2C address 0x18) on the Qwiic connector,
+# giving the controller a hardware 1-Wire bus for Dallas devices such as the
+# DS18B20 temperature sensor. The DS2484 handles the timing-critical 1-Wire
+# protocol itself, which is more reliable than bit-banging a GPIO, especially
+# over longer cable runs.
+#
+# Requires the fancontroller hardware package, which provides the I2C bus:
+#   bus_a
+#
+# Usage:
+#   packages:
+#     hardware: ...            # your hardware-rev-*.yaml
+#     ds2484:
+#       url: https://github.com/zeroflow/wifi-fancontroller
+#       ref: main
+#       files:
+#         - modules/ds2484_onewire.yaml
+#
+# What it exposes:
+#   - one_wire bus (id: ow_bus) that your own dallas_temp sensors attach to
+#   - "1-Wire Devices"     (text sensor)  -- ROM addresses currently on the bus
+#   - "1-Wire Device Count"(sensor)       -- how many devices were found
+#   - "1-Wire Rescan"      (button)       -- re-scans the bus on demand
+#
+# The helper entities exist so you can discover the ROM address of each sensor
+# after wiring it in, then add your own dallas_temp sensors by that address.
+# See the DS2484 reference page for the full workflow.
+#
+# Bus speed: this module does NOT change the shared I2C bus speed. The DS2484
+# works fine at the hardware default and the bus is shared with the onboard
+# HDC1080 and any other Qwiic device. If you want a faster bus, raise it in your
+# own config with `!extend bus_a` (see the Combining Modules reference).
+#
+# Note: the DS2484 speaks the Maxim/Dallas 1-Wire protocol (DS18B20, DS18S20,
+# iButton, ...). A DHT22 uses a different single-wire protocol and cannot be
+# read through this bridge.
+
+substitutions:
+  ow_prefix: "1-Wire"          # entity name prefix
+  ow_update_interval: "60s"    # how often the helper sensors refresh
+
+one_wire:
+  - platform: ds2484
+    id: ow_bus
+    i2c_id: bus_a
+    address: 0x18
+    active_pullup: true
+
+text_sensor:
+  - platform: template
+    id: ow_device_list
+    name: "${ow_prefix} Devices"
+    icon: mdi:tag-multiple
+    entity_category: diagnostic
+    update_interval: ${ow_update_interval}
+    lambda: |-
+      std::string out;
+      for (auto addr : id(ow_bus).get_devices()) {
+        if (!out.empty()) out += ", ";
+        out += "0x" + format_hex(addr);
+      }
+      if (out.empty()) out = "none";
+      if (out.size() > 250) out = out.substr(0, 247) + "...";
+      return {out};
+
+sensor:
+  - platform: template
+    id: ow_device_count
+    name: "${ow_prefix} Device Count"
+    icon: mdi:counter
+    entity_category: diagnostic
+    accuracy_decimals: 0
+    update_interval: ${ow_update_interval}
+    lambda: 'return id(ow_bus).get_devices().size();'
+
+button:
+  - platform: template
+    name: "${ow_prefix} Rescan"
+    icon: mdi:magnify-scan
+    entity_category: config
+    on_press:
+      - lambda: 'id(ow_bus).search();'
+      - component.update: ow_device_list
+      - component.update: ow_device_count
