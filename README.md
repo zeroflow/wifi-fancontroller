@@ -40,6 +40,12 @@ The power supply is not part of the product. Users must supply a power source th
 
 This product contains a radio transmitter. Install the product so that a separation distance of at least 20 cm is maintained between the antenna and any person during normal operation. This product is not intended to be worn on the body or operated in close proximity to the user.
 
+## User buttons
+
+The board provides three user-assignable push buttons connected to GPIO. They have no function in the default configuration. Any behaviour is defined by the user's ESPHome configuration. Typical use is setup, commissioning, or occasional manual override; regular operation is via the network interface.
+
+In the factory firmware the buttons are exposed to Home Assistant as binary sensors reporting their pressed state. They trigger no action on the board itself unless you configure one. See the [USR Buttons module](https://fancontroller.arthofer.dev/reference/modules/usr-buttons/) for one ready-made way to assign them.
+
 ## Specifications
 
 * **Power**

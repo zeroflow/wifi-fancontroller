@@ -1,6 +1,6 @@
 ---
 title: USR Buttons
-description: Physical button control for fan speed with per-fan RGB LED feedback
+description: Assign the three USR buttons to fan selection and speed stepping, with per-fan RGB LED feedback
 sidebar:
   order: 8
 ---
@@ -11,11 +11,17 @@ This module requires **Rev 3.1 or later** hardware (3.1, 3.2, or 3.3). Earlier r
 
 ## Purpose
 
-The USR Buttons module gives you direct physical control over fan speeds using the three USR buttons on the board. Press a button to select a fan, then step its speed up or down without touching Home Assistant. The selected fan's LED lights up in a configurable color so you always know which fan you're adjusting.
+The board's three USR buttons are user-assignable GPIO inputs with no behaviour of their own. This module is one ready-made way to assign them: it maps them to fan selection and speed stepping, so a button press selects a fan and steps its speed up or down. The selected fan's LED lights up in a configurable color to show which fan the buttons are acting on.
 
 ## When to Use
 
-Use this module when you want hands-on control of individual fan speeds - useful during initial setup, when tuning noise levels by ear, or in any situation where reaching for a phone or computer is inconvenient. Manual overrides take priority over all temperature modules, so you can temporarily lock a fan at a specific speed while leaving the others under automatic control.
+Assign the buttons this way when you want a local override available at the board, typically during setup and commissioning, when tuning noise levels by ear, or for the occasional manual adjustment. Manual overrides take priority over all temperature modules, so you can pin a fan at a specific speed while leaving the others under automatic control.
+
+Regular operation of the controller runs over the network interface through Home Assistant. The buttons complement that; they are not meant to replace it as the day-to-day control surface.
+
+:::caution[Keep 20 cm separation]
+This product contains a radio transmitter and must be installed so that at least 20 cm separation is maintained between the antenna and any person during normal operation. Assigning the buttons does not change that. Reach the board for setup or an occasional override, then step away; do not plan an installation around standing at the board. See [Safety and Compliance](/reference/compliance/).
+:::
 
 If you also use RPM Status LEDs, the two modules coordinate automatically: entering button selection mode temporarily takes over the LEDs, then returns control to RPM Status LEDs when the timeout expires.
 
