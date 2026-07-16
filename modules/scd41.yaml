@@ -1,0 +1,85 @@
+# SCD41 CO2 / Temperature / Humidity Sensor Module (Sensirion, Qwiic / STEMMA QT)
+#
+# Sensirion SCD41 true NDIR CO2 sensor plus temperature and humidity, on the
+# Adafruit #5190 breakout (I2C address 0x62). Plugs into the Qwiic connector.
+#
+# Requires the fancontroller hardware package (provides the shared I2C bus bus_a).
+# Not standalone.
+#
+# Usage:
+#   packages:
+#     hardware: ...            # your hardware-rev-*.yaml
+#     scd41:
+#       url: https://github.com/zeroflow/wifi-fancontroller
+#       ref: main
+#       files:
+#         - modules/scd41.yaml
+#
+# BUS SPEED - read this:
+#   The SCD41 is limited to a 100 kHz I2C clock (hard datasheet limit). The shared
+#   bus runs at its 50 kHz default, so the SCD41 works out of the box. Do NOT raise
+#   bus_a above 100 kHz. If you also run an OLED (which likes 400 kHz for a smooth
+#   refresh) the SCD41 wins: keep the bus at 100 kHz or below and the display just
+#   refreshes more slowly. Above 100 kHz the SCD41 does not fail cleanly, it returns
+#   CRC errors and dropped readings that look like a wiring fault.
+#
+# NAMING - why "SCD41 Temperature" and not "Temperature":
+#   The hardware package already names the onboard HDC1080 entities "Temperature"
+#   and "Humidity". This module prefixes its own with scd41_name so they do not
+#   collide in Home Assistant. CO2 is unique to this sensor, so it stays "CO2".
+#
+# CALIBRATION - automatic_self_calibration (ASC) defaults to true here for the
+#   plug-and-play case. For a fan controller in a closed or rack enclosure that
+#   rarely sees fresh ~400 ppm air, ASC drifts the reading and you likely want it
+#   off plus a manual forced recalibration. See the docs page for ASC vs FRC and a
+#   ready-made calibration button.
+#
+# Configuration Variables:
+#   - scd41_name:               Prefix for the temp/humidity entities (default: "SCD41")
+#   - scd41_id:                 Component id prefix, [a-z0-9_] only (default: "scd41")
+#   - scd41_address:            I2C address (default: "0x62", fixed on the SCD4x)
+#   - scd41_interval:           Update interval (default: "30s")
+#   - scd41_temperature_offset: Self-heating offset in C, USER MUST TUNE (default: "4.0")
+#   - scd41_asc:                automatic_self_calibration, true/false (default: "true")
+#   - scd41_altitude:           Altitude for pressure compensation (default: "0m")
+#
+# I2C address 0x62 does not clash with the onboard HDC1080 (0x40).
+#
+substitutions:
+  scd41_name: "SCD41"
+  scd41_id: "scd41"
+  scd41_address: "0x62"
+  scd41_interval: "30s"
+  scd41_temperature_offset: "4.0"
+  scd41_asc: "true"
+  scd41_altitude: "0m"
+
+sensor:
+  - platform: scd4x
+    id: ${scd41_id}
+    i2c_id: bus_a
+    address: ${scd41_address}
+    update_interval: ${scd41_interval}
+    automatic_self_calibration: ${scd41_asc}
+    temperature_offset: ${scd41_temperature_offset} °C
+    altitude_compensation: ${scd41_altitude}
+
+    co2:
+      name: "CO2"
+      id: ${scd41_id}_co2
+      accuracy_decimals: 0
+      filters:
+        - median:
+            window_size: 5
+            send_every: 1
+            send_first_at: 1
+
+    temperature:
+      name: "${scd41_name} Temperature"
+      id: ${scd41_id}_temperature
+      accuracy_decimals: 1
+
+    humidity:
+      name: "${scd41_name} Humidity"
+      id: ${scd41_id}_humidity
+      accuracy_decimals: 0
