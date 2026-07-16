@@ -1,0 +1,66 @@
+# BME680 Environmental Sensor Module (Qwiic / STEMMA QT)
+#
+# Open ESPHome bme680 driver: temperature, humidity, pressure, gas resistance.
+# Framework-independent (arduino or esp-idf). For IAQ / CO2 equivalent / VOC
+# use the separate bme680_bsec.yaml module instead (Bosch license + arduino).
+# Never import both at once.
+#
+# Requires: a fancontroller hardware package (provides the shared I2C bus bus_a).
+# Not standalone.
+#
+# Usage:
+#   packages:
+#     hardware: !include hardware-rev-3.1.yaml
+#     bme680:   !include modules/bme680.yaml
+#
+# The sensor is meant to hang on a cable and measure somewhere other than the
+# board (intake, exhaust, room), so it takes a ROLE name, not a sensor name.
+# Set bme680_name and the entities become "Intake Temperature" etc.
+#
+# Configuration Variables:
+#   - bme680_name:     Role name / entity prefix (default: "BME680")
+#   - bme680_id:       Component id prefix, [a-z0-9_] only (default: "bme680")
+#   - bme680_address:  I2C address, 0x77 default / 0x76 with the solder jumper
+#   - bme680_interval: Update interval (default: 60s)
+#
+# I2C address 0x77 (or 0x76) does not clash with the onboard HDC1080 (0x40).
+#
+substitutions:
+  bme680_name: "BME680"
+  bme680_id: "bme680"
+  bme680_address: "0x77"
+  bme680_interval: "60s"
+
+sensor:
+  - platform: bme680
+    id: ${bme680_id}_sensor
+    address: ${bme680_address}
+    i2c_id: bus_a
+    update_interval: ${bme680_interval}
+
+    temperature:
+      name: "${bme680_name} Temperature"
+      id: ${bme680_id}_temperature
+      oversampling: 16x
+      accuracy_decimals: 1
+
+    humidity:
+      name: "${bme680_name} Humidity"
+      id: ${bme680_id}_humidity
+      oversampling: 16x
+      accuracy_decimals: 1
+
+    pressure:
+      name: "${bme680_name} Pressure"
+      id: ${bme680_id}_pressure
+      oversampling: 16x
+      accuracy_decimals: 1
+
+    gas_resistance:
+      name: "${bme680_name} Gas Resistance"
+      id: ${bme680_id}_gas_resistance
+      accuracy_decimals: 0
+
+    heater:
+      temperature: 320
+      duration: 150ms

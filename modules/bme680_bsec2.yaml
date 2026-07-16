@@ -1,0 +1,87 @@
+# BME680 via Bosch BSEC2: IAQ, CO2 equivalent, breath VOC equivalent (Qwiic / STEMMA QT)
+#
+# Uses the Bosch BSEC2 library to derive air-quality outputs the open bme680
+# driver cannot. For plain temperature / humidity / pressure / gas resistance,
+# use bme680.yaml instead. The two are mutually exclusive, never import both.
+#
+# LICENSE: Importing this module accepts the Bosch BSEC2 license. There is no
+#          prompt. Commercial use requires a separate agreement with Bosch, and
+#          compiled binaries that contain the BSEC library must not be redistributed.
+#
+# FRAMEWORK: BSEC2 ships as a precompiled Arduino library. The config validates
+#            on either framework, but the build only links on arduino. Your
+#            config must use `framework: type: arduino`.
+#
+# BURN-IN: The algorithm learns its baseline over hours to days. While IAQ
+#          Accuracy is 0 or 1 the IAQ / CO2 / VOC numbers are meaningless; 3 means
+#          calibrated. The state is saved to flash every 6h so a reboot does not
+#          restart from zero. Do not shorten state_save_interval, it wears the flash.
+#
+# Requires: a fancontroller hardware package (provides the shared I2C bus bus_a).
+# Not standalone. Address 0x77 (or 0x76) does not clash with the onboard HDC1080 (0x40).
+#
+# Configuration Variables:
+#   - bme680_name:        Role name / entity prefix (default: "Air")
+#   - bme680_address:     I2C address, 0x77 default / 0x76 with the solder jumper
+#   - bme680_temp_offset: °C subtracted from the reading for self-heating (default: 0)
+#   - bme680_sample_rate: LP = every 3s, ULP = every 300s (default: LP)
+#
+# Temperature and humidity are redundant with the onboard HDC1080, so they are
+# internal by default. Expose them with !extend on bme_temperature / bme_humidity.
+#
+substitutions:
+  bme680_name: "Air"
+  bme680_address: "0x77"
+  bme680_temp_offset: "0"
+  bme680_sample_rate: "LP"
+
+bme68x_bsec2_i2c:
+  id: bme_bsec
+  i2c_id: bus_a
+  address: ${bme680_address}
+  model: BME680
+  operating_age: 28d
+  sample_rate: ${bme680_sample_rate}
+  supply_voltage: 3.3V
+  temperature_offset: ${bme680_temp_offset}
+  state_save_interval: 6h
+
+sensor:
+  - platform: bme68x_bsec2
+    bme68x_bsec2_id: bme_bsec
+    iaq:
+      id: bme_iaq
+      name: "${bme680_name} IAQ"
+      icon: mdi:gauge
+      accuracy_decimals: 0
+      filters: [median: ]
+    co2_equivalent:
+      id: bme_co2eq
+      name: "${bme680_name} CO2 Equivalent"
+      accuracy_decimals: 0
+      filters: [median: ]
+    breath_voc_equivalent:
+      id: bme_voceq
+      name: "${bme680_name} Breath VOC Equivalent"
+      accuracy_decimals: 2
+      filters: [median: ]
+    pressure:
+      id: bme_pressure
+      name: "${bme680_name} Pressure"
+      accuracy_decimals: 1
+      filters: [median: ]
+    temperature:
+      id: bme_temperature
+      internal: true
+    humidity:
+      id: bme_humidity
+      internal: true
+
+text_sensor:
+  - platform: bme68x_bsec2
+    bme68x_bsec2_id: bme_bsec
+    iaq_accuracy:
+      id: bme_iaq_accuracy
+      name: "${bme680_name} IAQ Accuracy"
+      icon: mdi:checkbox-marked-circle-outline
+      entity_category: diagnostic
