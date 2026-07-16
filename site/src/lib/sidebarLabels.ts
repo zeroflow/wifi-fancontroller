@@ -5,8 +5,6 @@
 // slugs like "esp32" render as "ESP32" instead of "Esp32" (Gemini review
 // 14-REVIEWS.md Suggestion 2 - 2026-04-18).
 
-type LocaleLabel = { default: string; de?: string };
-
 /**
  * Project-standard acronyms that must retain canonical casing when a slug
  * segment falls through the sidebar-label lookup into titleCase.
@@ -22,37 +20,37 @@ export const ACRONYMS: ReadonlySet<string> = new Set([
   'SEO', 'JSON', 'LD', 'HTML', 'CSS', 'URL', 'API', 'OG', 'SKU',
 ]);
 
-const segmentLabels: Record<string, LocaleLabel> = {
+const segmentLabels: Record<string, string> = {
   // Top-level groups
-  'getting-started': { default: 'Getting Started', de: 'Erste Schritte' },
-  'reference': { default: 'Reference', de: 'Referenz' },
+  'getting-started': 'Getting Started',
+  'reference': 'Reference',
 
   // Getting Started items
-  'first-setup': { default: 'First Setup', de: 'Ersteinrichtung' },
-  'home-assistant': { default: 'Home Assistant' },
-  'firmware-updates': { default: 'Firmware Updates' },
-  'troubleshooting': { default: 'Troubleshooting', de: 'Fehlerbehebung' },
+  'first-setup': 'First Setup',
+  'home-assistant': 'Home Assistant',
+  'firmware-updates': 'Firmware Updates',
+  'troubleshooting': 'Troubleshooting',
 
   // Reference groups
-  'hardware': { default: 'Hardware' },
-  'modules': { default: 'Modules', de: 'Module' },
+  'hardware': 'Hardware',
+  'modules': 'Modules',
 
   // Hardware items
-  'rev-3-x': { default: 'Rev 3.x (3.1/3.2/3.3)' },
-  'rev-3-0': { default: 'Rev 3.0' },
-  'rev-2-0': { default: 'Rev 2.0' },
-  'rev-1-0': { default: 'Rev 1.0' },
+  'rev-3-x': 'Rev 3.x (3.1/3.2/3.3)',
+  'rev-3-0': 'Rev 3.0',
+  'rev-2-0': 'Rev 2.0',
+  'rev-1-0': 'Rev 1.0',
 
   // Module items
-  'temperature-pid': { default: 'Temperature PID', de: 'Temperatur-PID' },
-  'temperature-linear': { default: 'Temperature Linear', de: 'Temperatur Linear' },
-  'temperature-curve': { default: 'Temperature Curve', de: 'Temperatur-Kurve' },
-  'rpm-pi-control': { default: 'RPM PI Control', de: 'RPM PI-Regelung' },
-  'rpm-status-leds': { default: 'RPM Status LEDs', de: 'RPM Status-LEDs' },
-  'stall-guard': { default: 'Stall Guard', de: 'Blockierschutz' },
+  'temperature-pid': 'Temperature PID',
+  'temperature-linear': 'Temperature Linear',
+  'temperature-curve': 'Temperature Curve',
+  'rpm-pi-control': 'RPM PI Control',
+  'rpm-status-leds': 'RPM Status LEDs',
+  'stall-guard': 'Stall Guard',
 
   // Other reference items
-  'fan-compatibility': { default: 'Fan Compatibility', de: 'Lüfter-Kompatibilität' },
+  'fan-compatibility': 'Fan Compatibility',
 };
 
 /**
@@ -81,17 +79,10 @@ function titleCase(segment: string): string {
     .join(' ');
 }
 
-export function getSegmentLabel(segment: string, locale: string | undefined): string {
-  const entry = segmentLabels[segment];
-  if (!entry) {
-    return titleCase(segment);
-  }
-  if (locale === 'de' && entry.de) {
-    return entry.de;
-  }
-  return entry.default;
+export function getSegmentLabel(segment: string): string {
+  return segmentLabels[segment] ?? titleCase(segment);
 }
 
-export function getHomeLabel(locale: string | undefined): string {
-  return locale === 'de' ? 'Startseite' : 'Home';
+export function getHomeLabel(): string {
+  return 'Home';
 }

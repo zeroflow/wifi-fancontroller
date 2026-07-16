@@ -1,6 +1,8 @@
 ---
 title: USR Buttons
 description: Physical button control for fan speed with per-fan RGB LED feedback
+sidebar:
+  order: 8
 ---
 
 :::caution[Rev 3.1+ Only]

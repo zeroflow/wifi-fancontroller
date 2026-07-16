@@ -1,6 +1,8 @@
 ---
 title: Troubleshooting
 description: Solutions to common issues with the WiFi Fan Controller
+sidebar:
+  order: 4
 ---
 
 Find solutions to common issues below. Each section is organized by symptom so you can jump directly to your problem.

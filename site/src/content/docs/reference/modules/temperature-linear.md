@@ -1,6 +1,8 @@
 ---
 title: Temperature Linear
 description: Simple linear temperature-to-fan-speed mapping module
+sidebar:
+  order: 2
 ---
 
 :::note[All Revisions]

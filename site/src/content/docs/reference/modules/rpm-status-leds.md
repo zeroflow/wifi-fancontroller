@@ -1,6 +1,8 @@
 ---
 title: RPM Status LEDs
 description: RGB LED status indicator module based on fan RPM readings
+sidebar:
+  order: 6
 ---
 
 :::caution[Rev 3.1+ Only]

@@ -1,6 +1,8 @@
 ---
 title: Dual Curve
 description: Two switchable 5-point temperature curves for aggressive vs defensive fan profiles
+sidebar:
+  order: 4
 ---
 
 :::note[All Revisions]

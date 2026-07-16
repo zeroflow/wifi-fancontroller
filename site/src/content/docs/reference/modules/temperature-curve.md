@@ -1,6 +1,8 @@
 ---
 title: Temperature Curve
 description: 5-point interpolated temperature curve module for custom fan profiles
+sidebar:
+  order: 3
 ---
 
 :::note[All Revisions]

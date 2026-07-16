@@ -16,16 +16,12 @@ type BreadcrumbItem = {
 
 function buildBreadcrumbs(
   id: string,
-  locale: string | undefined,
   entryTitle: string
 ): BreadcrumbItem[] {
-  // Strip locale prefix from id to avoid duplicate /de/de/ (Pitfall 4)
-  const cleanId = locale ? id.replace(new RegExp(`^${locale}/`), '') : id;
-  const segments = cleanId.split('/').filter(Boolean);
+  const segments = id.split('/').filter(Boolean);
 
-  // Locale-aware URL base
-  const base = locale ? `${siteUrl}/${locale}/` : `${siteUrl}/`;
-  const homeName = getHomeLabel(locale);
+  const base = `${siteUrl}/`;
+  const homeName = getHomeLabel();
 
   const items: BreadcrumbItem[] = [
     { "@type": "ListItem", position: 1, name: homeName, item: base },
@@ -42,7 +38,7 @@ function buildBreadcrumbs(
     const isLeaf = idx === segments.length - 1;
     const name = isLeaf && entryTitle
       ? entryTitle
-      : getSegmentLabel(seg, locale);
+      : getSegmentLabel(seg);
     items.push({ "@type": "ListItem", position: idx + 2, name, item: cumPath });
   });
 
@@ -57,7 +53,6 @@ const showBreadcrumb = !isSplash && !isBlogRoute;
 const breadcrumbItems = showBreadcrumb
   ? buildBreadcrumbs(
       starlightRoute.id,
-      starlightRoute.locale,
       starlightRoute.entry.data.title
     )
   : null;

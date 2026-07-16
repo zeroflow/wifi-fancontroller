@@ -1,6 +1,9 @@
 ---
 title: Modules Overview
 description: Optional add-on modules for temperature control, RPM regulation, and LED status
+sidebar:
+  label: Overview
+  order: 0
 ---
 
 The WiFi Fan Controller supports optional YAML modules that add advanced functionality beyond basic fan speed control. Modules handle temperature-based automation, closed-loop RPM regulation, and RGB status indicators -- all configurable from Home Assistant without reflashing.

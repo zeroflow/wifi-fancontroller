@@ -1,6 +1,8 @@
 ---
 title: Temperature PID
 description: PID thermostat control module for precise temperature-based fan automation
+sidebar:
+  order: 1
 ---
 
 :::note[All Revisions]
