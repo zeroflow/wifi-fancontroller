@@ -14,7 +14,7 @@ A CE-certified, ESP32-based PWM fan controller designed for home server racks, m
 
 **Hackable & Expandable**: Fully customizable ESPHome configuration with Qwiic and I2C expansion ports, NeoPixel output, user buttons, and GPIO breakouts. Add sensors, displays, or integrate with your existing projects.
 
-**Professional Quality**: CE certified hardware with RGB status LEDs showing system status at a glance. Standard 12V barrel jack power input works with commonly available power supplies.
+**Professional Quality**: CE certified hardware with RGB status LEDs showing system status at a glance. Standard 12V DC barrel jack power input (5.5x2.1mm, centre positive).
 
 ## Get Your Board
 
@@ -26,12 +26,27 @@ A CE-certified, ESP32-based PWM fan controller designed for home server racks, m
 
 **DIY Case**: Print your own case using the [WiFi Fancontroller Case](https://www.printables.com/model/987263-wifi-fancontroller-case) design on Printables.com.
 
+## Power supply
+
+The Fancontroller requires an external 12 V DC SELV power supply, not included.
+
+* **Connector:** 5.5 × 2.1 mm barrel jack, centre positive
+* **Voltage:** 12 V DC ±5 %
+* **Current:** minimum 2.5 A recommended, depending on fan load
+
+The power supply is not part of the product. Users must supply a power source that is certified for their region.
+
+## RF exposure
+
+This product contains a radio transmitter. Install the product so that a separation distance of at least 20 cm is maintained between the antenna and any person during normal operation. This product is not intended to be worn on the body or operated in close proximity to the user.
+
 ## Specifications
 
 * **Power**
-  * 12V DC Barrel Input (5.5x2.1mm)
+  * External 12V DC SELV power supply, not included (see [Power supply](#power-supply))
+  * 12V DC Barrel Input (5.5x2.1mm, centre positive)
   * Max total input current: 2.5A (set by the DC barrel jack -- applies to the sum of all fans plus board load, not per fan header)
-  * Size your 12V PSU to the combined draw of the fans you connect, with headroom
+  * Size your supply to the combined draw of the fans you connect, with headroom
   * Low power operation: 0.25W typical, 0.07W deep sleep
 * **Fan Control**
   * 4× PWM Fan Outputs with RPM monitoring

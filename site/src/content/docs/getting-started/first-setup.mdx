@@ -22,8 +22,12 @@ Every WiFi Fan Controller is flashed with factory firmware before shipping. Firs
 
 - WiFi Fan Controller board
 - USB-C data cable (not charge-only), used for serial-based WiFi provisioning
-- 12V DC power supply (5.5x2.1mm barrel jack, up to 2.5A total board input -- size to your fans' combined draw)
+- An external 12V DC SELV power supply, not included. 5.5x2.1mm barrel jack, centre positive, 12V DC ±5%, minimum 2.5A recommended depending on fan load. See [Safety and Compliance](/reference/compliance/) for the full requirement.
 - One or more PWM fans (4-pin)
+
+<Aside type="caution" title="RF exposure">
+This product contains a radio transmitter. Install the product so that a separation distance of at least 20 cm is maintained between the antenna and any person during normal operation. This product is not intended to be worn on the body or operated in close proximity to the user.
+</Aside>
 
 ## Setup Steps
 
@@ -45,7 +49,7 @@ Every WiFi Fan Controller is flashed with factory firmware before shipping. Firs
 
 2. **Connect your fans**
 
-   - Connect your **12V DC power supply** to the board's power input (5.5x2.1mm barrel jack)
+   - Connect your **external 12V DC power supply** to the board's power input (5.5x2.1mm barrel jack, centre positive)
    - Plug your **PWM fans** (4-pin) into the fan headers (Fan 1 through Fan 4)
    - Check your hardware revision page for the correct pin layout and connector orientation
 
