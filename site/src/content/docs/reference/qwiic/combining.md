@@ -5,7 +5,7 @@ description: How to run multiple Qwiic / STEMMA QT boards on one shared I2C bus,
 
 Every device on the Qwiic connector, the 100mil I2C extension header, and the onboard HDC1080 temperature/humidity sensor sits on the same I2C bus: `bus_a`, SDA on GPIO33, SCL on GPIO34, at 3.3V logic. For the physical pinout and connector location, see the [Rev 3.x hardware page](/reference/hardware/rev-3-x/).
 
-One shared bus means one clock speed, one address space, one set of pull-up resistors, and one power rail, all shared across whatever you plug in. Those are the four things that can collide when you combine more than one module, and they are the four sections below, after the compatibility matrix.
+One shared bus means one clock speed, one address space, one set of pull-up resistors, and one power budget, all shared across whatever you plug in. Those are the four things that can collide when you combine more than one module, and they are the four sections below, after the compatibility matrix.
 
 ## Compatibility matrix
 
@@ -21,7 +21,7 @@ One shared bus means one clock speed, one address space, one set of pull-up resi
 No two devices in this table share an address: `0x40`, `0x77` / `0x76`, `0x3C`, `0x18`, and `0x62` are all distinct.
 
 :::note[Open point]
-Max I2C speed for the BME680 and the DS2484, and per-module current draw for every device including the onboard HDC1080, have not been measured on this board and are not printed anywhere in this repo. Those cells read "not measured" or "not verified" rather than a number copied from a datasheet this project has not verified against the actual hardware.
+Max I2C speed for the BME680 and the DS2484 has not been measured on this board and is not printed anywhere in this repo: those cells read "not verified" rather than a number copied from a datasheet this project has not confirmed against the actual hardware. That gap is the one worth watching, since an unverified speed limit could force the shared bus slower than expected. Per-module current draw for the rest of the table is unmeasured too, but now that the [power budget](#the-qwiic-cable-sets-the-power-budget) works out to roughly 13 modules of headroom, filling those cells in is a completeness note rather than a real risk.
 :::
 
 ## Bus speed: the slowest device wins
@@ -56,20 +56,51 @@ The board fits its own pull-up resistors on SDA and SCL, and most Qwiic breakout
 
 The board's fitted value is [4.7k on both SDA and SCL](/reference/hardware/rev-3-x/#qwiic-connector), on both the Qwiic connector and the 100mil extension port. Whether a given breakout fits its own pull-ups, and at what value, is specific to that board: check your breakout's own documentation.
 
-:::note[Open point]
-The practical limit on how many modules you can chain before the combined pull-ups get marginal has not been measured on this board.
+Chaining pull-ups pulls in two opposite directions at once. More pull-ups in parallel lower the total resistance, which improves rise time but raises the current the bus has to sink. More devices and more cable raise the bus's capacitance, which worsens rise time. Which one bites first depends entirely on what values the breakouts in your chain fit, so it cannot be answered generically here. That is why this section gives you a test to run on your own boards, not a module count.
+
+As an illustration of that dependency, not a guarantee: against the board's own 4.7k, breakouts fitting 10k leave you around 1.4k even with five modules chained, still comfortably above the floor described below, so capacitance would bite first. Breakouts fitting 2.2k put you near 890 ohm with just two modules, already under that floor. The actual number for your chain depends entirely on what your breakouts fit, which is the whole point of testing rather than counting.
+
+### Method 1: ohmmeter
+
+Power the board down before measuring.
+
+1. Measure resistance from SDA to `+3V3`.
+2. Unplugged, you should read the board's own 4.7k.
+3. With the full chain attached, you read the parallel total of every pull-up on the bus.
+
+The floor is roughly 1k. An I2C device only guarantees it can sink 3mA, and (3.3V - 0.4V) / 3mA works out to about 970 ohm. Below that, the bus can no longer pull the line down to a clean low level.
+
+:::caution
+Measure with the board powered off. Internal protection diodes on some devices can skew the reading, which shows up as a different value if you reverse the probes.
 :::
 
-Many breakouts expose a cuttable jumper to remove their own pull-ups if a long chain of modules gets marginal.
+### Method 2: oscilloscope
 
-## The 3.3V budget
+Probe SDA at the far end of the chain, the worst case for both capacitance and pull-up strength. Trigger on a rising edge during real bus traffic, then measure the 30% to 70% rise time, which at 3.3V logic is 0.99V to 2.31V.
 
-Everything on the bus, and every module powered from the Qwiic connector's `+3V3` pin, draws from the board's 3.3V rail. That rail is regulated by an AMS1117-3.3 linear regulator, fed from a 5V buck stage.
+| Bus speed | Rise time budget |
+|---|---|
+| 100 kHz | under 1000ns |
+| 400 kHz | under 300ns |
 
-The one measured and published current figure available today is the SCD41's ~17 mA average at a 5s measurement rate, already the heaviest of the current modules by a wide margin because of its NDIR cell.
+From the measured rise time you can back-calculate the bus capacitance: Cb is approximately tr / (0.85 x Rp). The I2C specification's limit is 400pF.
 
-:::note[Open point]
-The total headroom of the 3.3V rail has not been published on the schematic and is not stated anywhere else in this repo. Do not treat any number for it as fact until it is measured on the board.
-:::
+### No scope? Pass/fail only
+
+Without a scope, run the bus with your full chain attached and watch the ESPHome log for CRC errors and dropped readings. This is not a measurement, it is pass/fail. If the log stays clean, the chain works. If it does not, this failure mode looks identical to the [SCD41 overclock symptom](#bus-speed-the-slowest-device-wins) described above, so rule out the pull-ups before assuming a bad cable.
+
+Many breakouts expose a cuttable jumper to remove their own pull-ups. If a long chain gets marginal, that jumper is the remedy the two methods above point you toward.
+
+## The Qwiic cable sets the power budget
+
+Everything on the bus, and every module powered from the Qwiic connector's `+3V3` pin, draws from the board's 3.3V rail. But the rail is not what limits you here: the binding constraint is the Qwiic cable itself.
+
+[SparkFun](https://www.sparkfun.com/qwiic), who designed the connector, states it plainly: "The very conservative max current on a Qwiic cable is 226mA. If you want to push it, 28AWG is good for up to 1.4A for chassis wiring." This page adopts SparkFun's conservative 226mA figure as the budget, rather than deriving its own.
+
+The board's 3.3V rail can spare more than 226mA under both conservative and best-case assumptions, so the board itself is not the bottleneck.
+
+The status LEDs and the NeoPixel port run off the 5V rail, not the 3.3V regulator, so they do not eat into this budget either.
+
+226mA against the SCD41's ~17mA average, the heaviest module in the [compatibility matrix](#compatibility-matrix) above, is roughly 13 modules. Power is not the limit anyone will actually hit combining Qwiic modules on this board: [addresses](#addresses-must-be-unique) and [bus speed](#bus-speed-the-slowest-device-wins) bite first.
 
 In practice this is irrelevant if the controller runs on USB or barrel-jack power, and only worth budgeting for if you are running something current-constrained, like a battery.
