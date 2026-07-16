@@ -1,5 +1,5 @@
 ---
-title: SCD41
+title: SCD41 CO2 Sensor
 description: True NDIR CO2 plus temperature and humidity with the Sensirion SCD41 over Qwiic / STEMMA QT
 sidebar:
   order: 4
@@ -62,7 +62,7 @@ The shared bus (`bus_a`) runs at its **50 kHz** default, so the SCD41 works out 
 | SCD41 | **100 kHz** | Hard datasheet limit |
 | SSD1306 OLED | 400 kHz | Works at 100 kHz, just refreshes more slowly |
 
-So the collision to know about is **SCD41 + [OLED](/reference/qwiic/examples/display-128x64/)**. The OLED page recommends raising the bus to 400 kHz for a smooth screen. You cannot do that with an SCD41 on the bus. Keep the bus at **100 kHz or below** and both work; the display simply refreshes slower. Do it the other way around and the display is happy while the sensor stops working.
+So the collision to know about is **SCD41 + [OLED](/reference/qwiic/examples/ssd1306/)**. The OLED page recommends raising the bus to 400 kHz for a smooth screen. You cannot do that with an SCD41 on the bus. Keep the bus at **100 kHz or below** and both work; the display simply refreshes slower. Do it the other way around and the display is happy while the sensor stops working.
 
 :::caution[Above 100 kHz the SCD41 does not fail cleanly]
 Overclock the bus and the SCD41 does not throw one obvious error. It returns CRC failures, sporadically missing readings, and "communication failed" lines in the log. It looks exactly like a loose cable, which sends people hunting for a wiring fault that is not there. If your SCD41 readings are flaky, check the bus frequency first.

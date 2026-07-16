@@ -64,7 +64,7 @@ These boards have been verified on the controller and have their own worked exam
 
 - [BME680](/reference/qwiic/examples/bme680/): temperature, humidity, pressure, gas
 - [BME680 with BSEC2](/reference/qwiic/examples/bme680-bsec2/): BME680 with the Bosch BSEC2 air-quality library
-- [OLED 128x64](/reference/qwiic/examples/display-128x64/): SSD1306 monochrome display
+- [SSD1306 OLED Display](/reference/qwiic/examples/ssd1306/): SSD1306 monochrome display
 - [DS2484](/reference/qwiic/examples/ds2484/): I2C-to-1-Wire bridge for Dallas sensors
 - [SCD41](/reference/qwiic/examples/scd41/): CO2, temperature, humidity
 

@@ -1,5 +1,5 @@
 ---
-title: BME680 (BSEC2)
+title: BME680 Environmental Sensor (BSEC2)
 description: BME680 with the Bosch BSEC2 library for IAQ, CO2 equivalent, and VOC (license note applies)
 sidebar:
   order: 3
