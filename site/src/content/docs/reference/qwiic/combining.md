@@ -52,13 +52,13 @@ The BME680 case is worth calling out explicitly. The plain BME680 module and the
 
 ## Pull-ups add in parallel
 
-The board fits its own pull-up resistors on SDA and SCL, and most Qwiic breakouts fit their own too. Every module you chain onto the bus adds its pull-ups in parallel with everyone else's, which lowers the effective total resistance and raises the current the bus has to source.
+The board fits its own pull-up resistors, [4.7k on both SDA and SCL](/reference/hardware/rev-3-x/#qwiic-connector), on both the Qwiic connector and the 100mil extension port. That pair is already enough for the bus, and every Qwiic or STEMMA QT board you chain on adds its own pull-ups in parallel with it. [SparkFun](https://docs.sparkfun.com/SparkFun_Qwiic_Buzzer/hardware_overview/), who designed the connector, gives the rule that answers what to do about it: "As a general rule of thumb, disable all but one pair of pull-up resistors if multiple devices are connected to the bus." On this controller, that one pair is the board's own 4.7k, so the pull-ups to disable are the ones on the modules you attach, not the board's.
 
-The board's fitted value is [4.7k on both SDA and SCL](/reference/hardware/rev-3-x/#qwiic-connector), on both the Qwiic connector and the 100mil extension port. Whether a given breakout fits its own pull-ups, and at what value, is specific to that board: check your breakout's own documentation.
+Most breakouts make that easy to act on, though exactly how varies by board. SparkFun's own Qwiic boards fit 2.2k pull-ups as standard, wired through a three-way jumper labeled I2C: cut it and the pull-ups disconnect. The [Adafruit STEMMA QT spec](https://learn.adafruit.com/introducing-adafruit-stemma-qt/technical-specs) does not commit to a resistor value at all; it only states the expectation that "the I2C device is expected to have pullups from SDA & SCL to V+". Individual Adafruit boards still fit real resistors of their own choosing: the [Adafruit Qwiic / STEMMA QT Breakout Board (#5961)](https://www.adafruit.com/product/5961), for example, fits two 10k pull-ups that can be "deactivated by cutting some small traces on the back of the PCB, if they are not needed." Check your own breakout's documentation for its value and how to disable it.
 
-Chaining pull-ups pulls in two opposite directions at once. More pull-ups in parallel lower the total resistance, which improves rise time but raises the current the bus has to sink. More devices and more cable raise the bus's capacitance, which worsens rise time. Which one bites first depends entirely on what values the breakouts in your chain fit, so it cannot be answered generically here. That is why this section gives you a test to run on your own boards, not a module count.
+Chaining pull-ups pulls in two opposite directions at once. More pull-ups in parallel lower the total resistance, which improves rise time but raises the current the bus has to sink. More devices and more cable raise the bus's capacitance, which worsens rise time. Which one bites first depends entirely on what values the breakouts in your chain fit, which is why the rule of thumb above is the safe default rather than a module count.
 
-As an illustration of that dependency, not a guarantee: against the board's own 4.7k, breakouts fitting 10k leave you around 1.4k even with five modules chained, still comfortably above the floor described below, so capacitance would bite first. Breakouts fitting 2.2k put you near 890 ohm with just two modules, already under that floor. The actual number for your chain depends entirely on what your breakouts fit, which is the whole point of testing rather than counting.
+As an illustration of that dependency, not a guarantee: against the board's own 4.7k, breakouts fitting SparkFun's 2.2k put you near 890 ohm with just two modules chained, already under the ~1k floor described below. Breakouts fitting the Adafruit board's 10k instead leave you around 1.4k even with five modules chained, still comfortably above that floor, so capacitance would bite first there instead. The gap between those two real, sourced values is exactly why board-to-board pull-up values vary this much, and why disabling all but one pair beats trying to count modules.
 
 ### Method 1: ohmmeter
 
@@ -89,7 +89,7 @@ From the measured rise time you can back-calculate the bus capacitance: Cb is ap
 
 Without a scope, run the bus with your full chain attached and watch the ESPHome log for CRC errors and dropped readings. This is not a measurement, it is pass/fail. If the log stays clean, the chain works. If it does not, this failure mode looks identical to the [SCD41 overclock symptom](#bus-speed-the-slowest-device-wins) described above, so rule out the pull-ups before assuming a bad cable.
 
-Many breakouts expose a cuttable jumper to remove their own pull-ups. If a long chain gets marginal, that jumper is the remedy the two methods above point you toward.
+If a chain fails any of these three checks, disabling the extra pull-ups as described above, down to the controller's one pair, is the fix all three point you toward.
 
 ## The Qwiic cable sets the power budget
 
