@@ -33,6 +33,7 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'Overview', slug: 'reference' },
+            { slug: 'reference/compliance' },
             {
               label: 'Hardware',
               autogenerate: { directory: 'reference/hardware' },
