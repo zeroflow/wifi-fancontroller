@@ -104,3 +104,126 @@ The status LEDs and the NeoPixel port run off the 5V rail, not the 3.3V regulato
 226mA against the SCD41's ~17mA average, the heaviest module in the [compatibility matrix](#compatibility-matrix) above, is roughly 13 modules. Power is not the limit anyone will actually hit combining Qwiic modules on this board: [addresses](#addresses-must-be-unique) and [bus speed](#bus-speed-the-slowest-device-wins) bite first.
 
 In practice this is irrelevant if the controller runs on USB or barrel-jack power, and only worth budgeting for if you are running something current-constrained, like a battery.
+
+## Everything at once: a five module medley
+
+The four rules above are easier to see in one config than in isolation. This one runs the OLED, the BME680, the SCD41, and the DS2484 with two DS18B20 sensors on it, all on the same bus, and puts every temperature the board can read onto the screen at once.
+
+![Bench setup with four Qwiic modules chained on one bus: a DS2484 bridge with two DS18B20 probes, an SCD41, a BME680, and an SSD1306 OLED showing the six-cell temperature grid with BOARD at 33.9 and SCD41 at 32.2 degrees Celsius](/images/qwiic/qwiic_combined.jpg)
+
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  oled:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - modules/oled_128x64.yaml
+  bme680:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/bme680.yaml
+        vars:
+          bme680_name: "Intake"
+  scd41:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - modules/scd41.yaml
+  ds2484:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - modules/ds2484_onewire.yaml
+
+# The SCD41 caps the shared bus at 100 kHz, so the OLED refreshes slower than
+# it would at its preferred 400 kHz. That is the tradeoff, not a fault.
+i2c:
+  - id: !extend bus_a
+    frequency: 100kHz
+
+# Your own ROM addresses go here. Read them off the "1-Wire Devices" text
+# sensor after wiring the DS18B20s in. The ids are what the display needs.
+sensor:
+  - platform: dallas_temp
+    one_wire_id: ow_bus
+    address: 0xf23c01d607613d28
+    name: "Right Sensor"
+    id: t_right
+    update_interval: 30s
+  - platform: dallas_temp
+    one_wire_id: ow_bus
+    address: 0x273c01d607763628
+    name: "Left Sensor"
+    id: t_left
+    update_interval: 30s
+
+# Replace the module's fan-RPM screen with a 3x2 temperature grid.
+display:
+  - id: !extend oled
+    lambda: |-
+      // Five temperatures in grid order. NAN means "not read yet".
+      float t[5] = {
+        id(fancontroller_temperature).state,   // onboard HDC1080
+        id(t_left).state,                      // DS18B20 via DS2484
+        id(t_right).state,                     // DS18B20 via DS2484
+        id(scd41_temperature).state,           // SCD41
+        id(bme680_temperature).state,          // BME680, named "Intake"
+      };
+
+      // Sixth cell: how far apart the warmest and coldest sensor are.
+      float lo = NAN, hi = NAN;
+      for (float v : t) {
+        if (isnan(v)) continue;
+        if (isnan(lo) || v < lo) lo = v;
+        if (isnan(hi) || v > hi) hi = v;
+      }
+
+      const char *labels[6] = {"BOARD", "LEFT", "RIGHT", "SCD41", "INTAKE", "SPREAD"};
+      float vals[6] = {t[0], t[1], t[2], t[3], t[4], isnan(lo) ? NAN : hi - lo};
+
+      it.line(0, 30, 127, 30);
+
+      for (int i = 0; i < 6; i++) {
+        int x = 21 + (i % 3) * 43;   // cell centres: 21, 64, 107
+        int y = (i / 3) * 32;        // row tops: 0, 32
+        it.print(x, y, id(oled_font_sm), TextAlign::TOP_CENTER, labels[i]);
+        if (isnan(vals[i]))
+          it.print(x, y + 13, id(oled_font_md), TextAlign::TOP_CENTER, "--");
+        else
+          it.printf(x, y + 13, id(oled_font_md), TextAlign::TOP_CENTER, "%.1f", vals[i]);
+      }
+```
+
+The photo above is that screen running: BOARD, LEFT and RIGHT across the top row, SCD41, INTAKE and SPREAD across the bottom. All six numbers are degrees Celsius, which is why no cell prints a unit: at 43px per column there is no room for one, and the label already says which sensor it is.
+
+The sixth cell is the one worth stealing. Rather than showing a sixth sensor, it shows the spread between the warmest and coldest reading of the other five. That single number is what actually tells you whether the fans are keeping up, since a rising spread means heat is building somewhere faster than it is being moved, and it responds long before any individual reading looks alarming. Swap it for `id(scd41_co2).state` if a CO2 readout is more useful to you, or for `id(bme680_gas_resistance).state` if you want the VOC trend.
+
+### How the override works
+
+The OLED module ships a fan-RPM screen. It is a top-level `id`, so `!extend oled` reaches it through the `github://` package and replaces the `lambda` key wholesale, leaving the display's platform, address, and update interval as the module defined them. The two fonts the module declares, `oled_font_sm` (6x12) and `oled_font_md` (8x16), stay available to your lambda. Both glyph sets already cover the uppercase labels and digits used above.
+
+The layout is arithmetic rather than hand-placed: `i % 3` picks the column and `i / 3` picks the row, so the grid geometry lives in two expressions instead of twelve hardcoded coordinates. Adding a seventh reading means extending the arrays, not moving pixels.
+
+### Applying the four rules
+
+Every rule on this page shows up in that config:
+
+| Rule | How this config resolves it |
+|---|---|
+| [Bus speed](#bus-speed-the-slowest-device-wins) | The SCD41's 100 kHz limit beats the OLED's 400 kHz preference, so the bus runs at 100 kHz and the display refreshes slower |
+| [Addresses](#addresses-must-be-unique) | `0x40`, `0x77`, `0x62`, `0x3C`, `0x18`, all distinct. The DS18B20s are 1-Wire ROM addresses behind the DS2484, not I2C addresses, so they do not enter the I2C address space at all |
+| [Pull-ups](#pull-ups-add-in-parallel) | Four breakouts chained is where the [rule of thumb](#pull-ups-add-in-parallel) starts to matter, and this bench ran with all of them still fitted. See the note below before copying that |
+| [Power](#the-qwiic-cable-sets-the-power-budget) | Four modules against a 226mA budget is not close to the limit |
+
+:::note[What has been verified]
+This config is bench-tested. It compiles against ESPHome 2026.2.4 for the ESP32-S2, and the photo above is all four modules running together on one bus at 100 kHz, with the grid on the screen. The one thing to change before it works for you: the ROM addresses in the `dallas_temp` blocks are from this bench setup, so read your own off the `1-Wire Devices` sensor as the [DS2484 page](/reference/qwiic/examples/ds2484/) describes.
+
+That bench also contradicts this page's own [pull-up advice](#pull-ups-add-in-parallel), and it is worth being precise about what that does and does not prove. Every breakout in the photo still has its pull-ups fitted, five pairs in parallel counting the board's own, and the chain worked anyway. But none of the [three checks](#method-1-ohmmeter) was run against it: nobody measured the parallel total, nobody scoped a rise time, and nobody watched the log over time for the CRC errors that mark a marginal bus. So this is one setup that came up working, not a measurement showing the total is within spec. A bus can sit just inside the margin and still read fine on a good day.
+
+The rule of thumb is still the right default, and it is cheap to follow. What this bench does suggest is why it survived: the illustration above puts breakouts with 10k pull-ups near 1.4k even five deep, comfortably clear of the ~1k floor, and Adafruit boards make up most of this chain. Chain breakouts fitting SparkFun's 2.2k instead and the same four modules would land well under that floor.
+:::
