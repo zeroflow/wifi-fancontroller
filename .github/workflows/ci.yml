@@ -1,24 +1,276 @@
 name: CI
 
+# Every commit in this repository lands directly on main, so a pull_request
+# only trigger meant CI effectively never ran. Push is the trigger that matters
+# here. The weekly schedule carries the expensive full compile matrix.
 on:
+  push:
+    branches: [main]
+    paths:
+      - '*.yaml'
+      - 'hardware-*.yaml'
+      - 'modules/**'
+      - 'examples/**'
+      - 'tools/**'
+      - '.github/workflows/ci.yml'
+      - 'test-examples.sh'
   pull_request:
     paths:
       - '*.yaml'
+      - 'hardware-*.yaml'
+      - 'modules/**'
+      - 'examples/**'
+      - 'tools/**'
       - '.github/workflows/ci.yml'
+      - 'test-examples.sh'
+  # A schedule event ignores paths filters entirely. That is intended, the
+  # weekly full build is meant to be unconditional.
   schedule:
     - cron: '0 0 * * 0'
 
+# Keyed on the ref, not on the pull request number. The old group used
+# github.event.pull_request.number, which is empty for push and schedule
+# events, so every non-PR run collapsed into one group and cancelled itself.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  ci:
-    name: Building ${{ matrix.file }} / ${{ matrix.esphome-version }}
+  config:
+    name: Validate all configs
     runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ESPHome
+        # esphome/build-action can only compile, it has no config check mode,
+        # so the cheap validation job installs ESPHome directly.
+        run: pip install esphome
+
+      - name: Write dummy secrets
+        # The real secrets.yaml is gitignored and absent in CI.
+        run: |
+          echo 'wifi_ssid: "dummy-ssid"' > secrets.yaml
+          echo 'wifi_password: "dummy-password"' >> secrets.yaml
+
+      - name: Localize examples to the working tree
+        run: python3 tools/localize-examples.py
+
+      - name: Validate every config
+        run: |
+          set -u
+          FAILED=()
+
+          for f in .test-build/*.yaml; do
+            b="$(basename "$f")"
+            [ "$b" = "secrets.yaml" ] && continue
+            echo "--- config: $f"
+            esphome config "$f" > /dev/null || FAILED+=("$f")
+          done
+
+          for f in fancontroller-rev*.yaml; do
+            echo "--- config: $f"
+            esphome config "$f" > /dev/null || FAILED+=("$f")
+          done
+
+          echo ""
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "Failed configs:"
+            for f in "${FAILED[@]}"; do echo "  $f"; done
+            exit 1
+          fi
+          echo "All configs valid."
+
+  compile-affected:
+    name: Compile affected examples
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ESPHome
+        run: pip install esphome
+
+      - name: Write dummy secrets
+        run: |
+          echo 'wifi_ssid: "dummy-ssid"' > secrets.yaml
+          echo 'wifi_password: "dummy-password"' >> secrets.yaml
+
+      - name: Localize examples to the working tree
+        run: python3 tools/localize-examples.py
+
+      - name: Determine changed files
+        id: changed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -u
+          BASE=""
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+          else
+            BASE="$PUSH_BEFORE"
+          fi
+
+          # A new branch or a force push reports an all zero before sha, and
+          # that sha does not resolve. Fall back to the first parent, and if
+          # even that fails, treat everything as changed.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              BASE="$(git rev-parse HEAD~1)"
+              echo "No usable base sha, falling back to HEAD~1 ($BASE)"
+            else
+              echo "No usable base sha and no parent commit, treating all as changed"
+              echo "all-changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "Diffing $BASE against HEAD"
+          git diff --name-only "$BASE" HEAD | tee changed-files.txt
+          echo "all-changed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Select affected examples
+        id: select
+        env:
+          ALL_CHANGED: ${{ steps.changed.outputs.all-changed }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os, subprocess
+
+          all_changed = os.environ.get("ALL_CHANGED") == "true"
+
+          raw = subprocess.run(
+              ["python3", "tools/localize-examples.py", "--emit-map"],
+              capture_output=True, text=True, check=True,
+          ).stdout
+          mapping = json.loads(raw)
+
+          changed = set()
+          if not all_changed:
+              try:
+                  with open("changed-files.txt") as handle:
+                      changed = {line.strip() for line in handle if line.strip()}
+              except FileNotFoundError:
+                  all_changed = True
+
+          # A change to the harness itself or to any example invalidates the
+          # whole selection, so fall back to compiling everything.
+          harness_touched = any(
+              path == "test-examples.sh"
+              or path.startswith("tools/")
+              or path.startswith("examples/")
+              for path in changed
+          )
+          if all_changed or harness_touched:
+              selected = sorted(mapping)
+              skipped = []
+              reason = "harness, tools or examples changed" if not all_changed else "no usable diff base"
+          else:
+              selected = sorted(k for k, deps in mapping.items() if changed.intersection(deps))
+              skipped = sorted(set(mapping) - set(selected))
+              reason = "no referenced path changed"
+
+          print("=== Changed files ===")
+          for path in sorted(changed):
+              print("  " + path)
+
+          print("=== Selected for compile: %d ===" % len(selected))
+          for path in selected:
+              print("  " + path)
+
+          print("=== Skipped: %d (%s) ===" % (len(skipped), reason))
+          for path in skipped:
+              print("  " + path)
+
+          names = [os.path.basename(p)[:-len(".yaml")] for p in selected]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as handle:
+              handle.write("names=%s\n" % " ".join(names))
+              handle.write("count=%d\n" % len(names))
+          PY
+
+      - name: Report no affected examples
+        if: steps.select.outputs.count == '0'
+        run: echo "No example is affected by this change. Nothing to compile."
+
+      - name: Compile affected examples
+        if: steps.select.outputs.count != '0'
+        env:
+          NAMES: ${{ steps.select.outputs.names }}
+        run: |
+          set -u
+          FAILED=()
+          for n in $NAMES; do
+            echo "--- compile: $n"
+            esphome compile ".test-build/$n.yaml" || FAILED+=("$n")
+          done
+
+          echo ""
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "Failed compiles:"
+            for n in "${FAILED[@]}"; do echo "  $n"; done
+            exit 1
+          fi
+          echo "All affected examples compiled."
+
+  release-version:
+    name: Read the pinned release version
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      versions: ${{ steps.read.outputs.versions }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Read esphome-version from publish-firmware.yml
+        id: read
+        # publish-firmware.yml is the single source of truth for the version
+        # that ships to customer hardware. Read it rather than duplicating it.
+        # The version that ships was previously covered by no matrix at all.
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import yaml
+          with open(".github/workflows/publish-firmware.yml") as handle:
+              data = yaml.safe_load(handle)
+          version = str(data["jobs"]["build-firmware"]["with"]["esphome-version"])
+          print("version=%s" % version)
+          print("versions=%s" % json.dumps(["stable", "beta", version]))
+          PY
+
+      - name: Show the pinned version
+        run: |
+          echo "Pinned release version is ${{ steps.read.outputs.version }}"
+          echo "Scheduled matrix covers ${{ steps.read.outputs.versions }}"
+
+  compile-full:
+    name: Compile ${{ matrix.file }} / ${{ matrix.esphome-version }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    needs: release-version
     strategy:
       fail-fast: false
-      max-parallel: 3
       matrix:
         file:
           - fancontroller-rev1.0-esp32
@@ -27,9 +279,8 @@ jobs:
           - fancontroller-rev3.1-esp32s2
           - fancontroller-rev3.2-esp32s2
           - fancontroller-rev3.3-esp32s2
-        esphome-version:
-          - stable
-          - beta
+        # stable, beta, and the version pinned in publish-firmware.yml.
+        esphome-version: ${{ fromJSON(needs.release-version.outputs.versions) }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@v7
@@ -43,3 +294,62 @@ jobs:
         with:
           yaml-file: ${{ matrix.file }}.factory.yaml
           version: ${{ matrix.esphome-version }}
+
+  compile-full-examples:
+    name: Compile all examples / ${{ matrix.esphome-version }}
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    needs: release-version
+    strategy:
+      fail-fast: false
+      matrix:
+        # Same three versions as compile-full, so the examples are covered on
+        # the release pin too.
+        esphome-version: ${{ fromJSON(needs.release-version.outputs.versions) }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ESPHome ${{ matrix.esphome-version }}
+        env:
+          ESPHOME_VERSION: ${{ matrix.esphome-version }}
+        run: |
+          if [ "$ESPHOME_VERSION" = "beta" ]; then
+            pip install --pre esphome
+          elif [ "$ESPHOME_VERSION" = "stable" ]; then
+            pip install esphome
+          else
+            pip install "esphome==$ESPHOME_VERSION"
+          fi
+
+      - name: Write dummy secrets
+        run: |
+          echo 'wifi_ssid: "dummy-ssid"' > secrets.yaml
+          echo 'wifi_password: "dummy-password"' >> secrets.yaml
+
+      - name: Localize examples to the working tree
+        run: python3 tools/localize-examples.py
+
+      - name: Compile every example
+        run: |
+          set -u
+          FAILED=()
+          for f in .test-build/*.yaml; do
+            b="$(basename "$f")"
+            [ "$b" = "secrets.yaml" ] && continue
+            echo "--- compile: $f"
+            esphome compile "$f" || FAILED+=("$f")
+          done
+
+          echo ""
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "Failed compiles:"
+            for f in "${FAILED[@]}"; do echo "  $f"; done
+            exit 1
+          fi
+          echo "All examples compiled."

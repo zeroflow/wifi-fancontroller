@@ -305,6 +305,52 @@ def transform_package(lines, i, path):
     return emitted, consumed, ref_path
 
 
+INCLUDE_RE = re.compile(r"!include\s+(\S+)\s*$")
+INCLUDE_FILE_RE = re.compile(r"^\s*file:\s*(\S+)\s*$")
+
+
+def transitive_refs(direct):
+    """Expand direct package references to everything they pull in.
+
+    A package reference is only the entry point. hardware-rev-3.2.yaml and
+    hardware-rev-3.3.yaml are thin wrappers that !include hardware-rev-3.1.yaml,
+    and every hardware package !includes modules/globals.yaml. Without following
+    those edges, CI would decide that a change to modules/globals.yaml affects no
+    example at all, and report a green check for coverage it never ran.
+    """
+    seen = set()
+    queue = list(direct)
+
+    while queue:
+        rel = queue.pop()
+        if rel in seen:
+            continue
+        seen.add(rel)
+
+        target = os.path.join(REPO_ROOT, rel)
+        if not os.path.isfile(target):
+            continue
+
+        with open(target, "r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.rstrip()
+                # Usage examples in header comments are not real edges.
+                if COMMENT_RE.match(stripped):
+                    continue
+
+                match = INCLUDE_RE.search(stripped) or INCLUDE_FILE_RE.match(stripped)
+                if not match:
+                    continue
+
+                # !include paths resolve relative to the including file.
+                nested = os.path.normpath(
+                    os.path.join(os.path.dirname(target), match.group(1))
+                )
+                queue.append(os.path.relpath(nested, REPO_ROOT))
+
+    return sorted(seen)
+
+
 def example_files(explicit=None):
     """Every testable example, or an explicit list passed on the command line.
 
@@ -332,7 +378,7 @@ def build_map(explicit=None):
         with open(path, "r", encoding="utf-8") as handle:
             text = handle.read()
         _out, refs = localize(text, relative(path))
-        result[relative(path)] = refs
+        result[relative(path)] = transitive_refs(refs)
     return result
 
 
