@@ -1,0 +1,125 @@
+# Example: Hardware Rev 3.1 with Three Temperature Profiles
+#
+# This example shows the temperature curve triple module: three fan profiles
+# over one shared 5-point temperature axis, selectable from Home Assistant via
+# the "Curve Selection" select entity.
+#
+# Because the temperature axis is shared, adding the third profile costs no
+# extra Home Assistant entities compared to the two-curve module. Only the
+# speeds differ per profile.
+#
+# The module itself does not read any sensor. To switch automatically, add a
+# Home Assistant automation that calls select.select_option, for example based
+# on the season, occupancy, or an air-quality sensor.
+
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  temperature_curve_triple:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/temperature_curve_triple.yaml]
+
+esphome:
+  name: my-fancontroller
+  friendly_name: My Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# Customize the profiles here. All 20 values are also adjustable live in Home
+# Assistant.
+#
+# The five temperature points are shared by all three profiles and MUST be
+# entered in ascending order. An unordered axis is a hard fault: the board
+# logs a warning, raises the "Curve Configuration Warning" sensor, and forces
+# every fan to 100% until you fix it.
+#
+# Speeds that dip as temperature rises are allowed. That is how you build a
+# deliberate quiet band. It logs an informational note only and the profile
+# keeps working normally.
+#
+# Profile names are used to build the Home Assistant entity names, so pick
+# them now. Renaming a profile later renames its five HA entities and breaks
+# any dashboard or automation that referenced the old names.
+substitutions:
+  curve_a_name: "Normal"
+  curve_b_name: "Quiet"
+  curve_c_name: "Turbo"
+  # Shared temperature axis, ascending
+  axis_temp1: "20.0"
+  axis_temp2: "25.0"
+  axis_temp3: "30.0"
+  axis_temp4: "35.0"
+  axis_temp5: "40.0"
+  # Normal - balanced everyday profile
+  curve_a_speed1: "0.0"
+  curve_a_speed2: "30.0"
+  curve_a_speed3: "55.0"
+  curve_a_speed4: "80.0"
+  curve_a_speed5: "100.0"
+  # Quiet - stays quiet longer, spins up later
+  curve_b_speed1: "0.0"
+  curve_b_speed2: "10.0"
+  curve_b_speed3: "30.0"
+  curve_b_speed4: "60.0"
+  curve_b_speed5: "90.0"
+  # Turbo - maximum airflow, ramps early
+  curve_c_speed1: "40.0"
+  curve_c_speed2: "60.0"
+  curve_c_speed3: "80.0"
+  curve_c_speed4: "95.0"
+  curve_c_speed5: "100.0"
+
+# Tip: pair the "Curve Selection" select with a Home Assistant automation.
+# Note this uses select.select_option, not switch.turn_on, and that the option
+# string must match the profile name you configured above.
+# Example (Home Assistant YAML, lives in HA, not here):
+#
+#   automation:
+#     - alias: "Quiet fan profile at night"
+#       trigger:
+#         - platform: time
+#           at: "22:00:00"
+#       action:
+#         - service: select.select_option
+#           target: { entity_id: select.my_fancontroller_curve_selection }
+#           data:
+#             option: "Quiet"
+#
+#     - alias: "Turbo fan profile when the rack gets hot"
+#       trigger:
+#         - platform: numeric_state
+#           entity_id: sensor.my_fancontroller_temperature
+#           above: 38
+#       action:
+#         - service: select.select_option
+#           target: { entity_id: select.my_fancontroller_curve_selection }
+#           data:
+#             option: "Turbo"
