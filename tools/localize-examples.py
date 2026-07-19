@@ -264,7 +264,7 @@ def transform_package(lines, i, path):
                     # Everything deeper than vars: belongs to the vars block,
                     # including comment-only lines.
                     while k < len(body):
-                        lineno3, sub3 = body[k]
+                        _lineno3, sub3 = body[k]
                         if COMMENT_RE.match(sub3) or indent_of(sub3) > vars_indent:
                             vars_lines.append(sub3)
                             k += 1
@@ -286,7 +286,10 @@ def transform_package(lines, i, path):
     consumed = j - i
 
     # Form B, no vars, collapses to the single-line include.
-    if not vars_lines:
+    # vars_indent is only ever set alongside the first vars_lines entry, so the
+    # two are always populated together. Checking both keeps that invariant
+    # explicit instead of implied.
+    if not vars_lines or vars_indent is None:
         return ["%s%s: !include ../%s" % (pad, key, ref_path)], consumed, ref_path
 
     # Form C keeps the vars, dedented to sit one level under the package key.
