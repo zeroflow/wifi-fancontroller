@@ -38,7 +38,7 @@ The module never sorts your points at runtime. Point 1 must be the coldest and p
 :::danger[An unordered axis forces the fans to 100%]
 If any temperature point is not strictly greater than the one before it, the board treats it as a hard configuration fault. It logs a warning, raises the **Curve Configuration Warning** sensor, and drives every fan to 100% until you correct the points.
 
-This is checked both at boot and on every update cycle, so it also catches an axis you put out of order by editing the **Temp 1**--**Temp 5** numbers live in Home Assistant. Fixing the order restores normal control within a few seconds. No reboot needed.
+This is checked on every update cycle against the values actually in use, so it also catches an axis you put out of order by editing the **Temp 1**--**Temp 5** numbers in Home Assistant. Fixing the order restores normal control within a few seconds. No reboot needed.
 
 That is deliberate. Interpolating over an unordered axis produces meaningless speeds, and a fan controller that fails loud is safe while one that fails silent is not.
 :::

@@ -100,60 +100,45 @@ substitutions:
   curve_c_speed5: "100.0"
 
 # Configuration validation flags.
-#   curve_config_warning: boot-time complaint about the configured defaults,
-#                         informational or hard. Latched until reboot.
-#   curve_config_valid:   cleared by a hard fault in the configured defaults
-#   curve_axis_fault:     the LIVE axis is not ascending right now. Re-evaluated
-#                         on every sensor update and gates the failsafe.
+#   curve_config_warning: a profile's speeds dip as temperature rises.
+#                         Informational, checked once at boot.
+#   curve_axis_fault:     the live temperature axis is not ascending right now.
+#                         Re-evaluated on every sensor update, gates the
+#                         failsafe.
 #
-# The live flag exists because the axis numbers are restore_value: true and are
-# editable from Home Assistant. Boot validation only ever sees the substitution
-# defaults, which after the first boot may not be the values actually in use.
-# Without the live check, editing the axis into a non-ascending order in Home
-# Assistant would silently produce meaningless interpolation, because this
-# module deliberately does not sort.
+# There is deliberately only ONE axis check, and it runs against the live
+# number states rather than the substitution defaults. The axis numbers are
+# restore_value: true and editable from Home Assistant, so the defaults stop
+# being the values in use after the first boot. Since this module never sorts,
+# a non-ascending live axis would otherwise produce meaningless interpolation
+# with no warning.
 globals:
   - id: curve_config_warning
     type: bool
     restore_value: no
     initial_value: 'false'
-  - id: curve_config_valid
-    type: bool
-    restore_value: no
-    initial_value: 'true'
   - id: curve_axis_fault
     type: bool
     restore_value: no
     initial_value: 'false'
 
-# Validate the shared axis and all three profiles at boot
+# Check all three profiles at boot.
+#
+# The shared temperature axis is deliberately NOT checked here. It is checked
+# on every sensor update instead, against the live number states. A boot check
+# would only ever see the substitution defaults, which after the first boot are
+# not necessarily the values in use, so it would be both redundant and
+# misleading. See the axis check in the curve_output_value lambda.
 esphome:
   on_boot:
     - priority: -100  # Run late, after numbers are initialized
       then:
         - lambda: |-
-            float axis[5] = {${axis_temp1}, ${axis_temp2}, ${axis_temp3}, ${axis_temp4}, ${axis_temp5}};
-
-            // Hard fault: the shared temperature axis must be strictly
-            // ascending. Points are never sorted at runtime, so an unordered
-            // axis produces meaningless interpolation. Force the failsafe.
-            bool axis_ok = true;
-            for (int i = 0; i < 4; i++) {
-              if (axis[i] >= axis[i+1]) {
-                ESP_LOGW("temperature_curve_triple",
-                  "FAULT: Temperature point %d (%.1f) >= point %d (%.1f)! "
-                  "Points must be entered in ascending order. Fans are forced "
-                  "to 100%% until the configuration is corrected.",
-                  i+1, axis[i], i+2, axis[i+1]);
-                id(curve_config_warning) = true;
-                id(curve_config_valid) = false;
-                axis_ok = false;
-              }
-            }
-
             // Informational only: speeds that dip as temperature rises. A
             // deliberate quiet band is a legitimate profile, so this never
-            // clears curve_config_valid and never triggers the failsafe.
+            // triggers the failsafe. Unlike the axis, a dipping profile is a
+            // hint about intent rather than a correctness problem, so checking
+            // the configured defaults once at boot is enough.
             float a[5] = {${curve_a_speed1}, ${curve_a_speed2}, ${curve_a_speed3}, ${curve_a_speed4}, ${curve_a_speed5}};
             float b[5] = {${curve_b_speed1}, ${curve_b_speed2}, ${curve_b_speed3}, ${curve_b_speed4}, ${curve_b_speed5}};
             float c[5] = {${curve_c_speed1}, ${curve_c_speed2}, ${curve_c_speed3}, ${curve_c_speed4}, ${curve_c_speed5}};
@@ -174,8 +159,8 @@ esphome:
               }
             }
 
-            if (axis_ok && speeds_ok) {
-              ESP_LOGI("temperature_curve_triple", "Temperature axis and all three profiles validated OK");
+            if (speeds_ok) {
+              ESP_LOGI("temperature_curve_triple", "All three profiles validated OK");
             }
 
 number:
@@ -492,11 +477,6 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
-      // Failsafe: the configured axis was not strictly ascending at boot.
-      if (!id(curve_config_valid)) {
-        return 100.0;
-      }
-
       float temp = id(fancontroller_temperature).state;
 
       float temps[5] = {
@@ -507,10 +487,10 @@ sensor:
         id(axis_temp5).state
       };
 
-      // Re-check the LIVE axis every cycle. These numbers are editable from
-      // Home Assistant, so the boot check on the configured defaults does not
-      // cover them. Since this module never sorts, a non-ascending live axis
-      // makes interpolation meaningless and must trip the same failsafe.
+      // The one and only axis check. Runs every cycle against the live number
+      // states, because these are editable from Home Assistant. Since this
+      // module never sorts, a non-ascending axis makes interpolation
+      // meaningless, so run the fans flat out rather than too slowly.
       bool axis_ok = true;
       for (int i = 0; i < 4; i++) {
         if (temps[i] >= temps[i+1]) {
