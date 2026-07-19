@@ -1,6 +1,6 @@
 # Example: Hardware Rev 3.1 with Dual Temperature Curves
 #
-# This example shows the dual curve module: two complete 5-point curves
+# This example shows the temperature curve dual module: two complete 5-point curves
 # (A and B) selectable from Home Assistant via the "Curve Selection" switch.
 #
 # Intended use: an aggressive curve (A, switch off) and a defensive curve
@@ -14,10 +14,10 @@ packages:
     url: https://github.com/zeroflow/wifi-fancontroller
     ref: main
     files: [hardware-rev-3.1.yaml]
-  dual_curve:
+  temperature_curve_dual:
     url: https://github.com/zeroflow/wifi-fancontroller
     ref: main
-    files: [modules/dual_curve.yaml]
+    files: [modules/temperature_curve_dual.yaml]
 
 esphome:
   name: my-fancontroller

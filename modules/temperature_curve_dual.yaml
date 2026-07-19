@@ -1,4 +1,4 @@
-# Dual Curve Control Module
+# Temperature Curve Dual Control Module
 #
 # Two complete 5-point temperature curves (A and B) selectable via a single
 # Home Assistant switch. Designed for an "aggressive vs defensive" setup where
@@ -11,11 +11,11 @@
 #
 # Usage:
 #   packages:
-#     dual_curve:
+#     temperature_curve_dual:
 #       url: https://github.com/zeroflow/wifi-fancontroller
 #       ref: main
 #       files:
-#         - path: modules/dual_curve.yaml
+#         - path: modules/temperature_curve_dual.yaml
 #           vars:
 #             friendly_name: "My Fan Controller"
 #             # Curve A (switch off, aggressive)
@@ -90,7 +90,7 @@ esphome:
             for (int c = 0; c < 2; c++) {
               for (int i = 0; i < 4; i++) {
                 if (curves[c][i] >= curves[c][i+1]) {
-                  ESP_LOGW("dual_curve",
+                  ESP_LOGW("temperature_curve_dual",
                     "WARNING: Curve %s temperature point %d (%.1f) >= point %d (%.1f)! "
                     "Curve will be auto-sorted at runtime, but consider fixing your configuration.",
                     names[c], i+1, curves[c][i], i+2, curves[c][i+1]);
@@ -100,7 +100,7 @@ esphome:
               }
             }
             if (all_ok) {
-              ESP_LOGI("dual_curve", "Both temperature curves validated OK");
+              ESP_LOGI("temperature_curve_dual", "Both temperature curves validated OK");
             }
 
 number:
