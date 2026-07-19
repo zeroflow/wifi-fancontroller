@@ -473,7 +473,9 @@ sensor:
 # NOTE: The write_action lambda below is a verbatim copy of the one in
 # modules/temperature_curve.yaml (per-fan auto_control + usr_override +
 # safety_floor gating). ESPHome YAML cannot share lambda blocks across
-# modules, so every temperature module duplicates it. Keep the two in sync.
+# modules, so every temperature module duplicates it. Keep temperature_curve,
+# temperature_linear, temperature_curve_dual and temperature_curve_triple in
+# sync. temperature_pid deliberately differs and is not part of this set.
 output:
   - platform: template
     id: curve_proxy_output
