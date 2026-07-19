@@ -383,9 +383,16 @@ def build_map(explicit=None):
 
 
 def generate():
-    if os.path.isdir(BUILD_DIR):
-        shutil.rmtree(BUILD_DIR)
-    os.makedirs(BUILD_DIR)
+    # Only the generated configs are cleared, never the whole directory.
+    # A compile run leaves a .esphome build cache in here that is owned by root
+    # when ESPHome runs through docker, so removing the tree outright fails with
+    # a permission error and leaves the directory half deleted. Keeping the
+    # cache also makes repeat compiles incremental.
+    os.makedirs(BUILD_DIR, exist_ok=True)
+
+    for stale in os.listdir(BUILD_DIR):
+        if stale.endswith(".yaml") and stale != "secrets.yaml":
+            os.remove(os.path.join(BUILD_DIR, stale))
 
     count = 0
     for path in example_files():
