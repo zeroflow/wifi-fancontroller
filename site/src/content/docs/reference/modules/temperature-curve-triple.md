@@ -36,7 +36,9 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via t
 The module never sorts your points at runtime. Point 1 must be the coldest and point 5 the warmest.
 
 :::danger[An unordered axis forces the fans to 100%]
-If any temperature point is not strictly greater than the one before it, the board treats it as a hard configuration fault at boot. It logs a warning, raises the **Curve Configuration Warning** sensor, and drives every fan to 100% until you correct the configuration and reboot.
+If any temperature point is not strictly greater than the one before it, the board treats it as a hard configuration fault. It logs a warning, raises the **Curve Configuration Warning** sensor, and drives every fan to 100% until you correct the points.
+
+This is checked both at boot and on every update cycle, so it also catches an axis you put out of order by editing the **Temp 1**--**Temp 5** numbers live in Home Assistant. Fixing the order restores normal control within a few seconds. No reboot needed.
 
 That is deliberate. Interpolating over an unordered axis produces meaningless speeds, and a fan controller that fails loud is safe while one that fails silent is not.
 :::
@@ -84,7 +86,7 @@ There is no workaround today; it is tracked upstream as [esphome/feature-request
 
 At boot the module validates the shared temperature axis and all three speed sets, then reports the result to the log.
 
-Every 10 seconds it reads the board temperature and computes a fan speed. If the boot validation found an unordered temperature axis it returns 100% and stops there. Otherwise it picks the active profile's five speeds, reads the five shared temperature points, and linearly interpolates. Below the lowest point it holds the first speed; above the highest point it holds the last speed.
+Every 10 seconds it reads the board temperature and computes a fan speed. It first re-checks that the five shared temperature points are still in ascending order, since you can edit them from Home Assistant at any time. If they are not, it returns 100% and stops there. Otherwise it picks the active profile's five speeds and linearly interpolates. Below the lowest point it holds the first speed; above the highest point it holds the last speed.
 
 Profile selection is resolved by the select entity's index position, not by matching the option string, so renaming a profile in your substitutions cannot break which curve is active.
 
@@ -99,7 +101,7 @@ The result drives all four fans, gated per fan by the **Auto Control Fan 1**--**
 | `$curve_a_name` 1--5, `$curve_b_name` 1--5, `$curve_c_name` 1--5 | number (15) | Each profile's five speeds, editable live |
 | Auto Control Fan 1--4 | switch (4) | Per-fan enable for automatic control |
 | `$friendly_name` Curve Output | sensor | The active profile's computed fan speed (%) |
-| Curve Configuration Warning | binary_sensor | Flags an unordered axis or a dipping speed at boot |
+| Curve Configuration Warning | binary_sensor | Flags an unordered axis (live) or a dipping speed (at boot) |
 
 27 entities in total, the same count as Temperature Curve Dual.
 

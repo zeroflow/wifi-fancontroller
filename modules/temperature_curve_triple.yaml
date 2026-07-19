@@ -100,8 +100,18 @@ substitutions:
   curve_c_speed5: "100.0"
 
 # Configuration validation flags.
-#   curve_config_warning: any validation complaint, informational or hard
-#   curve_config_valid:   cleared only by a hard fault, gates the failsafe
+#   curve_config_warning: boot-time complaint about the configured defaults,
+#                         informational or hard. Latched until reboot.
+#   curve_config_valid:   cleared by a hard fault in the configured defaults
+#   curve_axis_fault:     the LIVE axis is not ascending right now. Re-evaluated
+#                         on every sensor update and gates the failsafe.
+#
+# The live flag exists because the axis numbers are restore_value: true and are
+# editable from Home Assistant. Boot validation only ever sees the substitution
+# defaults, which after the first boot may not be the values actually in use.
+# Without the live check, editing the axis into a non-ascending order in Home
+# Assistant would silently produce meaningless interpolation, because this
+# module deliberately does not sort.
 globals:
   - id: curve_config_warning
     type: bool
@@ -111,6 +121,10 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'true'
+  - id: curve_axis_fault
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 # Validate the shared axis and all three profiles at boot
 esphome:
@@ -478,9 +492,7 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
-      // Failsafe: the shared temperature axis was not strictly ascending at
-      // boot, so interpolation is meaningless. Run the fans flat out rather
-      // than risk running them too slowly.
+      // Failsafe: the configured axis was not strictly ascending at boot.
       if (!id(curve_config_valid)) {
         return 100.0;
       }
@@ -494,6 +506,33 @@ sensor:
         id(axis_temp4).state,
         id(axis_temp5).state
       };
+
+      // Re-check the LIVE axis every cycle. These numbers are editable from
+      // Home Assistant, so the boot check on the configured defaults does not
+      // cover them. Since this module never sorts, a non-ascending live axis
+      // makes interpolation meaningless and must trip the same failsafe.
+      bool axis_ok = true;
+      for (int i = 0; i < 4; i++) {
+        if (temps[i] >= temps[i+1]) {
+          axis_ok = false;
+        }
+      }
+      if (!axis_ok) {
+        if (!id(curve_axis_fault)) {
+          ESP_LOGW("temperature_curve_triple",
+            "FAULT: live temperature axis is not strictly ascending "
+            "(%.1f, %.1f, %.1f, %.1f, %.1f). Running fans at 100%% until "
+            "the points are corrected.",
+            temps[0], temps[1], temps[2], temps[3], temps[4]);
+        }
+        id(curve_axis_fault) = true;
+        return 100.0;
+      }
+      if (id(curve_axis_fault)) {
+        ESP_LOGI("temperature_curve_triple",
+          "Live temperature axis is ascending again, resuming normal control");
+      }
+      id(curve_axis_fault) = false;
 
       // Dispatch on the select index rather than the option string, so that
       // renaming a profile cannot break selection. An empty optional (no
@@ -526,7 +565,7 @@ sensor:
       }
 
       // Points are never sorted. They must be entered in ascending order;
-      // the boot validation catches it when they are not.
+      // the live axis check above catches it when they are not.
 
       // Below first point: use first speed
       if (temp <= temps[0]) {
@@ -631,4 +670,5 @@ binary_sensor:
     id: curve_config_warning_sensor
     entity_category: diagnostic
     icon: mdi:alert-circle
-    lambda: 'return id(curve_config_warning);'
+    # Boot-time complaint about the configured defaults, or a live axis fault.
+    lambda: 'return id(curve_config_warning) || id(curve_axis_fault);'
