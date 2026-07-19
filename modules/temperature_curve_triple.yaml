@@ -1,0 +1,634 @@
+# Temperature Curve Triple Control Module
+#
+# Three temperature-to-speed profiles sharing one X axis, selectable from Home
+# Assistant via a select entity. The five temperature points are shared across
+# all three profiles; only the speeds differ per profile. That keeps the Home
+# Assistant entity count identical to the two-curve module while giving you a
+# third profile for free.
+#
+# This module is sensor-agnostic. It does not read any air-quality sensor
+# itself. Profile selection is a plain select entity; put any automation logic
+# in Home Assistant.
+#
+# Usage:
+#   packages:
+#     temperature_curve_triple:
+#       url: https://github.com/zeroflow/wifi-fancontroller
+#       ref: main
+#       files:
+#         - path: modules/temperature_curve_triple.yaml
+#           vars:
+#             friendly_name: "My Fan Controller"
+#             curve_a_name: "Normal"
+#             curve_b_name: "Heating"
+#             curve_c_name: "Turbo"
+#             axis_temp1: "20.0"
+#             curve_a_speed1: "0.0"
+#             # ... etc
+#
+# Configuration Variables:
+#   - friendly_name: Device name prefix (default: "Fancontroller")
+#   - curve_a_name / curve_b_name / curve_c_name: Profile display names
+#   - axis_temp[1-5]: Shared temperature axis, must be entered ascending
+#   - curve_a_speed[1-5]: Speeds for profile A
+#   - curve_b_speed[1-5]: Speeds for profile B
+#   - curve_c_speed[1-5]: Speeds for profile C
+#
+# Features:
+#   - Three 5-point profiles over one shared temperature axis
+#   - Linear interpolation between points; no runtime sorting
+#   - Selection dispatches on the select index, so renaming a profile in the
+#     substitutions cannot break which curve is active
+#   - Individual auto-control switches for each of 4 fans
+#   - Output value sensor showing the active profile's calculated fan speed
+#
+# Configuration validation at boot, two severity levels:
+#   - Temperature axis not strictly ascending is a hard fault. It logs a
+#     warning, raises the configuration warning sensor, and forces every fan to
+#     100% until the configuration is corrected. Failing loud is safe for a fan
+#     controller; failing silent is not.
+#   - Speeds that do not rise monotonically with temperature are informational
+#     only. A deliberate quiet band is a legitimate profile, so this raises the
+#     warning sensor but never triggers the failsafe.
+#
+# Component IDs are fixed literals and are never derived from the name
+# substitutions, so renaming a profile leaves every lambda intact. Note that
+# ESPHome IDs are not carried into Home Assistant: HA derives its entity_id
+# from the entity name, so renaming a profile does rename that profile's five
+# Home Assistant entities and will break existing dashboard references and
+# history. Choose profile names at commissioning time.
+#
+# Safety floor integration:
+#   Respects fan{1-4}_safety_floor globals from the hardware package. When a
+#   safety module (for example stall_guard) sets a floor, this module will not
+#   command a running fan below that floor value. Commanding a fan OFF (0%) is
+#   always honored; the floor only applies to non-zero speeds.
+#
+# NOTE: This is a temperature control module. Do not use it together with
+#   temperature_pid, temperature_linear, temperature_curve, or
+#   temperature_curve_dual. They overlap on the auto_control_fan* IDs and would
+#   fight over the fan outputs.
+#
+substitutions:
+  friendly_name: "Fancontroller"
+  curve_a_name: "Normal"
+  curve_b_name: "Heating"
+  curve_c_name: "Turbo"
+  # Shared temperature axis, ascending
+  axis_temp1: "20.0"
+  axis_temp2: "25.0"
+  axis_temp3: "30.0"
+  axis_temp4: "35.0"
+  axis_temp5: "40.0"
+  # Profile A speeds - balanced everyday profile
+  curve_a_speed1: "0.0"
+  curve_a_speed2: "30.0"
+  curve_a_speed3: "55.0"
+  curve_a_speed4: "80.0"
+  curve_a_speed5: "100.0"
+  # Profile B speeds - stays quiet longer, spins up later
+  curve_b_speed1: "0.0"
+  curve_b_speed2: "10.0"
+  curve_b_speed3: "30.0"
+  curve_b_speed4: "60.0"
+  curve_b_speed5: "90.0"
+  # Profile C speeds - maximum airflow, ramps early
+  curve_c_speed1: "40.0"
+  curve_c_speed2: "60.0"
+  curve_c_speed3: "80.0"
+  curve_c_speed4: "95.0"
+  curve_c_speed5: "100.0"
+
+# Configuration validation flags.
+#   curve_config_warning: any validation complaint, informational or hard
+#   curve_config_valid:   cleared only by a hard fault, gates the failsafe
+globals:
+  - id: curve_config_warning
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: curve_config_valid
+    type: bool
+    restore_value: no
+    initial_value: 'true'
+
+# Validate the shared axis and all three profiles at boot
+esphome:
+  on_boot:
+    - priority: -100  # Run late, after numbers are initialized
+      then:
+        - lambda: |-
+            float axis[5] = {${axis_temp1}, ${axis_temp2}, ${axis_temp3}, ${axis_temp4}, ${axis_temp5}};
+
+            // Hard fault: the shared temperature axis must be strictly
+            // ascending. Points are never sorted at runtime, so an unordered
+            // axis produces meaningless interpolation. Force the failsafe.
+            bool axis_ok = true;
+            for (int i = 0; i < 4; i++) {
+              if (axis[i] >= axis[i+1]) {
+                ESP_LOGW("temperature_curve_triple",
+                  "FAULT: Temperature point %d (%.1f) >= point %d (%.1f)! "
+                  "Points must be entered in ascending order. Fans are forced "
+                  "to 100%% until the configuration is corrected.",
+                  i+1, axis[i], i+2, axis[i+1]);
+                id(curve_config_warning) = true;
+                id(curve_config_valid) = false;
+                axis_ok = false;
+              }
+            }
+
+            // Informational only: speeds that dip as temperature rises. A
+            // deliberate quiet band is a legitimate profile, so this never
+            // clears curve_config_valid and never triggers the failsafe.
+            float a[5] = {${curve_a_speed1}, ${curve_a_speed2}, ${curve_a_speed3}, ${curve_a_speed4}, ${curve_a_speed5}};
+            float b[5] = {${curve_b_speed1}, ${curve_b_speed2}, ${curve_b_speed3}, ${curve_b_speed4}, ${curve_b_speed5}};
+            float c[5] = {${curve_c_speed1}, ${curve_c_speed2}, ${curve_c_speed3}, ${curve_c_speed4}, ${curve_c_speed5}};
+            const char* names[3] = {"${curve_a_name}", "${curve_b_name}", "${curve_c_name}"};
+            float* profiles[3] = {a, b, c};
+            bool speeds_ok = true;
+            for (int p = 0; p < 3; p++) {
+              for (int i = 0; i < 4; i++) {
+                if (profiles[p][i] > profiles[p][i+1]) {
+                  ESP_LOGI("temperature_curve_triple",
+                    "NOTE: Profile %s speed %d (%.1f%%) > speed %d (%.1f%%). "
+                    "Fan speed decreases as temperature rises. This is allowed "
+                    "and the profile stays active; ignore if intentional.",
+                    names[p], i+1, profiles[p][i], i+2, profiles[p][i+1]);
+                  id(curve_config_warning) = true;
+                  speeds_ok = false;
+                }
+              }
+            }
+
+            if (axis_ok && speeds_ok) {
+              ESP_LOGI("temperature_curve_triple", "Temperature axis and all three profiles validated OK");
+            }
+
+number:
+  # ---- Shared temperature axis ----
+  - platform: template
+    name: Temp 1
+    icon: mdi:thermometer-chevron-down
+    entity_category: config
+    restore_value: true
+    initial_value: ${axis_temp1}
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    id: axis_temp1
+    mode: box
+  - platform: template
+    name: Temp 2
+    icon: mdi:thermometer-low
+    entity_category: config
+    restore_value: true
+    initial_value: ${axis_temp2}
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    id: axis_temp2
+    mode: box
+  - platform: template
+    name: Temp 3
+    icon: mdi:thermometer
+    entity_category: config
+    restore_value: true
+    initial_value: ${axis_temp3}
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    id: axis_temp3
+    mode: box
+  - platform: template
+    name: Temp 4
+    icon: mdi:thermometer-high
+    entity_category: config
+    restore_value: true
+    initial_value: ${axis_temp4}
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    id: axis_temp4
+    mode: box
+  - platform: template
+    name: Temp 5
+    icon: mdi:thermometer-chevron-up
+    entity_category: config
+    restore_value: true
+    initial_value: ${axis_temp5}
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    id: axis_temp5
+    mode: box
+  # ---- Profile A speeds ----
+  - platform: template
+    name: ${curve_a_name} 1
+    icon: mdi:fan-off
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_a_speed1}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_a_speed1
+    mode: box
+  - platform: template
+    name: ${curve_a_name} 2
+    icon: mdi:fan-speed-1
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_a_speed2}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_a_speed2
+    mode: box
+  - platform: template
+    name: ${curve_a_name} 3
+    icon: mdi:fan-speed-2
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_a_speed3}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_a_speed3
+    mode: box
+  - platform: template
+    name: ${curve_a_name} 4
+    icon: mdi:fan-speed-3
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_a_speed4}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_a_speed4
+    mode: box
+  - platform: template
+    name: ${curve_a_name} 5
+    icon: mdi:fan-auto
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_a_speed5}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_a_speed5
+    mode: box
+  # ---- Profile B speeds ----
+  - platform: template
+    name: ${curve_b_name} 1
+    icon: mdi:fan-off
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_b_speed1}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_b_speed1
+    mode: box
+  - platform: template
+    name: ${curve_b_name} 2
+    icon: mdi:fan-speed-1
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_b_speed2}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_b_speed2
+    mode: box
+  - platform: template
+    name: ${curve_b_name} 3
+    icon: mdi:fan-speed-2
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_b_speed3}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_b_speed3
+    mode: box
+  - platform: template
+    name: ${curve_b_name} 4
+    icon: mdi:fan-speed-3
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_b_speed4}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_b_speed4
+    mode: box
+  - platform: template
+    name: ${curve_b_name} 5
+    icon: mdi:fan-auto
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_b_speed5}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_b_speed5
+    mode: box
+  # ---- Profile C speeds ----
+  - platform: template
+    name: ${curve_c_name} 1
+    icon: mdi:fan-off
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_c_speed1}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_c_speed1
+    mode: box
+  - platform: template
+    name: ${curve_c_name} 2
+    icon: mdi:fan-speed-1
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_c_speed2}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_c_speed2
+    mode: box
+  - platform: template
+    name: ${curve_c_name} 3
+    icon: mdi:fan-speed-2
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_c_speed3}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_c_speed3
+    mode: box
+  - platform: template
+    name: ${curve_c_name} 4
+    icon: mdi:fan-speed-3
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_c_speed4}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_c_speed4
+    mode: box
+  - platform: template
+    name: ${curve_c_name} 5
+    icon: mdi:fan-auto
+    entity_category: config
+    restore_value: true
+    initial_value: ${curve_c_speed5}
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    id: curve_c_speed5
+    mode: box
+
+select:
+  - platform: template
+    name: "Curve Selection"
+    id: curve_select
+    icon: mdi:tune-variant
+    entity_category: config
+    options:
+      - "${curve_a_name}"
+      - "${curve_b_name}"
+      - "${curve_c_name}"
+    initial_option: "${curve_a_name}"
+    optimistic: true
+    restore_value: true
+
+switch:
+  - platform: template
+    name: "Auto Control Fan 1"
+    id: auto_control_fan1
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Auto Control Fan 2"
+    id: auto_control_fan2
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Auto Control Fan 3"
+    id: auto_control_fan3
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+  - platform: template
+    name: "Auto Control Fan 4"
+    id: auto_control_fan4
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
+
+sensor:
+  - platform: template
+    name: $friendly_name Curve Output
+    id: curve_output_value
+    unit_of_measurement: "%"
+    accuracy_decimals: 1
+    update_interval: 10s
+    lambda: |-
+      // Failsafe: the shared temperature axis was not strictly ascending at
+      // boot, so interpolation is meaningless. Run the fans flat out rather
+      // than risk running them too slowly.
+      if (!id(curve_config_valid)) {
+        return 100.0;
+      }
+
+      float temp = id(fancontroller_temperature).state;
+
+      float temps[5] = {
+        id(axis_temp1).state,
+        id(axis_temp2).state,
+        id(axis_temp3).state,
+        id(axis_temp4).state,
+        id(axis_temp5).state
+      };
+
+      // Dispatch on the select index rather than the option string, so that
+      // renaming a profile cannot break selection. An empty optional (no
+      // option active yet) falls back to profile A.
+      int profile = 0;
+      auto active = id(curve_select).active_index();
+      if (active.has_value()) {
+        profile = active.value();
+      }
+
+      float speeds[5];
+      if (profile == 1) {
+        speeds[0] = id(curve_b_speed1).state;
+        speeds[1] = id(curve_b_speed2).state;
+        speeds[2] = id(curve_b_speed3).state;
+        speeds[3] = id(curve_b_speed4).state;
+        speeds[4] = id(curve_b_speed5).state;
+      } else if (profile == 2) {
+        speeds[0] = id(curve_c_speed1).state;
+        speeds[1] = id(curve_c_speed2).state;
+        speeds[2] = id(curve_c_speed3).state;
+        speeds[3] = id(curve_c_speed4).state;
+        speeds[4] = id(curve_c_speed5).state;
+      } else {
+        speeds[0] = id(curve_a_speed1).state;
+        speeds[1] = id(curve_a_speed2).state;
+        speeds[2] = id(curve_a_speed3).state;
+        speeds[3] = id(curve_a_speed4).state;
+        speeds[4] = id(curve_a_speed5).state;
+      }
+
+      // Points are never sorted. They must be entered in ascending order;
+      // the boot validation catches it when they are not.
+
+      // Below first point: use first speed
+      if (temp <= temps[0]) {
+        return speeds[0];
+      }
+      // Above last point: use last speed
+      if (temp >= temps[4]) {
+        return speeds[4];
+      }
+      // Interpolate between the two surrounding points
+      for (int i = 0; i < 4; i++) {
+        if (temp >= temps[i] && temp <= temps[i+1]) {
+          float temp_range = temps[i+1] - temps[i];
+          if (temp_range <= 0.0001) {
+            return speeds[i];
+          }
+          float ratio = (temp - temps[i]) / temp_range;
+          return speeds[i] + ratio * (speeds[i+1] - speeds[i]);
+        }
+      }
+      return 0.0;
+    on_value:
+      then:
+        - output.set_level:
+            id: curve_proxy_output
+            level: !lambda 'return x / 100.0;'
+
+# NOTE: The write_action lambda below is a verbatim copy of the one in
+# modules/temperature_curve.yaml (per-fan auto_control + usr_override +
+# safety_floor gating). ESPHome YAML cannot share lambda blocks across
+# modules, so every temperature module duplicates it. Keep temperature_curve,
+# temperature_linear, temperature_curve_dual and temperature_curve_triple in
+# sync. temperature_pid deliberately differs and is not part of this set.
+output:
+  - platform: template
+    id: curve_proxy_output
+    type: float
+    write_action:
+      lambda: |-
+        float write_val = state*100.0;
+
+        if (id(auto_control_fan1).state) {
+          if (!id(usr_override_fan1)) {
+            float effective = write_val;
+            float floor1 = id(fan1_safety_floor);  // Safety floor from hardware package
+            if (effective > 0.0f && effective < floor1) effective = floor1;
+            if (effective == 0.0) {
+              id(fan1).turn_off().perform();
+            } else {
+              auto call = id(fan1).turn_on();
+              call.set_speed(effective);
+              call.perform();
+            }
+          }
+        }
+        if (id(auto_control_fan2).state) {
+          if (!id(usr_override_fan2)) {
+            float effective = write_val;
+            float floor2 = id(fan2_safety_floor);  // Safety floor from hardware package
+            if (effective > 0.0f && effective < floor2) effective = floor2;
+            if (effective == 0.0) {
+              id(fan2).turn_off().perform();
+            } else {
+              auto call = id(fan2).turn_on();
+              call.set_speed(effective);
+              call.perform();
+            }
+          }
+        }
+        if (id(auto_control_fan3).state) {
+          if (!id(usr_override_fan3)) {
+            float effective = write_val;
+            float floor3 = id(fan3_safety_floor);  // Safety floor from hardware package
+            if (effective > 0.0f && effective < floor3) effective = floor3;
+            if (effective == 0.0) {
+              id(fan3).turn_off().perform();
+            } else {
+              auto call = id(fan3).turn_on();
+              call.set_speed(effective);
+              call.perform();
+            }
+          }
+        }
+        if (id(auto_control_fan4).state) {
+          if (!id(usr_override_fan4)) {
+            float effective = write_val;
+            float floor4 = id(fan4_safety_floor);  // Safety floor from hardware package
+            if (effective > 0.0f && effective < floor4) effective = floor4;
+            if (effective == 0.0) {
+              id(fan4).turn_off().perform();
+            } else {
+              auto call = id(fan4).turn_on();
+              call.set_speed(effective);
+              call.perform();
+            }
+          }
+        }
+
+binary_sensor:
+  - platform: template
+    name: "Curve Configuration Warning"
+    id: curve_config_warning_sensor
+    entity_category: diagnostic
+    icon: mdi:alert-circle
+    lambda: 'return id(curve_config_warning);'
