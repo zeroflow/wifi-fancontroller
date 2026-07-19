@@ -154,7 +154,12 @@ jobs:
         env:
           ALL_CHANGED: ${{ steps.changed.outputs.all-changed }}
         run: |
-          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          # No stdout redirect here. This script writes its outputs to
+          # GITHUB_OUTPUT directly and prints the selection summary for the
+          # log. Redirecting stdout as well would push those human readable
+          # lines into the output file, where they are not valid name=value
+          # pairs and fail the step.
+          python3 - <<'PY'
           import json, os, subprocess
 
           all_changed = os.environ.get("ALL_CHANGED") == "true"
