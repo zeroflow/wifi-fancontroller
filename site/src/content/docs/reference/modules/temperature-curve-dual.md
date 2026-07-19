@@ -1,5 +1,5 @@
 ---
-title: Dual Curve
+title: Temperature Curve Dual
 description: Two switchable 5-point temperature curves for aggressive vs defensive fan profiles
 sidebar:
   order: 4
@@ -11,20 +11,20 @@ Works with all hardware revisions (Rev 1.0 through Rev 3.3).
 
 ## Purpose
 
-The Dual Curve module holds two complete 5-point temperature-to-speed curves, A and B, and lets you switch between them from Home Assistant with a single switch. Curve A is meant to be an aggressive profile (cools hard, early) and curve B a defensive one (stays quiet longer, spins up later), but both are fully configurable.
+The Temperature Curve Dual module holds two complete 5-point temperature-to-speed curves, A and B, and lets you switch between them from Home Assistant with a single switch. Curve A is meant to be an aggressive profile (cools hard, early) and curve B a defensive one (stays quiet longer, spins up later), but both are fully configurable.
 
 ## When to Use
 
-Choose Dual Curve when you want two distinct fan profiles you can flip between, instead of constantly re-tuning a single curve. The classic case is pairing it with an air-quality automation: when the air is bad, a Home Assistant automation flips to the defensive curve so the fans stay quiet and ramp up later.
+Choose Temperature Curve Dual when you want two distinct fan profiles you can flip between, instead of constantly re-tuning a single curve. The classic case is pairing it with an air-quality automation: when the air is bad, a Home Assistant automation flips to the defensive curve so the fans stay quiet and ramp up later.
 
 The module is sensor-agnostic. It does not read any air-quality sensor itself. Curve selection is just a switch; the automation logic lives in Home Assistant. For a single fixed curve, see [Temperature Curve](/reference/modules/temperature-curve/). The [modules overview](/reference/modules/) has a comparison table.
 
 :::caution[One temperature module at a time]
-Dual Curve is a temperature control module. Do not enable it together with Temperature PID, Temperature Linear, or Temperature Curve. They share the `auto_control_fan1`--`auto_control_fan4` switches and would fight over the fan outputs.
+Temperature Curve Dual is a temperature control module. Do not enable it together with Temperature PID, Temperature Linear, or Temperature Curve. They share the `auto_control_fan1`--`auto_control_fan4` switches and would fight over the fan outputs.
 :::
 
 :::tip[Works with Stall Guard]
-This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via the safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Dual Curve respects during recovery. No extra configuration needed, just include both modules.
+This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via the safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature Curve Dual respects during recovery. No extra configuration needed, just include both modules.
 :::
 
 ## Configuration
@@ -85,4 +85,4 @@ automation:
         target: { entity_id: switch.my_fancontroller_curve_selection }
 ```
 
-See [`examples/with-dual-curve-rev-3.1.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-dual-curve-rev-3.1.yaml) for a complete configuration.
+See [`examples/with-temperature-curve-dual-rev-3.1.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-temperature-curve-dual-rev-3.1.yaml) for a complete configuration.
