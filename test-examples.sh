@@ -13,10 +13,57 @@
 #
 # NAME accepts either a bare name or a filename, for example
 # with-usr-buttons-rev-3.1 or with-usr-buttons-rev-3.1.yaml
+#
+# The ESPHome version defaults to the pin that ships to customer hardware, read
+# from .github/workflows/publish-firmware.yml. Override it to test another:
+#
+#   ESPHOME_VERSION=beta ./test-examples.sh
+#   ESPHOME_VERSION=latest ./test-examples.sh
 
 set -u
 
 cd "$(dirname "$0")" || exit 1
+
+# Resolve the ESPHome version before anything runs. esphome.sh defaults to
+# "latest", which is whatever the local docker cache happens to hold, so an
+# unpinned sweep tests an unknown version. That is not hypothetical: a stale
+# 2026.2.4 once failed an example on a CMake error while the shipped pin built
+# it clean. A red sweep meaning "your cache is old" must not be indistinguishable
+# from one meaning "you broke a module".
+#
+# publish-firmware.yml is the single source of truth for the pin. ci.yml and
+# esphome-version-check.yml both parse it rather than duplicating the literal,
+# and so does this. A targeted grep keeps the script free of a PyYAML dependency
+# it would otherwise abort on. The version-shape check below is what makes that
+# safe: if the file's layout changes, this fails loudly instead of quietly
+# picking up the wrong value.
+PIN_FILE=".github/workflows/publish-firmware.yml"
+
+if [ -n "${ESPHOME_VERSION:-}" ]; then
+  echo "=== ESPHome ${ESPHOME_VERSION} (from ESPHOME_VERSION)"
+else
+  if [ ! -f "$PIN_FILE" ]; then
+    echo "ABORT: $PIN_FILE not found, cannot resolve the ESPHome version."
+    echo "Set ESPHOME_VERSION explicitly to proceed."
+    exit 1
+  fi
+
+  PINNED="$(grep -E '^[[:space:]]*esphome-version:' "$PIN_FILE" \
+    | head -1 | sed -E 's/.*esphome-version:[[:space:]]*//' | tr -d '"'"'"' \r')"
+
+  # Deliberately strict. Anything that is not a plain N.N.N means the file moved
+  # on and the fallback would be a guess, so refuse rather than test the wrong
+  # version silently.
+  if ! echo "$PINNED" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+    echo "ABORT: could not read a version-shaped esphome-version: from $PIN_FILE"
+    echo "Got: '${PINNED}'"
+    echo "Set ESPHOME_VERSION explicitly to proceed."
+    exit 1
+  fi
+
+  export ESPHOME_VERSION="$PINNED"
+  echo "=== ESPHome ${ESPHOME_VERSION} (release pin from $PIN_FILE)"
+fi
 
 COMPILE=0
 SELECT=""
