@@ -1,0 +1,35 @@
+# DEPRECATED: renamed to temperature_curve_dual
+#
+# This module was renamed to modules/temperature_curve_dual.yaml so it sits in
+# the temperature_* module family alongside temperature_curve,
+# temperature_linear and temperature_pid.
+#
+# This file is a compatibility shim. It forwards to the new module so existing
+# configurations keep working, and it will be removed in a future release.
+# Nothing else changed: all curveA_* / curveB_* substitutions, component ids
+# and Home Assistant entity names are identical, so migrating keeps your tuned
+# values and your entity history.
+#
+# Migrate by changing the file path:
+#   packages:
+#     temperature_curve_dual:
+#       url: https://github.com/zeroflow/wifi-fancontroller
+#       ref: main
+#       files:
+#         - path: modules/temperature_curve_dual.yaml
+#
+# See https://fancontroller.arthofer.dev/reference/modules/temperature-curve-dual/
+
+packages:
+  temperature_curve_dual: !include temperature_curve_dual.yaml
+
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            ESP_LOGW("dual_curve",
+              "DEPRECATED: modules/dual_curve.yaml has been renamed to "
+              "modules/temperature_curve_dual.yaml. This shim still works but "
+              "will be removed in a future release. Update the file path in "
+              "your packages: block to migrate.");
