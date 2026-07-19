@@ -1,0 +1,127 @@
+name: ESPHome Version Check
+
+# Dependabot tracks the action pins in uses:, but it has no idea about the
+# esphome-version: input value inside publish-firmware.yml. That value decides
+# what gets built for customer hardware, and nothing in the repo noticed when it
+# drifted behind upstream. This workflow closes that loop.
+#
+# It reports only. This firmware ships to physical boards, so the human decides
+# when to bump. Nothing here edits publish-firmware.yml.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  contents: read
+
+jobs:
+  check:
+    name: Compare the pinned version against upstream
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Compare pinned version against latest upstream release
+        id: check
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import urllib.request
+
+          import yaml
+
+          # publish-firmware.yml is the single source of truth for the version
+          # that ships. Parse it rather than duplicating the literal.
+          with open(".github/workflows/publish-firmware.yml") as handle:
+              data = yaml.safe_load(handle)
+          pinned = str(data["jobs"]["build-firmware"]["with"]["esphome-version"])
+
+          # The /releases/latest endpoint already excludes drafts and
+          # prereleases, so there is no list to filter.
+          request = urllib.request.Request(
+              "https://api.github.com/repos/esphome/esphome/releases/latest",
+              headers={"Accept": "application/vnd.github+json"},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              release = json.load(response)
+          latest = str(release["tag_name"]).lstrip("v")
+
+          def parts(value):
+              return tuple(int(chunk) for chunk in value.split("."))
+
+          try:
+              behind = parts(pinned) < parts(latest)
+          except ValueError:
+              # A non numeric tag should not silently read as up to date.
+              behind = pinned != latest
+
+          print("pinned=%s" % pinned)
+          print("latest=%s" % latest)
+          print("behind=%s" % ("true" if behind else "false"))
+          PY
+
+      - name: Report that the pin is current
+        if: steps.check.outputs.behind != 'true'
+        env:
+          PINNED: ${{ steps.check.outputs.pinned }}
+          LATEST: ${{ steps.check.outputs.latest }}
+        run: echo "Pinned ESPHome $PINNED is current against upstream $LATEST."
+
+      - name: Open or update the drift issue
+        if: steps.check.outputs.behind == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PINNED: ${{ steps.check.outputs.pinned }}
+          LATEST: ${{ steps.check.outputs.latest }}
+        run: |
+          set -euo pipefail
+
+          LABEL="esphome-version"
+          TITLE="ESPHome version pin is behind upstream"
+
+          # The label is how an existing issue is found again. Creating it is
+          # idempotent, so a failure here just means it already exists.
+          gh label create "$LABEL" \
+            --description "Tracks drift of the esphome-version pin" \
+            --color "0366d6" || true
+
+          cat > "$RUNNER_TEMP/issue-body.md" <<EOF
+          The ESPHome version pinned in \`.github/workflows/publish-firmware.yml\`
+          is behind the latest upstream stable release.
+
+          | | Version |
+          |---|---|
+          | Pinned (\`esphome-version:\`) | \`$PINNED\` |
+          | Latest upstream stable | \`$LATEST\` |
+
+          That pin decides what gets built and flashed to customer hardware.
+
+          To bump it, edit \`esphome-version:\` in
+          \`.github/workflows/publish-firmware.yml\`, then let CI build against
+          the new version before cutting a release.
+
+          This issue is updated in place by the ESPHome Version Check workflow.
+          It is a report only, nothing is bumped automatically.
+          EOF
+
+          # Update an existing open issue rather than opening a new one every
+          # week. A cron that files a fresh issue every Monday is worse than no
+          # automation at all.
+          EXISTING="$(gh issue list --state open --label "$LABEL" \
+            --json number --jq '.[0].number // empty')"
+
+          if [ -n "$EXISTING" ]; then
+            echo "Updating existing issue #$EXISTING"
+            gh issue edit "$EXISTING" --body-file "$RUNNER_TEMP/issue-body.md"
+            gh issue comment "$EXISTING" \
+              --body "Still behind as of $(date -u +%Y-%m-%d): pinned \`$PINNED\`, latest \`$LATEST\`."
+          else
+            echo "Opening a new issue"
+            gh issue create \
+              --title "$TITLE" \
+              --label "$LABEL" \
+              --body-file "$RUNNER_TEMP/issue-body.md"
+          fi
