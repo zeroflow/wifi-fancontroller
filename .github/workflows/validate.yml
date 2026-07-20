@@ -152,7 +152,7 @@ jobs:
           fetch-depth: 0
 
       - name: Restore PlatformIO cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ github.workspace }}/.pio-cache
           key: pio-${{ needs.release-version.outputs.version }}
