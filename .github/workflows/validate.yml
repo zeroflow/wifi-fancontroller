@@ -116,3 +116,178 @@ jobs:
             exit 1
           fi
           echo "All configs valid."
+
+  compile-affected:
+    name: Compile affected examples
+    runs-on: ubuntu-latest
+    needs: release-version
+    container:
+      image: ghcr.io/esphome/esphome:${{ needs.release-version.outputs.version }}
+      # The image's own /entrypoint.sh normally redirects PlatformIO's
+      # platform/package/cache dirs (and the esp-idf prefix) under /config or
+      # /cache -- but GitHub Actions container: jobs bypass ENTRYPOINT
+      # entirely, so entrypoint.sh never runs. These four must be set
+      # explicitly here. The single core-dir variable PlatformIO itself
+      # documents is not used by this image's own tooling, so setting only
+      # that one would leave the cache empty; each of the four below is
+      # rooted at a github.workspace-relative path so the actions/cache step
+      # below (running on the runner, not in the container) can see the
+      # directory it is asked to save.
+      env:
+        PLATFORMIO_PLATFORMS_DIR: ${{ github.workspace }}/.pio-cache/platforms
+        PLATFORMIO_PACKAGES_DIR: ${{ github.workspace }}/.pio-cache/packages
+        PLATFORMIO_CACHE_DIR: ${{ github.workspace }}/.pio-cache/cache
+        # Rev 1.0 is the one board on esp-idf rather than arduino and
+        # downloads a separate SDK root; omitting this leaves it uncached.
+        ESPHOME_ESP_IDF_PREFIX: ${{ github.workspace }}/.pio-cache/idf
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Restore PlatformIO cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/.pio-cache
+          key: pio-${{ needs.release-version.outputs.version }}
+          # Falls back to any prior cache on a pin bump, giving a partial hit
+          # rather than a fully cold run.
+          restore-keys: |
+            pio-
+
+      - name: Write dummy secrets
+        # The real secrets.yaml is gitignored and absent in CI.
+        run: |
+          echo 'wifi_ssid: "dummy-ssid"' > secrets.yaml
+          echo 'wifi_password: "dummy-password"' >> secrets.yaml
+
+      - name: Localize examples to the working tree
+        run: python3 tools/localize-examples.py
+
+      - name: Determine changed files
+        id: changed
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PUSH_BEFORE: ${{ github.event.before }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -u
+          BASE=""
+
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+          else
+            BASE="$PUSH_BEFORE"
+          fi
+
+          # A new branch or a force push reports an all zero before sha, and
+          # that sha does not resolve. Fall back to the first parent, and if
+          # even that fails, treat everything as changed.
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ] \
+             || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            if git rev-parse HEAD~1 >/dev/null 2>&1; then
+              BASE="$(git rev-parse HEAD~1)"
+              echo "No usable base sha, falling back to HEAD~1 ($BASE)"
+            else
+              echo "No usable base sha and no parent commit, treating all as changed"
+              echo "all-changed=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          echo "Diffing $BASE against HEAD"
+          git diff --name-only "$BASE" HEAD | tee changed-files.txt
+          echo "all-changed=false" >> "$GITHUB_OUTPUT"
+
+      - name: Select affected examples
+        id: select
+        env:
+          ALL_CHANGED: ${{ steps.changed.outputs.all-changed }}
+        run: |
+          # No stdout redirect here. This script writes its outputs to
+          # GITHUB_OUTPUT directly and prints the selection summary for the
+          # log. Redirecting stdout as well would push those human readable
+          # lines into the output file, where they are not valid name=value
+          # pairs and fail the step.
+          python3 - <<'PY'
+          import json, os, subprocess
+
+          all_changed = os.environ.get("ALL_CHANGED") == "true"
+
+          raw = subprocess.run(
+              ["python3", "tools/localize-examples.py", "--emit-map"],
+              capture_output=True, text=True, check=True,
+          ).stdout
+          mapping = json.loads(raw)
+
+          changed = set()
+          if not all_changed:
+              try:
+                  with open("changed-files.txt") as handle:
+                      changed = {line.strip() for line in handle if line.strip()}
+              except FileNotFoundError:
+                  all_changed = True
+
+          # A change to the harness itself or to any example invalidates the
+          # whole selection, so fall back to compiling everything.
+          harness_touched = any(
+              path == "test-examples.sh"
+              or path.startswith("tools/")
+              or path.startswith("examples/")
+              for path in changed
+          )
+          if all_changed or harness_touched:
+              selected = sorted(mapping)
+              skipped = []
+              reason = "harness, tools or examples changed" if not all_changed else "no usable diff base"
+          else:
+              selected = sorted(k for k, deps in mapping.items() if changed.intersection(deps))
+              skipped = sorted(set(mapping) - set(selected))
+              reason = "no referenced path changed"
+
+          print("=== Changed files ===")
+          for path in sorted(changed):
+              print("  " + path)
+
+          print("=== Selected for compile: %d ===" % len(selected))
+          for path in selected:
+              print("  " + path)
+
+          print("=== Skipped: %d (%s) ===" % (len(skipped), reason))
+          for path in skipped:
+              print("  " + path)
+
+          names = [os.path.basename(p)[:-len(".yaml")] for p in selected]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as handle:
+              handle.write("names=%s\n" % " ".join(names))
+              handle.write("count=%d\n" % len(names))
+          PY
+
+      - name: Report no affected examples
+        if: steps.select.outputs.count == '0'
+        run: echo "No example is affected by this change. Nothing to compile."
+
+      - name: Compile affected examples
+        if: steps.select.outputs.count != '0'
+        env:
+          NAMES: ${{ steps.select.outputs.names }}
+        run: |
+          set -u
+          FAILED=()
+          for n in $NAMES; do
+            echo "--- compile: $n"
+            esphome compile ".test-build/$n.yaml" || FAILED+=("$n")
+          done
+
+          echo ""
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "Failed compiles:"
+            for n in "${FAILED[@]}"; do echo "  $n"; done
+            exit 1
+          fi
+          echo "All affected examples compiled."
+
+      - name: Report PlatformIO cache size
+        if: always()
+        run: du -sh "${{ github.workspace }}/.pio-cache" 2>/dev/null || echo "No cache directory present."
