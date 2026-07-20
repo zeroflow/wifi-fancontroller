@@ -93,6 +93,11 @@ jobs:
         run: python3 tools/localize-examples.py
 
       - name: Validate every config
+        # Actions defaults a container job's run steps to sh, which here is
+        # dash, and this script uses bash arrays. Declare the interpreter
+        # instead of relying on the default. The image ships bash at
+        # /usr/bin/bash, so this resolves rather than falling back again.
+        shell: bash
         run: |
           set -u
           FAILED=()
@@ -272,6 +277,9 @@ jobs:
         if: steps.select.outputs.count != '0'
         env:
           NAMES: ${{ steps.select.outputs.names }}
+        # Same reason as the config job's sweep: container steps default to
+        # sh, and this uses bash arrays.
+        shell: bash
         run: |
           set -u
           FAILED=()
