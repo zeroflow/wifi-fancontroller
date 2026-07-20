@@ -291,3 +291,19 @@ jobs:
       - name: Report PlatformIO cache size
         if: always()
         run: du -sh "${{ github.workspace }}/.pio-cache" 2>/dev/null || echo "No cache directory present."
+
+  lint-workflows:
+    name: Lint workflow syntax
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Run actionlint
+        # Same invocation a developer runs locally (README/CLAUDE.md), so the
+        # local command and the CI command are identical. Pinned to a
+        # specific released tag, not a floating one. This check catches
+        # exactly the class of bug this phase risks introducing while
+        # splitting and re-indenting two large workflow files: an event
+        # field interpolated directly into a shell body.
+        run: docker run --rm -v "$PWD":/repo -w /repo rhysd/actionlint:1.7.12
