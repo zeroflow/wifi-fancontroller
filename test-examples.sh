@@ -1,18 +1,19 @@
 #!/bin/bash
-# Validate the examples against the working tree.
+# Validate the 12 board configs and the examples against the working tree.
 #
 # The files in examples/ reference this repository over github://...@main, so
 # testing them directly validates the published version and not the code on
 # disk. tools/localize-examples.py rewrites those references to local !include
-# and writes the result to .test-build/, which is what this script tests.
+# and writes the result to .test-build/, which is what this script tests. The
+# 12 fancontroller-rev*.yaml board configs in the repo root are tested as-is.
 #
 # Usage:
-#   ./test-examples.sh                  config only, all examples. Fast loop.
-#   ./test-examples.sh --compile        config then compile, all examples
-#   ./test-examples.sh --compile NAME   config then compile, one example
+#   ./test-examples.sh                  config only, all configs. Fast loop.
+#   ./test-examples.sh --compile        config then compile, all configs
+#   ./test-examples.sh --compile NAME   config then compile, one config
 #
 # NAME accepts either a bare name or a filename, for example
-# with-usr-buttons-rev-3.1 or with-usr-buttons-rev-3.1.yaml
+# with-usr-buttons-rev-3.1 or fancontroller-rev3.3-esp32s2.yaml
 #
 # The ESPHome version defaults to the pin that ships to customer hardware, read
 # from .github/workflows/publish-firmware.yml. Override it to test another:
@@ -100,38 +101,58 @@ if [ ! -f .test-build/secrets.yaml ]; then
   echo 'wifi_password: "dummy-password"' >> .test-build/secrets.yaml
 fi
 
-# Step 3: build the list of examples to test.
-ALL_NAMES=()
-for f in .test-build/*.yaml; do
-  b="$(basename "$f")"
-  [ "$b" = "secrets.yaml" ] && continue
-  ALL_NAMES+=("${b%.yaml}")
+# Step 3: build the list of configs to test. Board configs first, so the two
+# cold per-chip-family builds happen at the top and the example sweep that
+# follows runs warm (19-RESEARCH.md O-06).
+ALL_PATHS=()
+
+# First source: the 12 root board configs. This glob matches all 12 files,
+# the six plain configs and the six .factory.yaml variants, because the *
+# consumes "1.0-esp32.factory" just as readily as "1.0-esp32". Do NOT replace
+# it with a hand-written list; that would silently drop factory-config
+# coverage, which is the exact regression CI-04 exists to catch.
+for f in fancontroller-rev*.yaml; do
+  [ -e "$f" ] || continue
+  ALL_PATHS+=("$f")
 done
 
-if [ ${#ALL_NAMES[@]} -eq 0 ]; then
-  echo "ABORT: no generated configs found in .test-build/"
+# Second source: the generated examples in .test-build/.
+for f in .test-build/*.yaml; do
+  [ -e "$f" ] || continue
+  b="$(basename "$f")"
+  [ "$b" = "secrets.yaml" ] && continue
+  ALL_PATHS+=("$f")
+done
+
+if [ ${#ALL_PATHS[@]} -eq 0 ]; then
+  echo "ABORT: no board configs found in the repo root and no generated configs found in .test-build/"
   exit 1
 fi
 
 NAMES=()
 if [ -n "$SELECT" ]; then
-  for n in "${ALL_NAMES[@]}"; do
+  for p in "${ALL_PATHS[@]}"; do
+    b="$(basename "$p")"
+    n="${b%.yaml}"
     if [ "$n" = "$SELECT" ]; then
-      NAMES+=("$n")
+      NAMES+=("$p")
     fi
   done
   if [ ${#NAMES[@]} -eq 0 ]; then
     echo ""
     echo "ERROR: no example named '$SELECT'."
     echo "Valid names:"
-    for n in "${ALL_NAMES[@]}"; do echo "  $n"; done
+    for p in "${ALL_PATHS[@]}"; do
+      b="$(basename "$p")"
+      echo "  ${b%.yaml}"
+    done
     exit 1
   fi
 else
-  NAMES=("${ALL_NAMES[@]}")
+  NAMES=("${ALL_PATHS[@]}")
 fi
 
-echo "Testing ${#NAMES[@]} example(s)"
+echo "Testing ${#NAMES[@]} config(s) (board configs and examples)"
 echo ""
 
 # Step 4: config phase. Fresh counters.
@@ -140,13 +161,13 @@ CONFIG_FAIL=0
 CONFIG_FAILURES=()
 
 echo "=== Config phase"
-for n in "${NAMES[@]}"; do
-  echo "--- config: $n"
-  if ./esphome.sh config ".test-build/$n.yaml"; then
+for p in "${NAMES[@]}"; do
+  echo "--- config: $p"
+  if ./esphome.sh config "$p"; then
     CONFIG_PASS=$((CONFIG_PASS + 1))
   else
     CONFIG_FAIL=$((CONFIG_FAIL + 1))
-    CONFIG_FAILURES+=("$n")
+    CONFIG_FAILURES+=("$p")
   fi
 done
 
@@ -179,13 +200,13 @@ COMPILE_FAILURES=()
 
 echo ""
 echo "=== Compile phase"
-for n in "${NAMES[@]}"; do
-  echo "--- compile: $n"
-  if ./esphome.sh compile ".test-build/$n.yaml"; then
+for p in "${NAMES[@]}"; do
+  echo "--- compile: $p"
+  if ./esphome.sh compile "$p"; then
     COMPILE_PASS=$((COMPILE_PASS + 1))
   else
     COMPILE_FAIL=$((COMPILE_FAIL + 1))
-    COMPILE_FAILURES+=("$n")
+    COMPILE_FAILURES+=("$p")
   fi
 done
 
