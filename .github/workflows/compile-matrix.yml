@@ -1,0 +1,89 @@
+name: Compile matrix
+
+# Carried over unchanged from ci.yml: a schedule event ignores paths filters
+# entirely, so this weekly full build is meant to be unconditional. No paths
+# or paths-ignore key is set here for that reason.
+#
+# The on-demand dispatch trigger below pairs with the schedule the same way
+# esphome-version-check.yml already does in this repository, so this run can
+# be exercised on demand instead of waiting for the next Sunday.
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+
+jobs:
+  release-version:
+    name: Read the pinned release version
+    runs-on: ubuntu-latest
+    # This job is written out in full here and again in validate.yml. That
+    # duplication is intentional (D-06) - repetition over indirection is a
+    # standing project convention - do not factor it into a composite action
+    # or a reusable workflow.
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      versions: ${{ steps.read.outputs.versions }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Read esphome-version from publish-firmware.yml
+        id: read
+        # publish-firmware.yml is the single source of truth for the version
+        # that ships to customer hardware. Read it rather than duplicating it.
+        # The version that ships was previously covered by no matrix at all.
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import yaml
+          with open(".github/workflows/publish-firmware.yml") as handle:
+              data = yaml.safe_load(handle)
+          version = str(data["jobs"]["build-firmware"]["with"]["esphome-version"])
+          print("version=%s" % version)
+          print("versions=%s" % json.dumps(["stable", "beta", version]))
+          PY
+
+      - name: Show the pinned version
+        run: |
+          echo "Pinned release version is ${{ steps.read.outputs.version }}"
+          echo "Scheduled matrix covers ${{ steps.read.outputs.versions }}"
+
+  compile-full:
+    name: Compile / ${{ matrix.esphome-version }}
+    runs-on: ubuntu-latest
+    needs: release-version
+    # No small per-board job bounds this work anymore (D-11 collapses 18
+    # legs into 3), so an explicit bound replaces the implicit one the old
+    # per-board jobs provided. 180 comfortably covers the pessimistic
+    # zero-warm-reuse case (~130 min, per 19-RESEARCH.md O-06) while staying
+    # well under the six-hour default, so a wedged job cannot silently burn
+    # half a day of runner minutes on a run nobody is watching.
+    timeout-minutes: 180
+    strategy:
+      # One dimension: three ESPHome versions. The per-board fan-out that
+      # used to multiply this into 18 legs is exactly what CI-06 removes.
+      fail-fast: false
+      matrix:
+        esphome-version: ${{ fromJSON(needs.release-version.outputs.versions) }}
+    # No per-job caching here (D-12 excludes the weekly path deliberately):
+    # each version's job compiles every board config before any example, so
+    # the toolchain is warm by construction well before caching could help,
+    # and a weekly cadence against a seven-day cache eviction window is a
+    # coin flip not worth the added complexity.
+    container:
+      image: ghcr.io/esphome/esphome:${{ matrix.esphome-version }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Sweep board configs and examples
+        # test-examples.sh (widened in plan 01) covers everything the old
+        # compile-full and compile-full-examples jobs did, in one call: it
+        # writes its own dummy secrets, localizes the examples, then runs a
+        # config phase followed by a compile phase across all 12 board
+        # configs and every generated example. The esphome CLI is already
+        # runnable on PATH inside this image, so the harness reaches it
+        # directly with no extra step needed here.
+        env:
+          ESPHOME_VERSION: ${{ matrix.esphome-version }}
+        run: ./test-examples.sh --compile
