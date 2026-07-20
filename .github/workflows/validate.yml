@@ -1,0 +1,118 @@
+name: Validate
+
+# Every commit in this repository lands directly on main, so a pull_request
+# only trigger meant CI effectively never ran. Push is the trigger that
+# matters here.
+#
+# An ignore list here, not an allowlist: the old ci.yml allowlist missed
+# publish-firmware.yml and esphome.sh. A fail-safe ignore list means
+# anything not explicitly excluded triggers by default, including a script
+# added tomorrow.
+#
+# Latent risk, not a live one: if these checks are ever made required status
+# checks under branch protection, a pull request touching only these
+# ignored paths would hang in an expected state forever, because a workflow
+# that never triggers never reports a status. Not a concern today - this
+# repo does not gate merges on PR status checks - but worth knowing before
+# branch protection is turned on.
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - 'site/**'
+      - '**/*.md'
+      - '**/*.mdx'
+      - 'LICENSE'
+  pull_request:
+    paths-ignore:
+      - 'site/**'
+      - '**/*.md'
+      - '**/*.mdx'
+      - 'LICENSE'
+
+# Keyed on the ref, not on the pull request number. The old group used
+# github.event.pull_request.number, which is empty for push and schedule
+# events, so every non-PR run collapsed into one group and cancelled itself.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release-version:
+    name: Read the pinned release version
+    runs-on: ubuntu-latest
+    # This job is written out in full here and again in compile-matrix.yml.
+    # That duplication is intentional (D-06) - repetition over indirection is
+    # a standing project convention - do not factor it into a composite
+    # action or a reusable workflow.
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      versions: ${{ steps.read.outputs.versions }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Read esphome-version from publish-firmware.yml
+        id: read
+        # publish-firmware.yml is the single source of truth for the version
+        # that ships to customer hardware. Read it rather than duplicating it.
+        # The version that ships was previously covered by no matrix at all.
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import yaml
+          with open(".github/workflows/publish-firmware.yml") as handle:
+              data = yaml.safe_load(handle)
+          version = str(data["jobs"]["build-firmware"]["with"]["esphome-version"])
+          print("version=%s" % version)
+          print("versions=%s" % json.dumps(["stable", "beta", version]))
+          PY
+
+      - name: Show the pinned version
+        run: |
+          echo "Pinned release version is ${{ steps.read.outputs.version }}"
+          echo "Scheduled matrix covers ${{ steps.read.outputs.versions }}"
+
+  config:
+    name: Validate all configs
+    runs-on: ubuntu-latest
+    needs: release-version
+    container:
+      image: ghcr.io/esphome/esphome:${{ needs.release-version.outputs.version }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Write dummy secrets
+        # The real secrets.yaml is gitignored and absent in CI.
+        run: |
+          echo 'wifi_ssid: "dummy-ssid"' > secrets.yaml
+          echo 'wifi_password: "dummy-password"' >> secrets.yaml
+
+      - name: Localize examples to the working tree
+        run: python3 tools/localize-examples.py
+
+      - name: Validate every config
+        run: |
+          set -u
+          FAILED=()
+
+          for f in .test-build/*.yaml; do
+            b="$(basename "$f")"
+            [ "$b" = "secrets.yaml" ] && continue
+            echo "--- config: $f"
+            esphome config "$f" > /dev/null || FAILED+=("$f")
+          done
+
+          for f in fancontroller-rev*.yaml; do
+            echo "--- config: $f"
+            esphome config "$f" > /dev/null || FAILED+=("$f")
+          done
+
+          echo ""
+          if [ ${#FAILED[@]} -gt 0 ]; then
+            echo "Failed configs:"
+            for f in "${FAILED[@]}"; do echo "  $f"; done
+            exit 1
+          fi
+          echo "All configs valid."
