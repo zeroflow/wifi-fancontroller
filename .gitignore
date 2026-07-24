@@ -26,6 +26,10 @@ site/dist/
 site/.astro/
 site/public/firmware/
 
+# 19.1-03: render-manual-pdf.mjs build output - a release-artifact PDF
+# attached by publish-manual.yml (plan 04), never committed to source control
+site/manual.pdf
+
 # Claude
 CLAUDE.md
 .claude/
