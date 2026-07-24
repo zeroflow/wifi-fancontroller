@@ -1,0 +1,58 @@
+name: Publish Manual
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-upload-manual:
+    name: Build and Upload German Legal Manual PDF
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      # --with-deps is required so Chromium has the OS font packages needed
+      # to render German glyphs (a/o/u umlauts, ss) correctly (Pitfall 4).
+      - name: Install Playwright Chromium
+        working-directory: site
+        run: npx playwright install --with-deps chromium
+
+      # Fails loudly here if a curated DE section is missing (R2/plan 03's
+      # build-time throw-on-missing-DE-entry gate) - no silent English fallback.
+      - name: Build site
+        working-directory: site
+        run: npm run build
+
+      # R8: a failed PDF build fails this whole job/workflow, which surfaces
+      # as a red CI status on the triggering release. `release: published`
+      # fires after the release already exists, so there is no automatic
+      # un-publish/rollback step here (Open Question 1) - the red status is
+      # the signal, matching publish-firmware.yml's posture.
+      - name: Render manual PDF
+        working-directory: site
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_DATE: ${{ github.event.release.published_at }}
+        run: |
+          npm run preview -- --port 4321 &
+          npx wait-on http://localhost:4321
+          node scripts/render-manual-pdf.mjs
+
+      - name: Upload PDF to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$RELEASE_TAG" site/manual.pdf --clobber
