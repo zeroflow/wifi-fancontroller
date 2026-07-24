@@ -153,14 +153,23 @@ check_sections() {
     fail "R1 section order: expected '$expected_order', got '$actual_order' - print route must render compliance, first-setup, rev-1-0, rev-2-0, rev-3-0, rev-3-x in that order (D-10)"
   fi
 
-  # Excluded surfaces (R1 boundary) must never appear in the curated print route
+  # Excluded surfaces (R1 boundary) must never appear in the curated print route.
+  # NOTE: a blanket "Qwiic" marker was replaced with "STEMMA QT" (plan 03,
+  # Rule 1 fix) - the curated hardware rev-3-0/rev-3-x pages legitimately
+  # mention the board's own Qwiic connector as an included hardware-spec
+  # detail (R1's in-scope "hardware-spec ratings"), which is a different
+  # thing from the excluded "Qwiic examples" documentation section
+  # (reference/qwiic/*). "STEMMA QT" appears in all 7 files under
+  # reference/qwiic/ but in none of the 6 curated DE sections, so it is a
+  # precise signal for "the excluded Qwiic section leaked into the PDF"
+  # without false-positiving on the in-scope hardware connector mention.
   local excluded_markers=(
     "Blog"
     "Vergleichstabelle"
     "Comparison Matrix"
     "PID Simulator"
     "PID-Simulator"
-    "Qwiic"
+    "STEMMA QT"
     "Modulreferenz"
     "Module Reference"
   )

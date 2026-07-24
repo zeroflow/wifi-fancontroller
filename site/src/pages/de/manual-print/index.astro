@@ -1,0 +1,145 @@
+---
+// D-10: The single concatenated print route. This is the R1/R2/R3-satisfying
+// build target that render-manual-pdf.mjs (plan 03, Task 2) points headless
+// Chromium at. It is a plain src/pages file, NOT wrapped in <StarlightPage>,
+// so it carries none of Starlight's nav/sidebar/search chrome (Pitfall 2).
+// It has NO sidebar entry and is linked from nowhere (P3 / Open Question 2):
+// it exists purely as a CI-internal render target for the release-triggered
+// PDF workflow (plan 04), never as a live, browsable page.
+import { getEntry, render } from 'astro:content';
+
+// R1/D-10: this array IS the fixed, deterministic table of contents. Order
+// here is the order the sections appear in the PDF, and it does not change
+// between rebuilds. Legal sections (Bestimmungsgemäße Verwendung, Ausdrückliche
+// Ausschlüsse, Anforderungen an das externe Netzteil, Firmware-Warnhinweis)
+// live inside de/reference/compliance (D-07), so pulling that one entry
+// carries all four. Excludes blog, comparison matrix, PID simulator, module
+// reference, Qwiic examples, and marketing/SEO pages entirely (D-01) - none
+// of those ids appear below.
+const sectionIds = [
+  'de/reference/compliance',
+  'de/getting-started/first-setup',
+  'de/reference/hardware/rev-1-0',
+  'de/reference/hardware/rev-2-0',
+  'de/reference/hardware/rev-3-0',
+  'de/reference/hardware/rev-3-x',
+] as const;
+
+// R2: fail the build loudly if any curated DE entry is missing, rather than
+// silently falling back to English content the way Starlight's own i18n
+// fallback would. This is the legal PDF's cover-to-cover German gate.
+const entries = await Promise.all(
+  sectionIds.map(async (id) => {
+    const entry = await getEntry('docs', id);
+    if (!entry) {
+      throw new Error(
+        `[manual-print] Missing curated German content for "${id}". ` +
+          `The legal PDF requires every curated section to exist in German ` +
+          `(SPEC R2) - add site/src/content/docs/${id}.md(x) or remove it ` +
+          `from sectionIds in site/src/pages/de/manual-print/index.astro if ` +
+          `it is no longer in scope.`
+      );
+    }
+    return entry;
+  })
+);
+
+const rendered = await Promise.all(entries.map((entry) => render(entry)));
+---
+
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>Gebrauchsanleitung — WiFi Lüftersteuerung</title>
+  </head>
+  <body>
+    {
+      rendered.map(({ Content }, index) => (
+        <section class="manual-section" data-section-index={index}>
+          <Content />
+        </section>
+      ))
+    }
+  </body>
+</html>
+
+<style>
+  /*
+    Greenfield print stylesheet (no in-repo analog - 19.1-PATTERNS.md "No
+    Analog Found"). Scoped to this standalone route only; the route imports
+    no Starlight layout, so no site-wide nav/sidebar/search CSS is inherited
+    (Pitfall 2). Screen rules keep local preview readable; @media print rules
+    are what actually governs the Playwright-rendered PDF (R1/R3).
+  */
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: #1a1a1a;
+    background: #fff;
+    margin: 0;
+    padding: 2rem;
+    line-height: 1.6;
+  }
+
+  .manual-section {
+    max-width: 48rem;
+    margin: 0 auto 3rem auto;
+  }
+
+  .manual-section :global(img) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .manual-section :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .manual-section :global(th),
+  .manual-section :global(td) {
+    border: 1px solid #ccc;
+    padding: 0.4rem 0.6rem;
+    text-align: left;
+  }
+
+  @media print {
+    body {
+      padding: 0;
+    }
+
+    .manual-section {
+      max-width: none;
+      margin: 0;
+      padding: 0 1.5rem;
+      /* Force each curated section onto its own page in the single
+         continuous document (D-10: one continuous page/footer stream). */
+      break-before: page;
+    }
+
+    /*
+      Avoid the first section starting on a blank leading page. Uses
+      :first-of-type rather than an attribute selector on data-section-index
+      - a literal `data-section-index="0"` string embedded in this inline
+      <style> block would otherwise be matched by verify-manual.sh's
+      check_sections grep against the raw built HTML, producing a spurious
+      extra "0" in the detected section-order sequence (a genuine bug caught
+      during this task's own verification run, fixed here rather than in the
+      test harness since the route's CSS is the actual source of the
+      false-positive string).
+    */
+    .manual-section:first-of-type {
+      break-before: avoid;
+    }
+
+    .manual-section :global(table),
+    .manual-section :global(aside),
+    .manual-section :global(figure) {
+      break-inside: avoid;
+    }
+
+    .manual-section :global(h2),
+    .manual-section :global(h3) {
+      break-after: avoid;
+    }
+  }
+</style>
