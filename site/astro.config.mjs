@@ -15,6 +15,14 @@ export default defineConfig({
       routeMiddleware: './src/routeData.ts',
       plugins: [starlightBlog()],
       title: 'ESP32 WiFi Fan Controller',
+      // 19.1-01 (D-03): register the `de` Starlight i18n locale so `/de/...`
+      // routes resolve for the curated legal-manual pages populated in plan 02.
+      // Scope is narrow per D-03: only the curated PDF pages get German
+      // content this phase; the rest of the site stays English/EN-fallback.
+      locales: {
+        root: { label: 'English', lang: 'en' },
+        de: { label: 'Deutsch', lang: 'de' },
+      },
       social: [
         {
           icon: 'github',
