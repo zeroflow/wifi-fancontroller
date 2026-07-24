@@ -5,7 +5,7 @@
 #   bash site/scripts/verify-manual.sh                 # run all checks
 #   bash site/scripts/verify-manual.sh --r4 --r9       # run only selected checks
 #
-# Flags: --sections --lang --r4 --r5 --r6 --r7 --r9 --footer --umlaut
+# Flags: --sections --lang --r4 --r5 --r6 --r7 --r9 --typography --footer --umlaut
 # Running with no flag runs every check group.
 #
 # Reads site/dist/de/manual-print/index.html (built HTML, pre-PDF) for the
@@ -57,6 +57,7 @@ RUN_R5=false
 RUN_R6=false
 RUN_R7=false
 RUN_R9=false
+RUN_TYPOGRAPHY=false
 RUN_FOOTER=false
 RUN_UMLAUT=false
 ANY_FLAG=false
@@ -70,10 +71,11 @@ for arg in "$@"; do
     --r6) RUN_R6=true; ANY_FLAG=true ;;
     --r7) RUN_R7=true; ANY_FLAG=true ;;
     --r9) RUN_R9=true; ANY_FLAG=true ;;
+    --typography) RUN_TYPOGRAPHY=true; ANY_FLAG=true ;;
     --footer) RUN_FOOTER=true; ANY_FLAG=true ;;
     --umlaut) RUN_UMLAUT=true; ANY_FLAG=true ;;
     *)
-      echo "Unknown flag: $arg (supported: --sections --lang --r4 --r5 --r6 --r7 --r9 --footer --umlaut)" >&2
+      echo "Unknown flag: $arg (supported: --sections --lang --r4 --r5 --r6 --r7 --r9 --typography --footer --umlaut)" >&2
       exit 2
       ;;
   esac
@@ -87,13 +89,15 @@ if [[ "$ANY_FLAG" == "false" ]]; then
   RUN_R6=true
   RUN_R7=true
   RUN_R9=true
+  RUN_TYPOGRAPHY=true
   RUN_FOOTER=true
   RUN_UMLAUT=true
 fi
 
 NEEDS_HTML=false
 if [[ "$RUN_SECTIONS" == "true" || "$RUN_LANG" == "true" || "$RUN_R4" == "true" || \
-      "$RUN_R5" == "true" || "$RUN_R6" == "true" || "$RUN_R7" == "true" || "$RUN_R9" == "true" ]]; then
+      "$RUN_R5" == "true" || "$RUN_R6" == "true" || "$RUN_R7" == "true" || "$RUN_R9" == "true" || \
+      "$RUN_TYPOGRAPHY" == "true" ]]; then
   NEEDS_HTML=true
 fi
 
@@ -428,6 +432,42 @@ check_r9() {
   fi
 }
 
+# ─── Typography: no em-dash in the rendered manual (SPEC constraint) ─────────
+#
+# Astro's default `smartypants: true` rewrites a source `--` into a real em-dash
+# (—, U+2014) at BUILD time, so a source-only grep passes while the rendered PDF
+# still carries em-dashes. This check reads the BUILT HTML (and the PDF text when
+# available) so the regression cannot slip through the source again.
+
+check_typography() {
+  local html
+  html=$(get_manual_html)
+
+  if [[ -z "$html" ]]; then
+    fail "typography: $MANUAL_HTML_PATH not found or empty"
+    return
+  fi
+
+  if echo "$html" | grep -qF "—"; then
+    local n
+    n=$(echo "$html" | grep -oF "—" | wc -l | tr -d ' ')
+    fail "typography: $n em-dash (—, U+2014) character(s) found in built manual HTML - source '--' likely rewritten by smartypants; use ':' / '.' / ',' instead"
+  else
+    pass "typography: no em-dash (—) in built manual HTML"
+  fi
+
+  # PDF backstop when a render is available (mirrors --footer/--umlaut gating).
+  if [[ "$PDF_AVAILABLE" == "true" && "$PDFTOTEXT_AVAILABLE" == "true" && -n "$MANUAL_PDF_TEXT" ]]; then
+    if echo "$MANUAL_PDF_TEXT" | grep -qF "—"; then
+      local np
+      np=$(echo "$MANUAL_PDF_TEXT" | grep -oF "—" | wc -l | tr -d ' ')
+      fail "typography: $np em-dash (—) character(s) found in extracted PDF text"
+    else
+      pass "typography: no em-dash (—) in extracted PDF text"
+    fi
+  fi
+}
+
 # ─── R3: version + date footer (PDF only) ────────────────────────────────────
 
 check_footer() {
@@ -504,6 +544,7 @@ check_umlaut() {
 [[ "$RUN_R6" == "true" ]] && check_r6
 [[ "$RUN_R7" == "true" ]] && check_r7
 [[ "$RUN_R9" == "true" ]] && check_r9
+[[ "$RUN_TYPOGRAPHY" == "true" ]] && check_typography
 [[ "$RUN_FOOTER" == "true" ]] && check_footer
 [[ "$RUN_UMLAUT" == "true" ]] && check_umlaut
 
