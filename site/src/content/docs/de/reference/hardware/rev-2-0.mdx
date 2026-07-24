@@ -1,0 +1,116 @@
+---
+title: Rev 2.0
+description: ESP32-S2 mit USB-C Flashing, 4 PWM-Lüfteranschlüssen und I2C-Erweiterung
+sidebar:
+  order: 3
+---
+
+import FlashButton from '../../../../../components/FlashButton.astro';
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Entwurf (rechtliche Prüfung ausstehend)">
+Dieser Text ist ein Entwurf und wurde noch nicht rechtlich geprüft oder freigegeben. Er ist nicht als endgültige oder rechtsverbindliche Gebrauchsanleitung zu verstehen, bis die rechtliche Freigabe erfolgt ist.
+</Aside>
+
+Rev 2.0 führte USB-C-Flashing ein, indem vom ESP32 auf den ESP32-S2 gewechselt wurde. Damit entfällt die Notwendigkeit eines separaten USB-zu-Seriell-Adapters.
+
+## Import des Hardware-Pakets
+
+Fügen Sie Folgendes zu Ihrer ESPHome-Konfiguration hinzu, um das Hardware-Paket zu importieren:
+
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-2.0.yaml]
+```
+
+![ESP32-S2 WiFi Lüftersteuerung Rev 2.0 Platine - Umstieg auf ESP32-S2 mit USB-C Flashing](/images/board_rev2.0.jpg)
+
+## Spezifikationen
+
+- **MCU:** ESP32S2-Mini-2
+- **Board-Plattform:** esp32-s2-saola-1
+- **Stromversorgung:** externes 12 V DC SELV-Netzteil, nicht im Lieferumfang enthalten (Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv, 12 V DC ±5 %)
+- **Maximaler Gesamteingangsstrom:** 2,5 A (festgelegt durch die DC-Hohlbuchse; gilt für die Summe aller Lüfter zuzüglich der Platinenelektronik und beschreibt keinen Grenzwert für einen einzelnen Lüfteranschluss; dimensionieren Sie Ihr Netzteil mit Reserve für die kombinierte Leistungsaufnahme der angeschlossenen Lüfter). Siehe [Sicherheit und Konformität](/de/reference/compliance/).
+- **Flashen:** USB-C-Port
+- **Lüfterausgänge:** 4x PWM-Header
+- **Status-LED:** Rot (einzeln)
+- **Sensor:** HDC1080 Temperatur und Luftfeuchtigkeit
+- **Taster:** Reset, Boot, 3x Benutzer
+- **Erweiterung:** I2C-Port (100mil, SCL, SDA, INT)
+
+## Werksfirmware-Installation
+
+<FlashButton manifest="/firmware/fancontroller-r2-0.manifest.json" label="Rev 2.0 Werksfirmware flashen" />
+
+<Aside type="caution" title="USB funktioniert nicht?">
+Der ESP32-S2 hat bekannte USB-Zuverlässigkeitsprobleme. Falls die Flash-Schaltfläche Ihre Platine nicht erkennt:
+1. Probieren Sie ein anderes USB-Kabel (Datenkabel, kein reines Ladekabel)
+2. Halten Sie die BOOT-Taste gedrückt, während Sie USB einstecken
+3. Nutzen Sie [ESPWEBTOOL](https://esptool.spacehuhn.com/) als alternativen Web-Flasher (Firmware-Binary an Adresse 0x0 flashen)
+4. Als letzten Ausweg nutzen Sie die `esptool.py`-CLI: `esptool.py --chip esp32s2 write_flash 0x0 firmware.bin`
+
+[Vorgefertigte Binärdatei herunterladen](/firmware/fancontroller-r2-0-esp32s2.factory.bin)
+</Aside>
+
+<Aside type="caution" title="USB-C dient nur dem Flashen">
+Der USB-C-Anschluss versorgt ausschließlich den ESP32-S2-Mikrocontroller mit Strom. Er kann die Lüfter nicht mit Strom versorgen. Lüfter benötigen ein externes 12 V DC-Netzteil, angeschlossen an die DC-Eingangsbuchse (5,5 x 2,1 mm).
+</Aside>
+
+## ESP32-S2 Pin-Belegung
+
+| Pin | Verwendung |
+|------|------|
+| GPIO0 | Boot-Taster, drücken um in den Flashing-Modus zu wechseln |
+| GPIO1 | Eingebaute LED, Low=An |
+| GPIO2 | unbenutzt |
+| GPIO3 | unbenutzt |
+| GPIO4 | unbenutzt |
+| GPIO5 | unbenutzt |
+| GPIO6 | unbenutzt |
+| GPIO7 | unbenutzt |
+| GPIO8 | unbenutzt |
+| GPIO9 | unbenutzt |
+| GPIO10 | unbenutzt |
+| GPIO11 | unbenutzt |
+| GPIO12 | Fan 1 PWM |
+| GPIO13 | Fan 1 Drehzahlerfassung |
+| GPIO14 | Fan 2 PWM |
+| GPIO15 | Fan 2 Drehzahlerfassung |
+| GPIO16 | Fan 3 PWM |
+| GPIO17 | Fan 3 Drehzahlerfassung |
+| GPIO18 | Fan 4 PWM |
+| GPIO21 | Fan 4 Drehzahlerfassung |
+| GPIO26 | unbenutzt |
+| GPIO33 | I2C SDA (HDC1080 + Erweiterungsheader) |
+| GPIO34 | I2C SCL (HDC1080 + Erweiterungsheader) |
+| GPIO35 | I2C INT (Erweiterungsheader) |
+| GPIO36 | unbenutzt |
+| GPIO37 | unbenutzt |
+| GPIO38 | unbenutzt |
+| GPIO39 | unbenutzt |
+| GPIO40 | unbenutzt |
+| GPIO41 | Benutzertaster 3 |
+| GPIO42 | Benutzertaster 2 |
+| GPIO45 | Benutzertaster 1 (Strapping) |
+| GPIO46 | unbenutzt (Strapping) |
+
+## I2C-Erweiterungsport
+
+Die Platine bietet einen I2C-Erweiterungsport oberhalb von Fan 4.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | GND | |
+| 2 | INT | GPIO 35 |
+| 3 | SCL | GPIO 34, 4,7k Pull-Up |
+| 4 | SDA | GPIO 33, 4,7k Pull-Up |
+| 5 | +3V3 | |
+
+## Beispielkonfigurationen
+
+- **[Grundkonfiguration](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/basic-rev-2.0.yaml)** -- Minimales Setup mit 4 Lüftern und den wichtigsten Funktionen
+
+Weitere Beispiele finden Sie im [Beispielverzeichnis](https://github.com/zeroflow/wifi-fancontroller/tree/main/examples).

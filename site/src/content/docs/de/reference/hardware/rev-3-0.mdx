@@ -1,0 +1,144 @@
+---
+title: Rev 3.0
+description: ESP32-S2 mit Qwiic I2C, NeoPixel-Erweiterung und PWM-Pufferung
+sidebar:
+  order: 2
+---
+
+import FlashButton from '../../../../../components/FlashButton.astro';
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Entwurf (rechtliche Prüfung ausstehend)">
+Dieser Text ist ein Entwurf und wurde noch nicht rechtlich geprüft oder freigegeben. Er ist nicht als endgültige oder rechtsverbindliche Gebrauchsanleitung zu verstehen, bis die rechtliche Freigabe erfolgt ist.
+</Aside>
+
+Rev 3.0 ergänzte Qwiic-I2C-Konnektivität, einen NeoPixel-Erweiterungsport, PWM-Signalpufferung für eine verbesserte Signalintegrität der Lüfter und einen SMD-Erweiterungsheader auf der Unterseite. Im Gegensatz zu Rev 3.1+ verfügt sie nicht über RGB-Status-LEDs.
+
+## Import des Hardware-Pakets
+
+Fügen Sie Folgendes zu Ihrer ESPHome-Konfiguration hinzu, um das Hardware-Paket zu importieren:
+
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.0.yaml]
+```
+
+### Vorderseite
+
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.0 Platine Vorderseite - Qwiic-Port, NeoPixel-Erweiterung, PWM-Pufferung](/images/board_rev3.0.jpg)
+
+### Rückseite
+
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.0 Platine Rückseite - SMD-Erweiterungsheader](/images/board_rev3.0_back.jpg)
+
+## Spezifikationen
+
+- **MCU:** ESP32S2-Mini-2
+- **Board-Plattform:** esp32-s2-saola-1
+- **Stromversorgung:** externes 12 V DC SELV-Netzteil, nicht im Lieferumfang enthalten (Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv, 12 V DC ±5 %)
+- **Maximaler Gesamteingangsstrom:** 2,5 A (festgelegt durch die DC-Hohlbuchse; gilt für die Summe aller Lüfter zuzüglich der Platinenelektronik und beschreibt keinen Grenzwert für einen einzelnen Lüfteranschluss; dimensionieren Sie Ihr Netzteil mit Reserve für die kombinierte Leistungsaufnahme der angeschlossenen Lüfter). Siehe [Sicherheit und Konformität](/de/reference/compliance/).
+- **Flashen:** USB-C-Port
+- **Lüfterausgänge:** 4x PWM-Header mit Signalpufferung
+- **Status-LED:** Rot (einzeln)
+- **Sensor:** HDC1080 Temperatur und Luftfeuchtigkeit
+- **Taster:** Reset, Boot, 3x Benutzer
+- **Erweiterung:** QWIIC I2C, I2C-Port (100mil), NeoPixel-Port (5V, max 2A), SMD-Erweiterungsheader
+
+<Aside type="note" title="NeoPixel-Framework-Anforderung">
+Der NeoPixel-Port an GPIO42 erfordert das `arduino`-Framework. Die für diesen Pin verwendete Plattform `esp32_rmt_led_strip` funktioniert unter `esp-idf` auf dem ESP32-S2 nicht zuverlässig.
+</Aside>
+
+## Werksfirmware-Installation
+
+<FlashButton manifest="/firmware/fancontroller-r3-0.manifest.json" label="Rev 3.0 Werksfirmware flashen" />
+
+<Aside type="caution" title="USB funktioniert nicht?">
+Der ESP32-S2 hat bekannte USB-Zuverlässigkeitsprobleme. Falls die Flash-Schaltfläche Ihre Platine nicht erkennt:
+1. Probieren Sie ein anderes USB-Kabel (Datenkabel, kein reines Ladekabel)
+2. Halten Sie die BOOT-Taste gedrückt, während Sie USB einstecken
+3. Nutzen Sie [ESPWEBTOOL](https://esptool.spacehuhn.com/) als alternativen Web-Flasher (Firmware-Binary an Adresse 0x0 flashen)
+4. Als letzten Ausweg nutzen Sie die `esptool.py`-CLI: `esptool.py --chip esp32s2 write_flash 0x0 firmware.bin`
+
+[Vorgefertigte Binärdatei herunterladen](/firmware/fancontroller-r3-0-esp32s2.factory.bin)
+</Aside>
+
+<Aside type="caution" title="USB-C dient nur dem Flashen">
+Der USB-C-Anschluss versorgt ausschließlich den ESP32-S2-Mikrocontroller mit Strom. Er kann die Lüfter nicht mit Strom versorgen. Lüfter benötigen ein externes 12 V DC-Netzteil, angeschlossen an die DC-Eingangsbuchse (5,5 x 2,1 mm).
+</Aside>
+
+## ESP32-S2 Pin-Belegung
+
+| Pin | Verwendung |
+|------|------|
+| GPIO0 | Boot-Taster, drücken um in den Flashing-Modus zu wechseln |
+| GPIO1 | Status-LED (PWM-gesteuert, monochrom mit Pulseffekten) |
+| GPIO2 | Erweiterungsheader (Unterseite) |
+| GPIO3 | Erweiterungsheader (Unterseite) |
+| GPIO4 | Erweiterungsheader (Unterseite) |
+| GPIO5 | Erweiterungsheader (Unterseite) |
+| GPIO6 | Erweiterungsheader (Unterseite) |
+| GPIO7 | Erweiterungsheader (Unterseite) |
+| GPIO8 | Erweiterungsheader (Unterseite) |
+| GPIO9 | Erweiterungsheader (Unterseite) |
+| GPIO10 | Erweiterungsheader (Unterseite) |
+| GPIO11 | Erweiterungsheader (Unterseite) |
+| GPIO12 | Fan 1 PWM |
+| GPIO13 | Fan 2 PWM |
+| GPIO14 | Fan 3 PWM |
+| GPIO15 | Fan 4 PWM |
+| GPIO16 | Fan 1 Drehzahlerfassung |
+| GPIO17 | Fan 2 Drehzahlerfassung |
+| GPIO18 | Fan 3 Drehzahlerfassung |
+| GPIO21 | Fan 4 Drehzahlerfassung |
+| GPIO26 | unbenutzt |
+| GPIO33 | I2C SDA |
+| GPIO34 | I2C SCL |
+| GPIO35 | I2C INT |
+| GPIO36 | USR3 |
+| GPIO37 | USR2 |
+| GPIO38 | USR1 |
+| GPIO42 | Neopixel-Erweiterungsport |
+| GPIO45 | unbenutzt (Strapping) |
+| GPIO46 | unbenutzt (Strapping) |
+
+## I2C-Erweiterungsport
+
+Die Platine bietet einen I2C-Erweiterungsport oberhalb von Fan 4.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | GND | |
+| 2 | INT | GPIO 35 |
+| 3 | SCL | GPIO 34, 4,7k Pull-Up |
+| 4 | SDA | GPIO 33, 4,7k Pull-Up |
+| 5 | +3V3 | |
+
+## SMD-Erweiterungsport
+
+Die Platine bietet einen SMD-Erweiterungsport auf der Rückseite.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | +3V3 | |
+| 2 | +5V | |
+| 3 | I/O | GPIO02 |
+| 4 | I/O | GPIO03 |
+| 5 | I/O | GPIO04 |
+| 6 | I/O | GPIO05 |
+| 7 | I/O | GPIO06 |
+| 8 | I/O | GPIO07 |
+| 9 | I/O | GPIO08 |
+| 10 | I/O | GPIO09 |
+| 11 | I/O | GPIO10 |
+| 12 | I/O | GPIO11 |
+| 13 | GND | |
+| 14 | GND | |
+
+## Beispielkonfigurationen
+
+- **[Grundkonfiguration](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/basic-rev-3.0.yaml)** -- Minimales Setup mit 4 Lüftern und den wichtigsten Funktionen
+
+Weitere Beispiele finden Sie im [Beispielverzeichnis](https://github.com/zeroflow/wifi-fancontroller/tree/main/examples).

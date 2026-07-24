@@ -1,0 +1,133 @@
+---
+title: Erste Einrichtung
+description: Verbinden Sie Ihre WiFi Lüftersteuerung mit dem WLAN, verkabeln Sie Ihre Lüfter und binden Sie sie in Home Assistant ein
+sidebar:
+  order: 1
+---
+
+import FlashButton from '../../../../components/FlashButton.astro';
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Entwurf (rechtliche Prüfung ausstehend)">
+Dieser Text ist ein Entwurf und wurde noch nicht rechtlich geprüft oder freigegeben. Er ist nicht als endgültige oder rechtsverbindliche Gebrauchsanleitung zu verstehen, bis die rechtliche Freigabe erfolgt ist.
+</Aside>
+
+<Aside type="tip" title="Noch keine Platine?">
+Beziehen Sie Ihre Platine im [Elecrow-Shop](https://www.elecrow.com/wifi-fancontroller1.html).
+</Aside>
+
+Ihre Platine wird mit werkseitig geflashter Firmware ausgeliefert. Diese Anleitung führt Sie vom Auspacken bis zu einer funktionierenden Lüftersteuerung in Home Assistant, einschließlich WLAN-Einrichtung, Lüfterverkabelung und Home Assistant-Einbindung.
+
+<Aside type="note" title="Werksseitig bereits geflasht">
+Jede WiFi Lüftersteuerung wird vor dem Versand mit Werksfirmware geflasht. Nutzerinnen und Nutzer, die die Platine zum ersten Mal in Betrieb nehmen, können direkt zur WLAN-Einrichtung unten übergehen. Falls Sie jemals neu flashen müssen (Beschädigung, Wiederherstellung oder ein eigener ESPHome-Build), beschreibt der Abschnitt "Firmware neu flashen" am Ende dieser Seite das Vorgehen.
+</Aside>
+
+## Was Sie benötigen
+
+- WiFi Lüftersteuerung Platine
+- USB-C-Datenkabel (kein reines Ladekabel), für die serielle WLAN-Einrichtung
+- Ein externes 12 V DC SELV-Netzteil, nicht im Lieferumfang enthalten. Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv, 12 V DC ±5 %, mindestens 2,5 A empfohlen, abhängig von der Lüfterlast. Siehe [Sicherheit und Konformität](/de/reference/compliance/) für die vollständigen Anforderungen.
+- Einen oder mehrere PWM-Lüfter (4-polig)
+
+<Aside type="caution" title="HF-Exposition">
+Dieses Produkt enthält einen Funksender. Installieren Sie das Produkt so, dass während des normalen Betriebs ein Mindestabstand von 20 cm zwischen der Antenne und Personen eingehalten wird. Dieses Produkt ist nicht dafür vorgesehen, am Körper getragen oder in unmittelbarer Nähe der Nutzerin oder des Nutzers betrieben zu werden.
+</Aside>
+
+## Einrichtungsschritte
+
+<Steps>
+
+1. **Mit dem WLAN verbinden**
+
+   Verbinden Sie die Platine über ein USB-C-Datenkabel mit Ihrem Computer.
+
+   Öffnen Sie ein Werkzeug, das Improv Serial unterstützt (zum Beispiel [improv-wifi.com/serial/](https://www.improv-wifi.com/serial/) in Chrome oder Edge), oder öffnen Sie eine serielle Konsole, die mit der Platine verbunden ist.
+
+   Geben Sie den Namen und das Passwort Ihres **2,4 GHz**-WLAN-Netzwerks ein. 5 GHz-Netzwerke werden von keiner Platinenrevision unterstützt.
+
+   Sobald die Verbindung hergestellt ist, zeigt die Platine ihre IP-Adresse in der seriellen Ausgabe an.
+
+   <Aside type="note" title="Ausweich-Hotspot">
+   Schlägt die WLAN-Verbindung fehl, richtet die Platine einen Ausweich-Hotspot mit dem Namen **"Fan Controller Fallback"** ein. Verbinden Sie sich von Ihrem Smartphone oder Laptop mit diesem Hotspot, um die WLAN-Zugangsdaten neu zu konfigurieren.
+   </Aside>
+
+2. **Lüfter anschließen**
+
+   - Verbinden Sie Ihr **externes 12 V DC-Netzteil** mit dem Stromeingang der Platine (Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv)
+   - Stecken Sie Ihre **PWM-Lüfter** (4-polig) in die Lüfteranschlüsse (Fan 1 bis Fan 4)
+   - Prüfen Sie die Seite Ihrer Hardware-Revision für die korrekte Pin-Belegung und Steckerausrichtung
+
+   <Aside type="caution" title="USB-C versorgt keine Lüfter mit Strom">
+   Der USB-C-Anschluss dient ausschließlich dem Flashen und der seriellen Kommunikation. Lüfter benötigen 12 V DC über den Hohlstecker-Anschluss. Der USB-C-Anschluss liefert nur 5 V an den ESP32-Mikrocontroller.
+   </Aside>
+
+3. **In Home Assistant einbinden**
+
+   Ihre Lüftersteuerung wird automatisch über die ESPHome-Integration von Home Assistant erkannt.
+
+   - **Wenn Sie das ESPHome-Add-on haben:** Das Gerät erscheint in Ihrem ESPHome-Dashboard. Klicken Sie auf **Adopt**, um es hinzuzufügen.
+   - **Wenn Sie das ESPHome-Add-on nicht haben:** Gehen Sie zu **Einstellungen > Geräte & Dienste > Integrationen**. Die Lüftersteuerung erscheint unter **Entdeckte** Geräte. Klicken Sie auf **Konfigurieren**, um sie hinzuzufügen.
+
+   Nach der Einbindung erscheinen die Entitäten Ihrer Lüftersteuerung (Lüfter, Temperatur, Luftfeuchtigkeit, Drehzahlsensoren) einsatzbereit in Home Assistant.
+
+   Siehe [Home Assistant Integration](/getting-started/home-assistant/) für Dashboard-Einrichtung und Automatisierungsbeispiele.
+
+</Steps>
+
+## Firmware neu flashen (optional)
+
+Diesen Abschnitt benötigen Sie nur, wenn:
+
+- die Werksfirmware beschädigt wurde (die Platine startet nicht oder wird in einem neuen Netzwerk nicht erkannt)
+- Sie auf ein bekannt gutes Werksabbild zurücksetzen möchten
+- Sie einen selbst kompilierten, eigenen ESPHome-Build installieren
+
+Die meisten Kundinnen und Kunden müssen nie neu flashen. Für reguläre Firmware-Updates nutzen Sie OTA über das [ESPHome-Dashboard](/getting-started/firmware-updates/). Es sind keine Kabel nötig.
+
+Das erneute Flashen nutzt die Web-Serial-API und erfordert einen Chrome- oder Edge-Browser sowie ein USB-C-Datenkabel.
+
+<Tabs syncKey="revision">
+  <TabItem label="Rev 3.3">
+    <FlashButton manifest="/firmware/fancontroller-r3-3.manifest.json" label="Rev 3.3 flashen" />
+
+    Siehe [Rev 3.x Hardware-Details](/de/reference/hardware/rev-3-x/) für Platinenspezifikationen und Pin-Belegung.
+  </TabItem>
+  <TabItem label="Rev 3.2">
+    <FlashButton manifest="/firmware/fancontroller-r3-2.manifest.json" label="Rev 3.2 flashen" />
+
+    Siehe [Rev 3.x Hardware-Details](/de/reference/hardware/rev-3-x/) für Platinenspezifikationen und Pin-Belegung.
+  </TabItem>
+  <TabItem label="Rev 3.1">
+    <FlashButton manifest="/firmware/fancontroller-r3-1.manifest.json" label="Rev 3.1 flashen" />
+
+    Siehe [Rev 3.x Hardware-Details](/de/reference/hardware/rev-3-x/) für Platinenspezifikationen und Pin-Belegung.
+  </TabItem>
+  <TabItem label="Rev 3.0">
+    <FlashButton manifest="/firmware/fancontroller-r3-0.manifest.json" label="Rev 3.0 flashen" />
+
+    Siehe [Rev 3.0 Hardware-Details](/de/reference/hardware/rev-3-0/) für Platinenspezifikationen und Pin-Belegung.
+  </TabItem>
+  <TabItem label="Rev 2.0">
+    <FlashButton manifest="/firmware/fancontroller-r2-0.manifest.json" label="Rev 2.0 flashen" />
+
+    Siehe [Rev 2.0 Hardware-Details](/de/reference/hardware/rev-2-0/) für Platinenspezifikationen und Pin-Belegung.
+  </TabItem>
+  <TabItem label="Rev 1.0">
+    Rev 1.0 verwendet einen ESP32 mit einem seriellen Header anstelle von USB-C. Sie benötigen einen USB-zu-Seriell-Adapter (3,3 V FTDI oder ähnlich), der mit dem Programmier-Header verbunden wird.
+
+    <FlashButton manifest="/firmware/fancontroller-r1-0.manifest.json" label="Rev 1.0 flashen" />
+
+    Siehe [Rev 1.0 Hardware-Details](/de/reference/hardware/rev-1-0/) für Platinenspezifikationen und Pin-Belegung.
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="USB nicht erkannt? (ESP32-S2)">
+Der ESP32-S2 (Rev 2.0+) hat auf manchen Systemen bekannte USB-Zuverlässigkeitsprobleme. Versuchen Sie Folgendes:
+
+- Verwenden Sie ein anderes USB-C-Kabel (muss ein **Daten**kabel sein, kein reines Ladekabel)
+- Halten Sie die **BOOT**-Taste gedrückt, während Sie das USB-Kabel einstecken
+- Probieren Sie einen anderen USB-Port (vermeiden Sie USB-Hubs)
+- Nutzen Sie [ESPWEBTOOL](https://esptool.spacehuhn.com/) als alternatives Flash-Werkzeug
+</Aside>
+
+Wiederholen Sie nach dem Neuflashen den WLAN-Einrichtungsschritt oben und binden Sie die Platine anschließend erneut in Home Assistant ein. Siehe [Firmware-Updates](/getting-started/firmware-updates/) für OTA-Updates.

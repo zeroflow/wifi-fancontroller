@@ -1,0 +1,109 @@
+---
+title: Rev 1.0
+description: Ursprüngliches ESP32-Design mit serieller Flashing-Möglichkeit, 4 PWM-Lüfteranschlüssen und I2C-Erweiterung
+sidebar:
+  order: 4
+---
+
+import FlashButton from '../../../../../components/FlashButton.astro';
+import { Aside } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Entwurf (rechtliche Prüfung ausstehend)">
+Dieser Text ist ein Entwurf und wurde noch nicht rechtlich geprüft oder freigegeben. Er ist nicht als endgültige oder rechtsverbindliche Gebrauchsanleitung zu verstehen, bis die rechtliche Freigabe erfolgt ist.
+</Aside>
+
+Die Rev 1.0 ist das ursprüngliche WiFi Lüftersteuerungs-Design auf Basis des ESP32-WROOM-32E. Sie verfügt über serielles Flashen über einen dedizierten Header und bietet zwei externe Eingangsports, die in späteren Revisionen nicht mehr vorhanden sind.
+
+## Import des Hardware-Pakets
+
+Fügen Sie Folgendes zu Ihrer ESPHome-Konfiguration hinzu, um das Hardware-Paket zu importieren:
+
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-1.0.yaml]
+```
+
+![ESP32 WiFi Lüftersteuerung Rev 1.0 Platine - ursprüngliches Design mit 4 PWM-Lüfteranschlüssen und serieller Flashing-Möglichkeit](/images/board_rev1.0.jpg)
+
+## Spezifikationen
+
+- **MCU:** ESP32-WROOM-32E
+- **Board-Plattform:** esp32dev
+- **Stromversorgung:** externes 12 V DC SELV-Netzteil, nicht im Lieferumfang enthalten (Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv, 12 V DC ±5 %)
+- **Maximaler Gesamteingangsstrom:** 2,5 A (festgelegt durch die DC-Hohlbuchse; gilt für die Summe aller Lüfter zuzüglich der Platinenelektronik und beschreibt keinen Grenzwert für einen einzelnen Lüfteranschluss; dimensionieren Sie Ihr Netzteil mit Reserve für die kombinierte Leistungsaufnahme der angeschlossenen Lüfter). Siehe [Sicherheit und Konformität](/de/reference/compliance/).
+- **Flashen:** Serieller Header (100mil und SOCbite)
+- **Lüfterausgänge:** 4x PWM-Header
+- **Status-LED:** Rot (einzeln)
+- **Sensor:** HDC1080 Temperatur und Luftfeuchtigkeit
+- **Taster:** Reset, Boot, 3x Benutzer
+- **Erweiterung:** I2C-Port (100mil, SCL, SDA, INT), 2x externer Eingang (100mil)
+
+## Werksfirmware-Installation
+
+<FlashButton manifest="/firmware/fancontroller-r1-0.manifest.json" label="Rev 1.0 Werksfirmware flashen" />
+
+<Aside type="note" title="Serielles Flashen erforderlich">
+Rev 1.0 verwendet einen seriellen Header zum Flashen -- Sie benötigen einen USB-zu-Seriell-Adapter, der mit dem Flashing-Header verbunden wird. Dies unterscheidet sich von Rev 2.0+, die direkt USB-C verwenden.
+</Aside>
+
+## ESP32 Pin-Belegung
+
+| Pin | Verwendung |
+|------|------|
+| GPIO0 | Boot-Taster, drücken um in den Flashing-Modus zu wechseln |
+| GPIO1 | Serial TX |
+| GPIO2 | Eingebaute LED, Low=An |
+| GPIO3 | Serial RX |
+| GPIO4 | Fan 4 PWM |
+| GPIO5 | Unbenutzt (Strapping-Pin) |
+| GPIO12 | Unbenutzt (Strapping-Pin) |
+| GPIO13 | Fan 3 Drehzahlerfassung |
+| GPIO14 | Unbenutzt (gibt beim Booten PWM aus) |
+| GPIO15 | Unbenutzt (gibt beim Booten PWM aus, Strapping-Pin) |
+| GPIO16 | Fan 4 Drehzahlerfassung |
+| GPIO17 | I2C SDA (HDC1080 + Erweiterungsheader) |
+| GPIO18 | I2C SCL (HDC1080 + Erweiterungsheader) |
+| GPIO19 | I2C INT (Erweiterungsheader) |
+| GPIO21 | Benutzertaster 3 |
+| GPIO22 | Benutzertaster 2 |
+| GPIO23 | Benutzertaster 1 |
+| GPIO25 | Fan 2 PWM |
+| GPIO26 | Fan 2 Drehzahlerfassung |
+| GPIO27 | Fan 3 PWM |
+| GPIO32 | Fan 1 PWM |
+| GPIO33 | Fan 1 Drehzahlerfassung |
+| GPIO34 | Externer Eingang 1 |
+| GPIO35 | Externer Eingang 2 |
+| GPIO36 | Unbenutzt |
+| GPIO39 | Unbenutzt |
+
+## I2C-Erweiterungsport
+
+Die Platine bietet einen I2C-Erweiterungsport oberhalb von Fan 4.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | GND | |
+| 2 | INT | GPIO 19 |
+| 3 | SCL | GPIO 18, 4,7k Pull-Up |
+| 4 | SDA | GPIO 17, 4,7k Pull-Up |
+| 5 | +3V3 | |
+
+## Externer Eingangsport
+
+Die Platine bietet zwei externe Eingänge, zum Beispiel für einen Türeinbruchsalarm oder einen 100 %-Schalter.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | GND | |
+| 2 | IN2 | 10k Pull-Up |
+| 3 | IN1 | 10k Pull-Up |
+
+## Beispielkonfigurationen
+
+- **[Grundkonfiguration](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/basic-rev-1.0.yaml)** -- Minimales Setup mit 4 Lüftern und den wichtigsten Funktionen
+
+Weitere Beispiele finden Sie im [Beispielverzeichnis](https://github.com/zeroflow/wifi-fancontroller/tree/main/examples).

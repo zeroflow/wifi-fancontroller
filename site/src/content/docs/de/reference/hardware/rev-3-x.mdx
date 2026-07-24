@@ -1,0 +1,252 @@
+---
+title: "Rev 3.x (3.1 / 3.2 / 3.3)"
+description: Neueste Generation ESP32-S2 mit RGB-Status-LEDs, QWIIC-Erweiterung und NeoPixel-Ausgang
+sidebar:
+  label: Rev 3.x (3.1/3.2/3.3)
+  order: 1
+---
+
+import FlashButton from '../../../../../components/FlashButton.astro';
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+<Aside type="caution" title="Entwurf (rechtliche Prüfung ausstehend)">
+Dieser Text ist ein Entwurf und wurde noch nicht rechtlich geprüft oder freigegeben. Er ist nicht als endgültige oder rechtsverbindliche Gebrauchsanleitung zu verstehen, bis die rechtliche Freigabe erfolgt ist.
+</Aside>
+
+Die Rev 3.x-Serie ist die aktuelle Generation der WiFi Lüftersteuerung. Alle 3.1-, 3.2- und 3.3-Platinen teilen sich identische Firmware und Pin-Belegung -- Unterschiede zwischen den Unterrevisionen betreffen ausschließlich hardwareseitige Verbesserungen.
+
+Wichtige Merkmale gegenüber Rev 3.0: RGB-Status-LEDs (SK6805) für Platinenstatus und visuelle Rückmeldung pro Lüfter.
+
+## Import des Hardware-Pakets
+
+Fügen Sie Folgendes zu Ihrer ESPHome-Konfiguration hinzu, um das Hardware-Paket für Ihre Platinenrevision zu importieren:
+
+<Tabs>
+  <TabItem label="Rev 3.3">
+    ```yaml
+    packages:
+      hardware:
+        url: https://github.com/zeroflow/wifi-fancontroller
+        ref: main
+        files: [hardware-rev-3.3.yaml]
+    ```
+  </TabItem>
+  <TabItem label="Rev 3.2">
+    ```yaml
+    packages:
+      hardware:
+        url: https://github.com/zeroflow/wifi-fancontroller
+        ref: main
+        files: [hardware-rev-3.2.yaml]
+    ```
+  </TabItem>
+  <TabItem label="Rev 3.1">
+    ```yaml
+    packages:
+      hardware:
+        url: https://github.com/zeroflow/wifi-fancontroller
+        ref: main
+        files: [hardware-rev-3.1.yaml]
+    ```
+  </TabItem>
+</Tabs>
+
+## Platinenfotos
+
+### Rev 3.3
+
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.3 Platine Vorderseite - 4 PWM-Lüfteranschlüsse, HDC1080-Sensor, RGB-LEDs, Qwiic-Port](/images/board_rev3.3_front.jpg)
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.3 Platine Rückseite - CE-Kennzeichnung, SMD-Erweiterungspads](/images/board_rev3.3_back.jpg)
+
+<details>
+<summary>Rev 3.2</summary>
+
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.2 Platine Vorderseite](/images/board_rev3.2_front.png)
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.2 Platine Rückseite](/images/board_rev3.2_back.png)
+
+</details>
+
+<details>
+<summary>Rev 3.1</summary>
+
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.1 Platine - erste Revision mit RGB-Status-LEDs pro Lüfter](/images/board_rev3.1.jpg)
+
+</details>
+
+## Spezifikationen
+
+- **MCU:** ESP32S2-Mini-2
+- **Board-Plattform:** esp32-s2-saola-1
+- **Stromversorgung:** externes 12 V DC SELV-Netzteil, nicht im Lieferumfang enthalten (Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv, 12 V DC ±5 %)
+- **Maximaler Gesamteingangsstrom:** 2,5 A (festgelegt durch die DC-Hohlbuchse; gilt für die Summe aller Lüfter zuzüglich der Platinenelektronik und beschreibt keinen Grenzwert für einen einzelnen Lüfteranschluss; dimensionieren Sie Ihr Netzteil mit Reserve für die kombinierte Leistungsaufnahme der angeschlossenen Lüfter). Siehe [Sicherheit und Konformität](/de/reference/compliance/).
+- **Flashen:** USB-C-Port
+- **Lüfterausgänge:** 4x PWM-Header mit Signalpufferung
+- **Status-LEDs:** SK6805 RGB-LEDs für Platinenstatus und pro Lüfter
+- **Sensor:** HDC1080 Temperatur und Luftfeuchtigkeit
+- **Taster:** Reset, Boot, 3x Benutzer
+- **Erweiterung:** QWIIC I2C, I2C-Port (100mil), NeoPixel-Port (5V, max 2A), SMD-Erweiterungsheader
+
+<Aside type="note" title="NeoPixel-Framework-Anforderung">
+Der NeoPixel-Port an GPIO42 erfordert das `arduino`-Framework. Die für diesen Pin verwendete Plattform `esp32_rmt_led_strip` funktioniert unter `esp-idf` auf dem ESP32-S2 nicht zuverlässig.
+</Aside>
+
+## Werksfirmware-Installation
+
+Wählen Sie Ihre Platinenrevision und klicken Sie auf die Schaltfläche, um die Werksfirmware direkt aus Ihrem Browser über USB zu flashen.
+
+<Tabs>
+  <TabItem label="Rev 3.3">
+    <FlashButton manifest="/firmware/fancontroller-r3-3.manifest.json" label="Rev 3.3 Werksfirmware flashen" />
+  </TabItem>
+  <TabItem label="Rev 3.2">
+    <FlashButton manifest="/firmware/fancontroller-r3-2.manifest.json" label="Rev 3.2 Werksfirmware flashen" />
+  </TabItem>
+  <TabItem label="Rev 3.1">
+    <FlashButton manifest="/firmware/fancontroller-r3-1.manifest.json" label="Rev 3.1 Werksfirmware flashen" />
+  </TabItem>
+</Tabs>
+
+<Aside type="caution" title="USB funktioniert nicht?">
+Der ESP32-S2 hat bekannte USB-Zuverlässigkeitsprobleme. Falls die Flash-Schaltfläche Ihre Platine nicht erkennt:
+1. Probieren Sie ein anderes USB-Kabel (Datenkabel, kein reines Ladekabel)
+2. Halten Sie die BOOT-Taste gedrückt, während Sie USB einstecken
+3. Nutzen Sie [ESPWEBTOOL](https://esptool.spacehuhn.com/) als alternativen Web-Flasher (Firmware-Binary an Adresse 0x0 flashen)
+4. Als letzten Ausweg nutzen Sie die `esptool.py`-CLI: `esptool.py --chip esp32s2 write_flash 0x0 firmware.bin`
+
+Vorgefertigte Binärdateien herunterladen: [Rev 3.1](/firmware/fancontroller-r3-1-esp32s2.factory.bin) / [Rev 3.2](/firmware/fancontroller-r3-2-esp32s2.factory.bin) / [Rev 3.3](/firmware/fancontroller-r3-3-esp32s2.factory.bin)
+</Aside>
+
+<Aside type="caution" title="USB-C dient nur dem Flashen">
+Der USB-C-Anschluss versorgt ausschließlich den ESP32-S2-Mikrocontroller mit Strom. Er kann die Lüfter nicht mit Strom versorgen. Lüfter benötigen ein externes 12 V DC-Netzteil, angeschlossen an die DC-Eingangsbuchse (5,5 x 2,1 mm).
+</Aside>
+
+## ESP32-S2 Pin-Belegung
+
+Diese Pin-Tabelle gilt für alle Rev 3.1-, 3.2- und 3.3-Platinen.
+
+| Pin | Verwendung |
+|------|------|
+| GPIO0 | Boot-Taster, drücken um in den Flashing-Modus zu wechseln |
+| GPIO1 | RGB-Status-LEDs, SK6805 (5 LEDs, ESPHome nutzt den WS2812-Treiber, GRB-Farbreihenfolge) |
+| GPIO2 | Erweiterungsheader (Unterseite) |
+| GPIO3 | Erweiterungsheader (Unterseite) |
+| GPIO4 | Erweiterungsheader (Unterseite) |
+| GPIO5 | Erweiterungsheader (Unterseite) |
+| GPIO6 | Erweiterungsheader (Unterseite) |
+| GPIO7 | Erweiterungsheader (Unterseite) |
+| GPIO8 | Erweiterungsheader (Unterseite) |
+| GPIO9 | Erweiterungsheader (Unterseite) |
+| GPIO10 | Erweiterungsheader (Unterseite) |
+| GPIO11 | Erweiterungsheader (Unterseite) |
+| GPIO12 | Fan 1 PWM |
+| GPIO13 | Fan 2 PWM |
+| GPIO14 | Fan 3 PWM |
+| GPIO15 | Fan 4 PWM |
+| GPIO16 | Fan 1 Drehzahlerfassung |
+| GPIO17 | Fan 2 Drehzahlerfassung |
+| GPIO18 | Fan 3 Drehzahlerfassung |
+| GPIO21 | Fan 4 Drehzahlerfassung |
+| GPIO26 | unbenutzt |
+| GPIO33 | I2C SDA |
+| GPIO34 | I2C SCL |
+| GPIO35 | I2C INT |
+| GPIO36 | USR3 |
+| GPIO37 | USR2 |
+| GPIO38 | USR1 |
+| GPIO42 | Neopixel-Erweiterungsport |
+| GPIO43 | UART0 TX (U0TXD), serieller Flashing-Header |
+| GPIO44 | UART0 RX (U0RXD), serieller Flashing-Header |
+| GPIO45 | unbenutzt (Strapping) |
+| GPIO46 | unbenutzt (Strapping) |
+
+## Serieller Flashing-Header (TX/RX)
+
+Zusätzlich zum USB-C-Port stellt die Platine den ESP32-S2 UART0 auf einem seriellen Header für Flashen und serielle Logs bereit. Dies ist der Ausweichpfad, wenn USB-C nicht erkannt wird (siehe den USB-Fehlerbehebungshinweis oben), und der Kanal, den ESPHomes `logger` standardmäßig verwendet.
+
+| Signal | Pin | Beschreibung |
+|--------|-----|-------------|
+| 3.3V | 3.3V |              |
+| TX | GPIO43 | UART0 Sende-Leitung (U0TXD), Platine an Host |
+| RX | GPIO44 | UART0 Empfangs-Leitung (U0RXD), Host an Platine |
+| GND | GND | Gemeinsame Masse (für seriell erforderlich) |
+
+Verbinden Sie einen 3,3 V USB-zu-Seriell-Adapter (TX zu RX, RX zu TX, GND zu GND). Um den Bootloader zum Flashen aufzurufen, halten Sie BOOT (GPIO0) gedrückt, während Sie die Platine zurücksetzen.
+
+<Aside type="caution" title="Nur 3,3V-Logikpegel">
+Die UART-Pins des ESP32-S2 arbeiten mit 3,3 V. Schließen Sie keinen 5V-Seriell-Adapter direkt an TX/RX an.
+</Aside>
+
+## I2C-Erweiterungsport
+
+Die Platine bietet einen I2C-Erweiterungsport oberhalb von Fan 4.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | GND | |
+| 2 | INT | GPIO 35 |
+| 3 | SCL | GPIO 34, 4,7k Pull-Up |
+| 4 | SDA | GPIO 33, 4,7k Pull-Up |
+| 5 | +3V3 | |
+
+## Qwiic-Anschluss
+
+Die Platine bietet einen Qwiic-Anschluss (Standard JST-SH 4-Pin, 1mm Raster) für lötfreie I2C-Erweiterung. Er teilt sich denselben **I2C-Bus** wie der 100mil I2C-Erweiterungsport und den onboard HDC1080-Sensor, daher dürfen Adressen über beide Ports hinweg nicht kollidieren.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | GND | Schwarzes Kabel |
+| 2 | +3V3 | Rotes Kabel |
+| 3 | SDA | GPIO 33, blaues Kabel, 4,7k Pull-Up |
+| 4 | SCL | GPIO 34, gelbes Kabel, 4,7k Pull-Up |
+
+<Aside type="note" title="Gemeinsamer I2C-Bus">
+Der Qwiic-Port, der 100mil I2C-Erweiterungsport und der onboard Temperatur-/Luftfeuchtigkeitssensor HDC1080 liegen alle auf demselben I2C-Bus (GPIO33 SDA / GPIO34 SCL). Geräte an jedem dieser Anschlüsse teilen sich diesen Bus.
+</Aside>
+
+## SMD-Erweiterungsport
+
+Die Platine bietet einen SMD-Erweiterungsport auf der Rückseite.
+
+| Nr. | Pin | Beschreibung |
+|-----|-----|-------------|
+| 1 | +3V3 | |
+| 2 | +5V | |
+| 3 | I/O | GPIO02 |
+| 4 | I/O | GPIO03 |
+| 5 | I/O | GPIO04 |
+| 6 | I/O | GPIO05 |
+| 7 | I/O | GPIO06 |
+| 8 | I/O | GPIO07 |
+| 9 | I/O | GPIO08 |
+| 10 | I/O | GPIO09 |
+| 11 | I/O | GPIO10 |
+| 12 | I/O | GPIO11 |
+| 13 | GND | |
+| 14 | GND | |
+
+## Beispielkonfigurationen
+
+### Grund-Setup
+
+- **[Rev 3.3 Grundkonfiguration](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/basic-rev-3.3.yaml)** -- Minimales Setup mit 4 Lüftern
+- **[Rev 3.2 Grundkonfiguration](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/basic-rev-3.2.yaml)** -- Minimales Setup mit 4 Lüftern
+- **[Rev 3.1 Grundkonfiguration](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/basic-rev-3.1.yaml)** -- Minimales Setup mit 4 Lüftern
+
+### Erweiterte Funktionen
+
+- **[RGB-Status-LEDs](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-rgb-status-leds-rev-3.1.yaml)** -- Visuelle Rückmeldung der Lüfterdrehzahl mit farbcodierten LEDs (rot=langsam, grün=schnell)
+- **[RPM PI-Regelung](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-rpm-pi-control-rev-3.1.yaml)** -- Geschlossene Drehzahlregelung pro Lüfter
+- **[Temperaturregelung (Linear/PID)](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-temperature-control-rev-3.1.yaml)** -- Automatische Anpassung der Lüfterdrehzahl basierend auf der Temperatur
+- **[Temperaturkurve](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-temperature-curve-rev-3.1.yaml)** -- Flexible 5-Punkte-Temperaturkurve mit linearer Interpolation
+
+Alle verfügbaren Beispiele finden Sie im [Beispielverzeichnis](https://github.com/zeroflow/wifi-fancontroller/tree/main/examples).
+
+## Revisionsverlauf
+
+Alle Rev 3.1-, 3.2- und 3.3-Platinen teilen sich identische Firmware und Pin-Belegung. Die Unterschiede zwischen den Unterrevisionen betreffen ausschließlich hardwareseitige Verbesserungen:
+
+| Revision | Änderungen |
+|----------|---------|
+| Rev 3.1 | RGB-Status-LEDs (SK6805) für Platine + Rückmeldung pro Lüfter hinzugefügt |
+| Rev 3.2 | Verbesserte USB-C-Sicherung für besseren Überstromschutz |
+| Rev 3.3 | Open-Drain-Lüfterausgänge, optimierte Bauteilauswahl, verbesserte Stabilität der Stromversorgung |
