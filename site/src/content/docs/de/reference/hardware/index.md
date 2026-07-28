@@ -6,10 +6,6 @@ sidebar:
   order: 0
 ---
 
-:::caution[Entwurf (rechtliche Prüfung ausstehend)]
-Dieser Text ist ein Entwurf und wurde noch nicht rechtlich geprüft oder freigegeben. Er ist nicht als endgültige oder rechtsverbindliche Gebrauchsanleitung zu verstehen, bis die rechtliche Freigabe erfolgt ist.
-:::
-
 Die WiFi Lüftersteuerung hat mehrere Hardware-Revisionen durchlaufen, wobei jede die vorherige Generation abgelöst hat. Alle Revisionen teilen sich die gleichen Kernfunktionen: 4 PWM-Lüfteranschlüsse, einen HDC1080 Temperatur- und Luftfeuchtigkeitssensor sowie ESPHome-basierte Firmware mit Home Assistant-Integration.
 
 Die **aktuelle Revision ist Rev 3.3**. Frühere Revisionen sind hier für bestehende Besitzerinnen und Besitzer dokumentiert.

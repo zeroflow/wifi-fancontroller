@@ -3,10 +3,6 @@ title: Sicherheit und Konformität
 description: Anforderungen an die Stromversorgung, Sicherheitsabstand für HF-Exposition und Umfang der Benutzertasten für die WiFi Lüftersteuerung
 ---
 
-:::caution[Entwurf (rechtliche Prüfung ausstehend)]
-Dieser Text ist ein Entwurf und wurde noch nicht rechtlich geprüft oder freigegeben. Er ist nicht als endgültige oder rechtsverbindliche Gebrauchsanleitung zu verstehen, bis die rechtliche Freigabe erfolgt ist.
-:::
-
 Diese Seite enthält den normativen Wortlaut für die WiFi Lüftersteuerung. Wo eine andere Seite, ein Produktlisting oder eine gedruckte Beilage etwas anderes angibt, gilt der Text dieser Seite.
 
 ## Stromversorgung
