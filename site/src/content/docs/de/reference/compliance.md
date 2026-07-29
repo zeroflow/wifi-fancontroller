@@ -19,6 +19,26 @@ Der Wert von 2,5 A ist der maximale Gesamteingangsstrom der Platine, festgelegt 
 
 Der USB-C-Anschluss (Rev 2.0 und neuer) versorgt ausschließlich den Mikrocontroller mit Strom. Er kann keine Lüfter mit Strom versorgen.
 
+Das Netzteil muss ein geregeltes Schaltnetzteil (SMPS) mit 12 V DC sein. Die Eingangsspannung darf 15 V unter keinen Umständen überschreiten, auch nicht im Leerlauf oder bei geringer Last. Die Platine selbst nimmt weniger als 50 mA auf. Ein ungeregeltes, transformatorbasiertes Netzteil ohne Rückkopplungsregelung kann daher bei geringer Last deutlich über seine Nennspannung ansteigen.
+
+**Warnung:** Verwenden Sie keine alten, transformatorbasierten Netzteile ("schwere Klötze"). Diese sind häufig ungeregelt und können bei geringer Last 15 bis 18 V ausgeben, was die Platine dauerhaft beschädigt.
+
+Schäden durch Überspannung aus einem ungeeigneten Netzteil sind kein Fabrikationsfehler der Platine und nicht von der Gewährleistung gedeckt.
+
+So erkennen Sie ein ungeeignetes Netzteil:
+
+- Schwer im Verhältnis zur Größe
+- Hörbares Brummen
+- Lüftungsschlitze am Gehäuse
+- Kennzeichnung, die nur "50 Hz" ohne Schaltfrequenz angibt
+- Sehr alt
+
+Messen Sie im Zweifel die Ausgangsspannung ohne angeschlossene Last. Verwenden Sie das Netzteil nicht, wenn es mehr als etwa 13 V anzeigt.
+
+Geeignete Netzteile sind moderne geregelte Schalt-Steckernetzteile sowie MeanWell-Hutschienennetzteile (zum Beispiel die Serien HDR oder MDR) für den Einbau im Schaltschrank.
+
+Hinweis: Verbinden Sie zuerst den Hohlstecker mit der Platine und stecken Sie erst danach das Netzteil in die Steckdose.
+
 ## HF-Exposition
 
 Dieses Produkt enthält einen Funksender. Installieren Sie das Produkt so, dass während des normalen Betriebs ein Mindestabstand von 20 cm zwischen der Antenne und Personen eingehalten wird. Dieses Produkt ist nicht dafür vorgesehen, am Körper getragen oder in unmittelbarer Nähe der Nutzerin oder des Nutzers betrieben zu werden.
@@ -60,6 +80,8 @@ Für keinen dieser Anwendungsfälle wird eine Eignung des Produkts zugesichert.
 Das von Ihnen bereitgestellte externe Netzteil muss folgende Anforderungen erfüllen:
 
 - **Spannung:** 12 V DC
+- **Regelung:** geregeltes Schaltnetzteil (SMPS), kein ungeregeltes transformatorbasiertes Netzteil
+- **Maximale Spannung:** darf 15 V unter keinen Umständen überschreiten, auch nicht im Leerlauf
 - **Kennzeichnung:** CE-gekennzeichnet
 - **Strombegrenzung:** das Netzteil muss den Ausgangsstrom begrenzen
 - **Polarität:** korrekte Polarität, Mittelpin positiv (Hohlstecker 5,5 × 2,1 mm)
