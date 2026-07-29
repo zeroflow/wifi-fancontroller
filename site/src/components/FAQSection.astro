@@ -9,6 +9,10 @@ const faqs = [
     answer: "No. The Fancontroller requires an external 12V DC SELV power supply, which is not included and is not part of the product. It needs a 5.5x2.1mm barrel jack, centre positive, 12V DC ±5%, minimum 2.5A recommended depending on fan load. You must supply a power source that is certified for your region."
   },
   {
+    question: "Can I use an old 12V adapter I already have?",
+    answer: "We recommend a modern regulated switch-mode 12V supply. Old transformer-based adapters are often unregulated and can overvolt at light load, reaching 15 to 18V, which will damage the board. Quick check: measure the output with no load connected. It should read close to 12V, and anything above about 13V means don't use it."
+  },
+  {
     question: "Does it work with 5V fans?",
     answer: "No, the board is designed for 12V fans only. The barrel jack input is 12V DC, which is passed through directly to the fan headers. Using 5V fans requires a separate voltage converter."
   },
