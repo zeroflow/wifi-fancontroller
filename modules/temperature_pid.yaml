@@ -10,7 +10,7 @@
 #   Safety floor takes precedence over both PID output and pwm_minimum_pid.
 #
 # Credit to https://github.com/patrickcollins12/esphome-fan-controller
-# 
+#
 # A PID simulator is available at https://fancontroller.arthofer.dev/pid-simulator.
 # It uses simplified thermal models - treat results as a starting point for tuning.
 #
@@ -19,7 +19,7 @@
 #     temperature_pid:
 #       url: https://github.com/zeroflow/wifi-fancontroller
 #       ref: main
-#       files: 
+#       files:
 #         - path: modules/temperature_pid.yaml
 #           vars:
 #             friendly_name: "My Fan Controller"
@@ -38,6 +38,8 @@
 #   - max_integral: Max integral term value (default: 0.0)
 #   - output_averaging_samples: Output averaging samples (default: 1)
 #   - derivative_averaging_samples: Derivative averaging samples (default: 5)
+#   - temperature_sensor_id: Id of the sensor supplying the control temperature
+#       (default: fancontroller_temperature, the onboard sensor).
 #   - min_temperature: Minimum Temperature shown for the climate component range
 #   - max_temperature: Maximum Temperature shown for the climate component range
 #   - target_temperature_step: Granularity allowed in the climate component  input
@@ -59,6 +61,8 @@
 #
 substitutions:
   friendly_name: "Fancontroller" # default
+  # Sensor supplying the control temperature. Defaults to the onboard sensor
+  temperature_sensor_id: fancontroller_temperature
   kp: "3.0"   # UI scale (×100): 3 ≈ 3% fan per °C
   ki: "0.005" # UI scale (×100)
   kd: "0.0"   # UI scale (×100)
@@ -72,9 +76,9 @@ substitutions:
 
 number:
   ## OPTIONAL:
-  # RECEIVE KP, KI and KD parameters from input_text.kx helpers in 
+  # RECEIVE KP, KI and KD parameters from input_text.kx helpers in
   # Home Assistant. See the PID controller below
-  # These helper values will get saved to flash thus permanently over-riding 
+  # These helper values will get saved to flash thus permanently over-riding
   # the initial values set in the PID below.
 
   # KP (scaled x100: 1.0 = 1% fan speed per °C error)
@@ -271,21 +275,21 @@ switch:
     entity_category: config
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-    
+
   - platform: template
     name: "PID Control Fan 2"
     id: pid_control_fan2
     entity_category: config
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-    
+
   - platform: template
     name: "PID Control Fan 3"
     id: pid_control_fan3
     entity_category: config
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-    
+
   - platform: template
     name: "PID Control Fan 4"
     id: pid_control_fan4
@@ -293,10 +297,9 @@ switch:
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
 
-
 sensor:
-########################################################
-# START THE FAN CONTROLLER SETUP
+  ########################################################
+  # START THE FAN CONTROLLER SETUP
 
   - platform: template
     name: $friendly_name p term
@@ -338,34 +341,34 @@ climate:
   - platform: pid
     name: $friendly_name Thermostat
     id: pid_thermostat
-    sensor: fancontroller_temperature
+    sensor: ${temperature_sensor_id}
 
     # It is summer right now, so 30c is a decent target.
     default_target_temperature: 30°C
     cool_output: proxy_output
 
-    # ON state change, publish the values to the x_term numbers defined 
+    # ON state change, publish the values to the x_term numbers defined
     # above, so that they can be viewed in HA
     on_state:
       - sensor.template.publish:
           id: p_term
-          state: !lambda 'return -id(pid_thermostat).get_proportional_term() * 100.0;'
+          state: !lambda "return -id(pid_thermostat).get_proportional_term() * 100.0;"
       - sensor.template.publish:
           id: i_term
-          state: !lambda 'return -id(pid_thermostat).get_integral_term()* 100.0;'
+          state: !lambda "return -id(pid_thermostat).get_integral_term()* 100.0;"
       - sensor.template.publish:
           id: d_term
-          state: !lambda 'return -id(pid_thermostat).get_derivative_term()* 100.0;'
+          state: !lambda "return -id(pid_thermostat).get_derivative_term()* 100.0;"
       - sensor.template.publish:
           id: o_term
-          state: !lambda 'return -id(pid_thermostat).get_output_value()* 100.0;'
+          state: !lambda "return -id(pid_thermostat).get_output_value()* 100.0;"
       - sensor.template.publish:
           id: in_deadband_term
-          state: !lambda 'return id(pid_thermostat).in_deadband();'
+          state: !lambda "return id(pid_thermostat).in_deadband();"
       - sensor.template.publish:
           id: e_term
-          state: !lambda 'return -id(pid_thermostat).get_error_value();'
-        
+          state: !lambda "return -id(pid_thermostat).get_error_value();"
+
     # The extents of the HA Thermostat
     visual:
       min_temperature: $min_temperature
@@ -373,15 +376,15 @@ climate:
       temperature_step:
         target_temperature: $target_temperature_step
         current_temperature: $current_temperature_step
-  
+
     # Boot-time fallback only (internal 0-1 scale).
     # Overridden within milliseconds by the number entities above (which
     # restore from flash and call set_kp/ki/kd via set_action on boot).
     # Tune via the HA sliders - substitutions kp/ki/kd set those initial values.
     control_parameters:
-      kp: 0.03     # = kp default / 100
-      ki: 0.00005  # = ki default / 100
-      kd: 0.0      # = kd default / 100
+      kp: 0.03 # = kp default / 100
+      ki: 0.00005 # = ki default / 100
+      kd: 0.0 # = kd default / 100
       max_integral: 0.0
       output_averaging_samples: 1
       derivative_averaging_samples: 5
@@ -396,8 +399,8 @@ climate:
       deadband_output_averaging_samples: 15
 
 button:
-- platform: template
-  name: "PID Climate Autotune"
-  id: pid_autotune
-  on_press:
-    - climate.pid.autotune: pid_thermostat
+  - platform: template
+    name: "PID Climate Autotune"
+    id: pid_autotune
+    on_press:
+      - climate.pid.autotune: pid_thermostat

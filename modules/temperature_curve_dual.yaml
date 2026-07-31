@@ -27,6 +27,8 @@
 #   - friendly_name: Device name prefix (default: "Fancontroller")
 #   - curveA_temp[1-5] / curveA_speed[1-5]: Curve A points (switch off)
 #   - curveB_temp[1-5] / curveB_speed[1-5]: Curve B points (switch on)
+#   - temperature_sensor_id: Id of the sensor supplying the control temperature
+#       (default: fancontroller_temperature, the onboard sensor).
 #
 # Features:
 #   - Two independent 5-point curves, switchable from Home Assistant
@@ -46,6 +48,8 @@
 #
 substitutions:
   friendly_name: "Fancontroller"
+  # Sensor supplying the control temperature. Defaults to the onboard sensor
+  temperature_sensor_id: fancontroller_temperature
   # Curve A - aggressive (switch off)
   curveA_temp1: "20.0"
   curveA_speed1: "0.0"
@@ -74,14 +78,16 @@ globals:
   - id: curve_config_warning
     type: bool
     restore_value: no
-    initial_value: 'false'
+    initial_value: "false"
 
 # Validate both curves at boot
 esphome:
   on_boot:
-    - priority: -100  # Run late, after numbers are initialized
+    - priority: -100 # Run late, after numbers are initialized
       then:
         - lambda: |-
+            ESP_LOGI("temperature_curve_dual", "Control sensor: ${temperature_sensor_id}");
+
             float a[5] = {${curveA_temp1}, ${curveA_temp2}, ${curveA_temp3}, ${curveA_temp4}, ${curveA_temp5}};
             float b[5] = {${curveB_temp1}, ${curveB_temp2}, ${curveB_temp3}, ${curveB_temp4}, ${curveB_temp5}};
             const char* names[2] = {"A", "B"};
@@ -374,7 +380,7 @@ switch:
     icon: mdi:swap-horizontal
     entity_category: config
     optimistic: true
-    restore_mode: RESTORE_DEFAULT_OFF  # off = Curve A (aggressive)
+    restore_mode: RESTORE_DEFAULT_OFF # off = Curve A (aggressive)
 
   - platform: template
     name: "Auto Control Fan 1"
@@ -409,7 +415,7 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
-      float temp = id(fancontroller_temperature).state;
+      float temp = id(${temperature_sensor_id}).state;
 
       struct Point {
         float temp;
@@ -468,7 +474,7 @@ sensor:
       then:
         - output.set_level:
             id: curve_proxy_output
-            level: !lambda 'return x / 100.0;'
+            level: !lambda "return x / 100.0;"
 
 # NOTE: The write_action lambda below is a verbatim copy of the one in
 # modules/temperature_curve.yaml (per-fan auto_control + usr_override +
@@ -547,4 +553,4 @@ binary_sensor:
     id: curve_config_warning_sensor
     entity_category: diagnostic
     icon: mdi:alert-circle
-    lambda: 'return id(curve_config_warning);'
+    lambda: "return id(curve_config_warning);"

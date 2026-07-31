@@ -34,6 +34,8 @@
 #   - t2: Upper setpoint temperature in °C (default: 50.0)
 #   - fanpercent1: Fan speed % at t1 (default: 30.0)
 #   - fanpercent2: Fan speed % at t2+ (default: 100.0)
+#   - temperature_sensor_id: Id of the sensor supplying the control temperature
+#       (default: fancontroller_temperature, the onboard sensor).
 #
 # Features:
 #   - Configurable temperature thresholds and fan speeds via Home Assistant UI
@@ -42,6 +44,8 @@
 #
 substitutions:
   friendly_name: "Fancontroller" # default
+  # Sensor supplying the control temperature. Defaults to the onboard sensor
+  temperature_sensor_id: fancontroller_temperature
   t_off: "25.0"
   t1: "30.0"
   t2: "50.0"
@@ -122,13 +126,13 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
-      float temp = id(fancontroller_temperature).state;
+      float temp = id(${temperature_sensor_id}).state;
       float t_off = id(linear_t_off).state;
       float t1 = id(linear_t1).state;
       float t2 = id(linear_t2).state;
       float fan1 = id(linear_fanpercent1).state;
       float fan2 = id(linear_fanpercent2).state;
-      
+
       if (temp < t_off) {
         return 0.0;
       } else if (temp >= t_off && temp < t1) {
@@ -143,7 +147,7 @@ sensor:
       then:
         - output.set_level:
             id: proxy_output
-            level: !lambda 'return x / 100.0;'
+            level: !lambda "return x / 100.0;"
 
 output:
   - platform: template
@@ -217,21 +221,21 @@ switch:
     entity_category: config
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-    
+
   - platform: template
     name: "Auto Control Fan 2"
     id: auto_control_fan2
     entity_category: config
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-    
+
   - platform: template
     name: "Auto Control Fan 3"
     id: auto_control_fan3
     entity_category: config
     optimistic: true
     restore_mode: RESTORE_DEFAULT_ON
-    
+
   - platform: template
     name: "Auto Control Fan 4"
     id: auto_control_fan4

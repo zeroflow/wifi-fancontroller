@@ -19,6 +19,7 @@ Examples showing additional features and modules:
 - **`with-rgb-status-leds-rev-3.1.yaml`** - Shows how to use the RGB status LED module for visual fan speed feedback
 - **`with-temperature-curve-rev-3.1.yaml`** - Shows how to use the temperature curve module for flexible multi-point fan control (recommended!)
 - **`with-temperature-control-rev-3.1.yaml`** - Shows how to use temperature control modules (linear/PID) for automatic fan speed adjustment
+- **`with-temperature-curve-external-sensor-rev-3.1.yaml`** - Shows how to drive the temperature curve from an external Qwiic BME680 instead of the onboard sensor, via `temperature_sensor_id`
 
 ## Usage
 

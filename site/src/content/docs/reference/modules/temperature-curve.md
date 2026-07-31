@@ -38,6 +38,7 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 | `curve_speed4` | `"75.0"` | Fan speed at point 4 (%) |
 | `curve_temp5` | `"50.0"` | Temperature point 5 (C) |
 | `curve_speed5` | `"100.0"` | Fan speed at point 5 (%) |
+| `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
 
 ## How It Works
 
@@ -214,3 +215,40 @@ All 10 curve parameters can be adjusted live from Home Assistant without reflash
 - **Start with the Balanced preset** -- the default curve works well for most scenarios. Adjust individual points based on your environment.
 - **Consider your fans' minimum speed** -- if your fans need at least 20% PWM to spin reliably, make sure your lowest non-zero speed point is at or above that threshold.
 - **Use the Curve Output sensor for debugging** -- it updates every 10 seconds and shows the current interpolated fan speed, making it easy to verify your curve behaves as expected at different temperatures.
+
+## Controlling From a Different Sensor
+
+By default the module reads `fancontroller_temperature`, the onboard HDC1080 that every hardware package declares. Set `temperature_sensor_id` to the id of any other temperature sensor in your configuration to control from that instead:
+
+```yaml
+packages:
+  # modules/bme680.yaml is not standalone - it needs the shared I2C bus (bus_a)
+  # that your hardware package declares. Use your own board revision here.
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  bme680:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/bme680.yaml]
+  temperature_curve:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_curve.yaml
+        vars:
+          temperature_sensor_id: "bme680_temperature"
+```
+
+Omit the variable and it falls back to `fancontroller_temperature`, so existing configurations keep working unchanged. A misspelled id fails the build rather than quietly falling back to the onboard sensor.
+
+The Qwiic modules build their sensor ids from an id-prefix substitution, so [BME680](/reference/qwiic/examples/bme680/) gives you `bme680_temperature`, [SCD41](/reference/qwiic/examples/scd41/) gives `scd41_temperature`, and [DS2484](/reference/qwiic/examples/ds2484/) gives whatever ids you assign your own `dallas_temp` sensors.
+
+If you also run the [SSD1306 OLED](/reference/qwiic/examples/ssd1306/) module, note that it displays the onboard sensor regardless of this setting, so the screen and the fan control can show different temperatures.
+
+The module names the sensor it is reading in its boot log, so you can confirm from a log dump that the override took effect.
+
+:::caution[External sensors and startup]
+A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. During that window this module commands the fans **off**. Keep the sensor's `update_interval` short if that matters to you, and expect the fans not to spin until the first reading lands. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
+:::

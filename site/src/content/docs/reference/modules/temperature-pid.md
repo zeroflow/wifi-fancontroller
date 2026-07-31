@@ -42,6 +42,7 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 | `max_integral` | `"0.0"` | Maximum integral term (0 = unlimited) |
 | `output_averaging_samples` | `"1"` | Output smoothing samples |
 | `derivative_averaging_samples` | `"5"` | Derivative smoothing samples |
+| `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
 
 ## Home Assistant Entities
 
@@ -178,3 +179,42 @@ The default values (`kp = 3.0`, `ki = 0.005`, `kd = 0.0`) work well for most set
 ---
 
 Based on work by [patrickcollins12/esphome-fan-controller](https://github.com/patrickcollins12/esphome-fan-controller).
+
+## Controlling From a Different Sensor
+
+By default the module reads `fancontroller_temperature`, the onboard HDC1080 that every hardware package declares. Set `temperature_sensor_id` to the id of any other temperature sensor in your configuration to control from that instead:
+
+```yaml
+packages:
+  # modules/bme680.yaml is not standalone - it needs the shared I2C bus (bus_a)
+  # that your hardware package declares. Use your own board revision here.
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  bme680:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/bme680.yaml]
+  temperature_pid:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_pid.yaml
+        vars:
+          temperature_sensor_id: "bme680_temperature"
+```
+
+This becomes the climate component's process variable, so the thermostat's current temperature is the external sensor's reading.
+
+Retune after switching sensors. A sensor at the end of a cable responds more slowly to fan changes than the onboard sensor does, and that added lag changes the gains that behave well -- start by reducing `kp` and re-checking for oscillation.
+
+Omit the variable and it falls back to `fancontroller_temperature`, so existing configurations keep working unchanged. A misspelled id fails the build rather than quietly falling back to the onboard sensor.
+
+The Qwiic modules build their sensor ids from an id-prefix substitution, so [BME680](/reference/qwiic/examples/bme680/) gives you `bme680_temperature`, [SCD41](/reference/qwiic/examples/scd41/) gives `scd41_temperature`, and [DS2484](/reference/qwiic/examples/ds2484/) gives whatever ids you assign your own `dallas_temp` sensors.
+
+If you also run the [SSD1306 OLED](/reference/qwiic/examples/ssd1306/) module, note that it displays the onboard sensor regardless of this setting, so the screen and the fan control can show different temperatures.
+
+:::caution[External sensors and startup]
+A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. The PID controller has no process variable during that window. Keep the sensor's `update_interval` short if that matters to you. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
+:::

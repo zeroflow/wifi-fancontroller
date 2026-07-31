@@ -8,8 +8,8 @@
 #     temperature_curve:
 #       url: https://github.com/zeroflow/wifi-fancontroller
 #       ref: main
-#       files: 
-#         - path: modules/temperature_curve.yaml       
+#       files:
+#         - path: modules/temperature_curve.yaml
 #           vars:
 #             friendly_name: "My Fan Controller"
 #             # Define your curve points (temperature in °C, fan speed in %)
@@ -28,6 +28,8 @@
 #   - friendly_name: Device name prefix (default: "fancontroller")
 #   - curve_temp[1-5]: Temperature points in °C (auto-sorted, can be in any order)
 #   - curve_speed[1-5]: Fan speed % at each temperature point
+#   - temperature_sensor_id: Id of the sensor supplying the control temperature
+#       (default: fancontroller_temperature, the onboard sensor).
 #
 # Features:
 #   - 5 configurable curve points for precise control
@@ -50,6 +52,8 @@
 #
 substitutions:
   friendly_name: "Fancontroller" # default
+  # Sensor supplying the control temperature. Defaults to the onboard sensor
+  temperature_sensor_id: fancontroller_temperature
   # Default: Balanced curve
   curve_temp1: "20.0"
   curve_speed1: "0.0"
@@ -67,14 +71,16 @@ globals:
   - id: curve_config_warning
     type: bool
     restore_value: no
-    initial_value: 'false'
+    initial_value: "false"
 
 # Validate configuration at boot
 esphome:
   on_boot:
-    - priority: -100  # Run late, after numbers are initialized
+    - priority: -100 # Run late, after numbers are initialized
       then:
         - lambda: |-
+            ESP_LOGI("temperature_curve", "Control sensor: ${temperature_sensor_id}");
+
             // Check if temperature points are monotonically increasing
             float temps[5] = {
               ${curve_temp1}, ${curve_temp2}, ${curve_temp3},
@@ -243,7 +249,7 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
-      float temp = id(fancontroller_temperature).state;
+      float temp = id(${temperature_sensor_id}).state;
 
       // Get all curve points
       struct Point {
@@ -300,7 +306,7 @@ sensor:
       then:
         - output.set_level:
             id: curve_proxy_output
-            level: !lambda 'return x / 100.0;'
+            level: !lambda "return x / 100.0;"
 
 output:
   - platform: template
@@ -402,4 +408,4 @@ binary_sensor:
     id: curve_config_warning_sensor
     entity_category: diagnostic
     icon: mdi:alert-circle
-    lambda: 'return id(curve_config_warning);'
+    lambda: "return id(curve_config_warning);"
