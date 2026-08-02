@@ -97,6 +97,7 @@ Substitution names live in one shared namespace across every package. If two mod
 | [Temperature Curve](/reference/modules/temperature-curve/) | Medium | Custom multi-point fan profiles | 16 (numbers, sensor, switches, binary sensor) | All |
 | [Temperature Curve Dual](/reference/modules/temperature-curve-dual/) | Medium | Two switchable profiles (e.g. aggressive vs defensive) | 27 (numbers, sensor, switches, binary sensor) | All |
 | [Temperature Curve Triple](/reference/modules/temperature-curve-triple/) | Medium | Three switchable profiles over one shared temperature axis | 27 (numbers, select, sensor, switches, binary sensor) | All |
+| [Temperature Curve Triple Independent](/reference/modules/temperature-curve-triple-independent/) | Medium | Three switchable profiles with separate axes and separate source sensors | 37 (numbers, select, sensor, switches, binary sensor) | All |
 | [RPM PI Control](/reference/modules/rpm-pi-control/) | Advanced | Exact RPM targeting per fan | 31 (numbers, sensors, switches, button) | All |
 | [RPM Status LEDs](/reference/modules/rpm-status-leds/) | Simple | Visual RPM feedback via board LEDs | 0 (writes to existing LED entities) | Rev 3.1+ |
 | [Stall Guard](/reference/modules/stall-guard/) | Simple | Fan stall detection and automatic recovery | 9 (binary sensors, text sensors, button) | All |
@@ -107,7 +108,7 @@ Substitution names live in one shared namespace across every package. If two mod
 ### Temperature modules are mutually exclusive
 
 :::caution
-You can only use **one** temperature control module at a time (PID, Linear, Curve, Curve Dual, or Curve Triple). These modules define overlapping internal component IDs -- PID and Linear both define `proxy_output`, while Linear, Curve, Curve Dual, and Curve Triple all define `auto_control_fan1`--`auto_control_fan4` switches. Even where IDs don't conflict, running two temperature controllers simultaneously would cause unpredictable fan behavior.
+You can only use **one** temperature control module at a time (PID, Linear, Curve, Curve Dual, Curve Triple, or Curve Triple Independent). These modules define overlapping internal component IDs -- PID and Linear both define `proxy_output`, while Linear, Curve, Curve Dual, Curve Triple, and Curve Triple Independent all define `auto_control_fan1`--`auto_control_fan4` switches. Even where IDs don't conflict, running two temperature controllers simultaneously would cause unpredictable fan behavior.
 :::
 
 :::caution
@@ -122,17 +123,18 @@ You can only use **one** temperature control module at a time (PID, Linear, Curv
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
 
-| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | RPM PI Control | RPM Status LEDs | Stall Guard | USR Buttons |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Temperature PID** | -- | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ |
-| **Temperature Linear** | ❌ | -- | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve** | ❌ | ❌ | -- | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Dual** | ❌ | ❌ | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ |
-| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ❌ | ✅ |
-| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ |
-| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ |
-| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
+| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | Temp Curve Triple Indep. | RPM PI Control | RPM Status LEDs | Stall Guard | USR Buttons |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Temperature PID** | -- | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ |
+| **Temperature Linear** | ❌ | -- | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve** | ❌ | ❌ | -- | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Dual** | ❌ | ❌ | ❌ | -- | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Triple Independent** | ❌ | ❌ | ❌ | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ |
+| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ❌ | ✅ |
+| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ |
+| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ |
+| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
 
 ## Module List
 
@@ -147,6 +149,8 @@ Most modules can be combined freely. The two exceptions are: temperature modules
 - **[Temperature Curve Dual](/reference/modules/temperature-curve-dual/)** -- Two complete 5-point curves (for example aggressive and defensive) switchable from Home Assistant with a single switch. Sensor-agnostic; pair the switch with an automation, such as flipping to the defensive curve on poor air quality.
 
 - **[Temperature Curve Triple](/reference/modules/temperature-curve-triple/)** -- Three fan profiles over one shared 5-point temperature axis, picked from Home Assistant with a select entity. Sharing the axis means the third profile costs no extra entities. Use it when the temperature breakpoints stay fixed and only the aggressiveness changes.
+
+- **[Temperature Curve Triple Independent](/reference/modules/temperature-curve-triple-independent/)** -- Three fan profiles that share nothing: each has its own 5-point temperature axis, its own speeds, and its own source sensor. Use it when the breakpoints differ per profile, when profiles read different sensors, or when one profile has to run inverted. Costs ten more entities than the shared-axis version.
 
 ### RPM Control
 

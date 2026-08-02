@@ -2,7 +2,7 @@
 title: USR Buttons
 description: Assign the three USR buttons to fan selection and speed stepping, with per-fan RGB LED feedback
 sidebar:
-  order: 9
+  order: 10
 ---
 
 :::caution[Rev 3.1+ Only]

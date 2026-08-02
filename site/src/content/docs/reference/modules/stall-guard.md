@@ -2,7 +2,7 @@
 title: Stall Guard
 description: Fan stall detection and automatic recovery module
 sidebar:
-  order: 8
+  order: 9
 ---
 
 :::note[All Revisions]

@@ -395,10 +395,81 @@ sensor:
 - Use "Reset PI Integrators" button when changing parameters or after long idle periods
 - Monitor the debug sensors to understand controller behavior
 
+#### 5. Independent Triple Temperature Curves (`modules/temperature_curve_triple_independent.yaml`)
+
+Three fully independent 5-point temperature curves, picked from Home Assistant with a "Curve Selection" select entity. Each profile carries its own temperature axis, its own speeds, **and its own source sensor**, so one profile can follow a heat pump flow temperature while another follows ambient room air. A profile whose speeds descend as temperature rises gives you an inverted curve, which is how you drive fans harder as water gets colder in cooling mode.
+
+The sibling module `modules/temperature_curve_triple.yaml` shares one temperature axis across all three profiles. Use that one when the breakpoints stay fixed and only the aggressiveness changes; it does the job with 27 Home Assistant entities instead of 37.
+
+**Configuration Variables:**
+- `friendly_name`: Device name prefix (default: "Fancontroller")
+- `curve_a_name` / `curve_b_name` / `curve_c_name`: Profile display names
+- `curve_a_temp[1-5]` / `curve_b_temp[1-5]` / `curve_c_temp[1-5]`: Each profile's temperature axis, must be entered ascending
+- `curve_a_speed[1-5]` / `curve_b_speed[1-5]` / `curve_c_speed[1-5]`: Each profile's speeds
+- `curve_a_sensor_id` / `curve_b_sensor_id` / `curve_c_sensor_id`: ESPHome `id` of the sensor each profile reads (default: `fancontroller_temperature`, the onboard HDC1080)
+
+**Features:**
+- Three independent 5-point profiles, no shared state between them
+- Per-profile source sensor, including `platform: homeassistant` sensors imported from Home Assistant
+- Linear interpolation between points; no runtime sorting
+- Selection dispatches on the select index, so renaming a profile cannot break which curve is active
+- Individual auto-control switches for each of 4 fans
+- Output value sensor showing the active profile's calculated fan speed
+- Unordered axis on any profile raises a warning sensor and names the profile in the log, but forces the fans to 100% only while that profile is the active one
+- An unavailable source sensor holds the last good reading for 60 seconds, then forces 100%
+
+**Example:**
+```yaml
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  temperature_curve_triple_independent:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/temperature_curve_triple_independent.yaml]
+
+# The sensors the profiles read, imported from Home Assistant
+sensor:
+  - platform: homeassistant
+    id: hp_flow_temperature
+    entity_id: sensor.heat_pump_flow_temperature
+  - platform: homeassistant
+    id: ambient_air_temperature
+    entity_id: sensor.living_room_temperature
+
+substitutions:
+  curve_a_name: "Heating"
+  curve_b_name: "Ventilation"
+  curve_c_name: "Cooling"
+  curve_a_sensor_id: "hp_flow_temperature"
+  curve_b_sensor_id: "ambient_air_temperature"
+  curve_c_sensor_id: "hp_flow_temperature"
+  # Heating: flow temperature band, fans ramp up as the water gets hotter
+  curve_a_temp1: "28.0"
+  curve_a_temp5: "50.0"
+  curve_a_speed1: "0.0"
+  curve_a_speed5: "100.0"
+  # Cooling: inverted. The AXIS still ascends, the SPEEDS descend.
+  curve_c_temp1: "8.0"
+  curve_c_temp5: "20.0"
+  curve_c_speed1: "100.0"
+  curve_c_speed5: "0.0"
+  # ... points 2 to 4 omitted for brevity, see the full example
+```
+
+See [`examples/with-temperature-curve-triple-independent-rev-3.1.yaml`](examples/with-temperature-curve-triple-independent-rev-3.1.yaml) for a complete configuration.
+
+**Important:** never invert the temperature axis to build an inverted curve. Enter the temperatures ascending and let the speeds descend. An unordered axis is treated as a fault, not as a feature.
+
+A `curve_*_sensor_id` naming an `id` that does not exist fails at **compile** time, not at config validation, and the error is confusing: it surfaces as a C++ `'my_sensor' was not declared in this scope` pointing at generated code rather than at your YAML. Check the spelling of your sensor ids first if you see that. The value must be an ESPHome `id:`, not a Home Assistant `entity_id`.
+
 ### Choosing a Control Module
 
 - **Linear Control**: Best for simple setups where you want predictable fan behavior based on temperature zones. Easy to understand and configure.
 - **PID Temperature Control**: Best for precise temperature control and systems where you want to maintain a specific target temperature with minimal fluctuation.
+- **Independent Triple Temperature Curves**: Best when one board has to serve several operating modes that differ in more than aggressiveness, for example a heat pump that heats in winter and cools in summer, or profiles that read different sensors.
 - **RPM PI Control**: Best when you need precise fan speed control in RPM, regardless of temperature. Ideal for applications requiring consistent airflow, compensating for fan aging, or when you want to set exact fan speeds.
 - **RPM Status LEDs**: Can be combined with any control module to add visual feedback.
 

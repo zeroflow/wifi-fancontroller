@@ -20,7 +20,7 @@ Choose Temperature Curve Dual when you want two distinct fan profiles you can fl
 The module is sensor-agnostic. It does not read any air-quality sensor itself. Curve selection is just a switch; the automation logic lives in Home Assistant. For a single fixed curve, see [Temperature Curve](/reference/modules/temperature-curve/). The [modules overview](/reference/modules/) has a comparison table.
 
 :::caution[One temperature module at a time]
-Temperature Curve Dual is a temperature control module. Do not enable it together with Temperature PID, Temperature Linear, or Temperature Curve. They share the `auto_control_fan1`--`auto_control_fan4` switches and would fight over the fan outputs.
+Temperature Curve Dual is a temperature control module. Do not enable it together with Temperature PID, Temperature Linear, Temperature Curve, Temperature Curve Triple, or Temperature Curve Triple Independent. They share the `auto_control_fan1`--`auto_control_fan4` switches and would fight over the fan outputs.
 :::
 
 :::tip[Works with Stall Guard]

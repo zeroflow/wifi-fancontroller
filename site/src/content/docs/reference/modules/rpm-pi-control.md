@@ -2,7 +2,7 @@
 title: RPM PI Control
 description: Closed-loop RPM regulation module for precise fan speed control
 sidebar:
-  order: 6
+  order: 7
 ---
 
 :::note[All Revisions]

@@ -19,12 +19,12 @@ Sharing the temperature axis is what makes the third profile free. Five shared t
 
 Choose Temperature Curve Triple when the temperatures you care about are fixed but how hard you want to react to them changes. A typical setup is Normal for everyday use, Quiet for the night, and Turbo for when the rack is under load. The temperature breakpoints stay the same; the aggressiveness changes.
 
-If you need two profiles with genuinely different temperature breakpoints, use [Temperature Curve Dual](/reference/modules/temperature-curve-dual/) instead, which keeps a separate axis per curve. For a single fixed curve, see [Temperature Curve](/reference/modules/temperature-curve/). The [modules overview](/reference/modules/) has a comparison table.
+If you need three profiles with genuinely different temperature breakpoints, use [Temperature Curve Triple Independent](/reference/modules/temperature-curve-triple-independent/), which gives each profile its own axis for ten more entities. For two profiles with separate axes, use [Temperature Curve Dual](/reference/modules/temperature-curve-dual/). For a single fixed curve, see [Temperature Curve](/reference/modules/temperature-curve/). The [modules overview](/reference/modules/) has a comparison table.
 
-The module is sensor-agnostic. It does not read any air-quality or occupancy sensor itself. Profile selection is just a select entity; the automation logic lives in Home Assistant.
+The module does not decide which profile is active. It reads no air-quality or occupancy sensor itself. Profile selection is just a select entity; the automation logic lives in Home Assistant.
 
 :::caution[One temperature module at a time]
-Temperature Curve Triple is a temperature control module. Do not enable it together with Temperature PID, Temperature Linear, Temperature Curve, or Temperature Curve Dual. They share the `auto_control_fan1`--`auto_control_fan4` switches and would fight over the fan outputs.
+Temperature Curve Triple is a temperature control module. Do not enable it together with Temperature PID, Temperature Linear, Temperature Curve, Temperature Curve Dual, or Temperature Curve Triple Independent. They share the `auto_control_fan1`--`auto_control_fan4` switches and would fight over the fan outputs.
 :::
 
 :::tip[Works with Stall Guard]
@@ -45,6 +45,38 @@ That is deliberate. Interpolating over an unordered axis produces meaningless sp
 
 Speeds are a different matter. A profile whose speed dips as temperature rises is perfectly legitimate, and it is how you build a deliberate quiet band. The board logs an informational note and raises the warning sensor so you can see it was noticed, but the profile keeps operating normally. It never triggers the failsafe.
 
+## Source Sensors
+
+Each profile names the sensor it reads through `curve_a_sensor_id`, `curve_b_sensor_id` and `curve_c_sensor_id`. Leaving all three at the default gives the original behaviour: every profile follows the onboard HDC1080. Point one at any other sensor in your config, including a `platform: homeassistant` sensor pulled in from Home Assistant.
+
+```yaml
+sensor:
+  - platform: homeassistant
+    id: ambient_air_temperature
+    entity_id: sensor.living_room_temperature
+
+substitutions:
+  curve_b_sensor_id: "ambient_air_temperature"
+```
+
+The module is evaluated on a fixed 10 second interval rather than from a sensor's `on_value` trigger. With three possible sources, an `on_value` trigger would only ever fire for one of them, so the interval is what keeps every profile responsive.
+
+Bear in mind that the temperature axis is still shared. Two profiles reading sensors that live in different temperature bands will not both fit one set of breakpoints; that is what [Temperature Curve Triple Independent](/reference/modules/temperature-curve-triple-independent/) is for.
+
+:::danger[A misspelled sensor id fails at compile time, not at validation]
+`esphome config` will happily accept a `curve_*_sensor_id` that names an `id` which does not exist. The failure appears later, during compilation, as a C++ error along the lines of `'my_sensor' was not declared in this scope`, pointing at a line of generated code rather than at your YAML.
+
+If you see that, check the spelling of your sensor ids first. The value must be the ESPHome `id:` of a sensor, not a Home Assistant `entity_id`.
+:::
+
+### When a source sensor goes unavailable
+
+A sensor reads NAN whenever it has no value, which for a `platform: homeassistant` sensor happens while the Home Assistant entity is unavailable, while HA restarts, or simply before the first state arrives. A brief NAN is normal and must not disturb the fans.
+
+The module holds the last good reading for 60 seconds and keeps controlling from it. If the sensor has still not recovered by then, it forces every fan to 100% until it does. Entry into the hold, expiry into the failsafe, and recovery are each logged at warning level.
+
+Switching profiles discards the held value. Holding one profile's flow temperature and feeding it into another profile's ambient curve would produce a plausible looking but wrong speed.
+
 ## Renaming a profile renames its Home Assistant entities
 
 The module's internal component IDs are fixed literals and are never built from the name variables, so renaming a profile cannot break curve selection or any lambda inside the firmware.
@@ -61,6 +93,9 @@ There is no workaround today; it is tracked upstream as [esphome/feature-request
 | `curve_a_name` | `"Normal"` | Display name for profile A |
 | `curve_b_name` | `"Heating"` | Display name for profile B |
 | `curve_c_name` | `"Turbo"` | Display name for profile C |
+| `curve_a_sensor_id` | `"fancontroller_temperature"` | ESPHome `id` of the sensor profile A reads |
+| `curve_b_sensor_id` | `"fancontroller_temperature"` | ESPHome `id` of the sensor profile B reads |
+| `curve_c_sensor_id` | `"fancontroller_temperature"` | ESPHome `id` of the sensor profile C reads |
 | `axis_temp1` | `"20.0"` | Shared temperature point 1 (C) |
 | `axis_temp2` | `"25.0"` | Shared temperature point 2 (C) |
 | `axis_temp3` | `"30.0"` | Shared temperature point 3 (C) |
@@ -86,7 +121,7 @@ There is no workaround today; it is tracked upstream as [esphome/feature-request
 
 At boot the module validates the shared temperature axis and all three speed sets, then reports the result to the log.
 
-Every 10 seconds it reads the board temperature and computes a fan speed. It first re-checks that the five shared temperature points are still in ascending order, since you can edit them from Home Assistant at any time. If they are not, it returns 100% and stops there. Otherwise it picks the active profile's five speeds and linearly interpolates. Below the lowest point it holds the first speed; above the highest point it holds the last speed.
+Every 10 seconds it resolves the active profile, reads that profile's source sensor, and computes a fan speed. It first re-checks that the five shared temperature points are still in ascending order, since you can edit them from Home Assistant at any time. If they are not, it returns 100% and stops there. Otherwise it picks the active profile's five speeds and linearly interpolates. Below the lowest point it holds the first speed; above the highest point it holds the last speed.
 
 Profile selection is resolved by the select entity's index position, not by matching the option string, so renaming a profile in your substitutions cannot break which curve is active.
 
