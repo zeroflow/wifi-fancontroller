@@ -33,14 +33,50 @@
 #   - curve_a_speed[1-5]: Speeds for profile A
 #   - curve_b_speed[1-5]: Speeds for profile B
 #   - curve_c_speed[1-5]: Speeds for profile C
+#   - curve_a_sensor_id / curve_b_sensor_id / curve_c_sensor_id: ESPHome id of
+#     the sensor each profile reads (default: fancontroller_temperature for all
+#     three, which is the onboard HDC1080)
 #
 # Features:
 #   - Three 5-point profiles over one shared temperature axis
+#   - Per-profile source sensor, so one profile can follow a heat pump flow
+#     temperature while another follows ambient air
 #   - Linear interpolation between points; no runtime sorting
 #   - Selection dispatches on the select index, so renaming a profile in the
 #     substitutions cannot break which curve is active
 #   - Individual auto-control switches for each of 4 fans
 #   - Output value sensor showing the active profile's calculated fan speed
+#
+# Source sensors:
+#   Each profile names the sensor it reads. Leaving all three at the default
+#   gives the original behaviour: every profile follows the onboard HDC1080.
+#   Point one at any other sensor::Sensor in your config, including a
+#   platform: homeassistant sensor imported from Home Assistant.
+#
+#   The whole module is evaluated on a fixed 10 s interval rather than from the
+#   source sensor's on_value trigger. With three possible sources, an on_value
+#   trigger would only ever fire for one of them, so the interval is what keeps
+#   every profile responsive.
+#
+#   CAVEAT: a curve_*_sensor_id naming an id that does not exist fails at
+#   compile time, not at config validation, and the error is confusing. It
+#   surfaces as a C++ error inside the generated lambda along the lines of
+#   "'my_sensor' was not declared in this scope", pointing at a line of
+#   generated code rather than at your YAML. If you see that, check the spelling
+#   of your sensor ids first. The id must be the ESPHome id: of a sensor, not a
+#   Home Assistant entity_id.
+#
+# Unavailable source sensor:
+#   A sensor can report NAN, most commonly a platform: homeassistant sensor
+#   whose Home Assistant entity is unavailable or has not arrived yet. When the
+#   active profile's sensor reads NAN the module holds the last valid reading
+#   for 60 seconds and keeps controlling from it. If the sensor has still not
+#   recovered by then, it forces every fan to 100% until it does. Entry into
+#   the hold, expiry into the failsafe, and recovery are each logged at WARN.
+#
+#   Switching profiles discards the held value. Holding one profile's flow
+#   temperature and feeding it into another profile's ambient curve would
+#   produce a plausible looking but wrong speed.
 #
 # Configuration validation at boot, two severity levels:
 #   - Temperature axis not strictly ascending is a hard fault. It logs a
@@ -74,6 +110,13 @@ substitutions:
   curve_a_name: "Normal"
   curve_b_name: "Heating"
   curve_c_name: "Turbo"
+  # Source sensor per profile. All three default to the onboard HDC1080, which
+  # is the original single-sensor behaviour. These are ESPHome ids, not Home
+  # Assistant entity_ids, and a typo fails at compile time rather than at
+  # config validation. See the header.
+  curve_a_sensor_id: "fancontroller_temperature"
+  curve_b_sensor_id: "fancontroller_temperature"
+  curve_c_sensor_id: "fancontroller_temperature"
   # Shared temperature axis, ascending
   axis_temp1: "20.0"
   axis_temp2: "25.0"
@@ -112,6 +155,20 @@ substitutions:
 # being the values in use after the first boot. Since this module never sorts,
 # a non-ascending live axis would otherwise produce meaningless interpolation
 # with no warning.
+#
+# Source sensor availability tracking:
+#   curve_last_temp / curve_last_temp_valid: the most recent good reading, used
+#                         to ride out a briefly unavailable sensor. The
+#                         separate valid flag avoids relying on a NAN literal
+#                         surviving into a global initializer.
+#   curve_temp_stale_since: millis() when the sensor first went NAN, 0 when it
+#                         is healthy. The hold window is measured from here.
+#   curve_temp_hold_fault: the hold window expired and the fans are being
+#                         forced to 100%. Edge flag, so the WARN is logged once
+#                         rather than every 10 seconds.
+#   curve_last_profile:   the profile index the held reading came from, -1
+#                         before the first evaluation. A profile switch may
+#                         change the source sensor, which invalidates the hold.
 globals:
   - id: curve_config_warning
     type: bool
@@ -121,6 +178,26 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  - id: curve_last_temp
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: curve_last_temp_valid
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: curve_temp_stale_since
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: curve_temp_hold_fault
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: curve_last_profile
+    type: int
+    restore_value: no
+    initial_value: '-1'
 
 # Check all three profiles at boot.
 #
@@ -477,7 +554,79 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
-      float temp = id(fancontroller_temperature).state;
+      // Dispatch on the select index rather than the option string, so that
+      // renaming a profile cannot break selection. An empty optional (no
+      // option active yet) falls back to profile A.
+      //
+      // This runs first because the source sensor is chosen per profile, so
+      // the active profile has to be known before anything can be read.
+      int profile = 0;
+      auto active = id(curve_select).active_index();
+      if (active.has_value()) {
+        profile = active.value();
+      }
+
+      const char* profile_names[3] = {"${curve_a_name}", "${curve_b_name}", "${curve_c_name}"};
+
+      // A profile switch may switch the source sensor with it, so any value
+      // held from the previous profile is discarded. Feeding one profile's
+      // flow temperature into another profile's ambient curve would look
+      // plausible and be wrong.
+      if (profile != id(curve_last_profile)) {
+        id(curve_last_profile) = profile;
+        id(curve_last_temp_valid) = false;
+        id(curve_temp_stale_since) = 0;
+      }
+
+      float temp;
+      if (profile == 1) {
+        temp = id(${curve_b_sensor_id}).state;
+      } else if (profile == 2) {
+        temp = id(${curve_c_sensor_id}).state;
+      } else {
+        temp = id(${curve_a_sensor_id}).state;
+      }
+
+      // Unavailable source sensor. A platform: homeassistant sensor reads NAN
+      // whenever its Home Assistant entity is unavailable, restarting, or has
+      // simply not sent its first state yet, so a brief NAN is normal and must
+      // not disturb the fans. Ride it out on the last good reading for 60 s,
+      // then fail loud at 100% rather than drifting on stale data forever.
+      const uint32_t hold_window_ms = 60000;
+      if (isnan(temp)) {
+        uint32_t now = millis();
+        if (id(curve_temp_stale_since) == 0) {
+          id(curve_temp_stale_since) = now;
+          ESP_LOGW("temperature_curve_triple",
+            "Source sensor for profile %s is unavailable. Holding the last "
+            "reading for up to %u s.",
+            profile_names[profile], hold_window_ms / 1000);
+        }
+        if (id(curve_last_temp_valid) &&
+            (now - id(curve_temp_stale_since)) < hold_window_ms) {
+          temp = id(curve_last_temp);
+        } else {
+          if (!id(curve_temp_hold_fault)) {
+            ESP_LOGW("temperature_curve_triple",
+              "FAULT: source sensor for profile %s still unavailable after "
+              "%u s. Running fans at 100%% until it returns.",
+              profile_names[profile], hold_window_ms / 1000);
+            id(curve_temp_hold_fault) = true;
+          }
+          return 100.0;
+        }
+      } else {
+        if (id(curve_temp_stale_since) != 0) {
+          ESP_LOGW("temperature_curve_triple",
+            "Source sensor for profile %s is available again (%.1f), "
+            "resuming normal control.",
+            profile_names[profile], temp);
+        }
+        id(curve_temp_stale_since) = 0;
+        id(curve_temp_hold_fault) = false;
+        id(curve_last_temp) = temp;
+        id(curve_last_temp_valid) = true;
+      }
 
       float temps[5] = {
         id(axis_temp1).state,
@@ -513,15 +662,6 @@ sensor:
           "Live temperature axis is ascending again, resuming normal control");
       }
       id(curve_axis_fault) = false;
-
-      // Dispatch on the select index rather than the option string, so that
-      // renaming a profile cannot break selection. An empty optional (no
-      // option active yet) falls back to profile A.
-      int profile = 0;
-      auto active = id(curve_select).active_index();
-      if (active.has_value()) {
-        profile = active.value();
-      }
 
       float speeds[5];
       if (profile == 1) {
