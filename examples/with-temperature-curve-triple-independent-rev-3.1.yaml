@@ -1,0 +1,198 @@
+# Example: Hardware Rev 3.1 with Three Fully Independent Temperature Profiles
+#
+# This example shows the temperature curve triple independent module: three fan
+# profiles, each with its own 5-point temperature axis, its own speeds, and its
+# own source sensor, selectable from Home Assistant via the "Curve Selection"
+# select entity.
+#
+# The worked scenario is radiator fans on an air source heat pump that also runs
+# in cooling mode:
+#
+#   Heating     follows the heat pump flow temperature. Hotter water, faster
+#               fans. Runs on a 28 to 50 C band.
+#   Ventilation follows a separate ambient air sensor for when the heat pump is
+#               idle and the fans are just moving room air. Runs on an 18 to
+#               30 C band.
+#   Cooling     follows the flow temperature again, but inverted: colder water
+#               means more cooling capacity to move, so the fans speed up as the
+#               temperature falls. Runs on an 8 to 20 C band.
+#
+# Three different bands and two different sensors is exactly what the shared
+# axis module cannot express. If your three profiles all use the same
+# breakpoints and the same sensor and differ only in aggressiveness, use
+# modules/temperature_curve_triple.yaml instead. It does the same job with ten
+# fewer Home Assistant entities.
+#
+# Note how the Cooling profile is built. Its temperature axis is still entered
+# in ASCENDING order, 8 up to 20. It is the SPEEDS that descend, 100 down to 0.
+# Never invert the temperature axis to get an inverted curve. An unordered axis
+# is treated as a fault, not as a feature.
+#
+# The module itself does not decide which profile is active. To switch modes
+# automatically, add a Home Assistant automation that calls select.select_option
+# based on your heat pump's operating mode. See the snippets at the bottom.
+
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  temperature_curve_triple_independent:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/temperature_curve_triple_independent.yaml]
+
+esphome:
+  name: my-fancontroller
+  friendly_name: My Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# Import the two sensors the profiles read from Home Assistant.
+#
+# These are ESPHome ids, and the substitutions below reference them by id, not
+# by Home Assistant entity_id. Get the id wrong and the build fails at COMPILE
+# time with a C++ "was not declared in this scope" error pointing at generated
+# code, not at this file, so check the spelling here first if that happens.
+#
+# Giving these sensors an id but no name keeps them internal: they are inputs
+# to the curve, not entities worth publishing back to Home Assistant.
+#
+# If Home Assistant is unreachable or one of these entities goes unavailable,
+# the sensor reads NAN. The module rides that out on the last good reading for
+# 60 seconds and then forces every fan to 100% until the sensor returns, logging
+# a warning on the way in and on the way out.
+sensor:
+  - platform: homeassistant
+    id: hp_flow_temperature
+    entity_id: sensor.heat_pump_flow_temperature
+  - platform: homeassistant
+    id: ambient_air_temperature
+    entity_id: sensor.living_room_temperature
+
+# Customize the profiles here. All 30 values are also adjustable live in Home
+# Assistant.
+#
+# Each profile's five temperature points MUST be entered in ascending order.
+# An unordered axis is a fault: the board logs a warning naming the profile and
+# raises the "Curve Configuration Warning" sensor. It forces every fan to 100%
+# only while that profile is the ACTIVE one, so a profile you have misconfigured
+# but are not currently using will not run your fans flat out.
+#
+# Speeds that fall as temperature rises are allowed and are exactly how the
+# Cooling profile below is built. That logs an informational note only and the
+# profile keeps working normally.
+#
+# Profile names are used to build the Home Assistant entity names, so pick them
+# now. Renaming a profile later renames its ten HA entities and breaks any
+# dashboard or automation that referenced the old names.
+substitutions:
+  curve_a_name: "Heating"
+  curve_b_name: "Ventilation"
+  curve_c_name: "Cooling"
+  # Which sensor each profile reads. Heating and Cooling both watch the heat
+  # pump flow temperature; Ventilation watches room air instead.
+  curve_a_sensor_id: "hp_flow_temperature"
+  curve_b_sensor_id: "ambient_air_temperature"
+  curve_c_sensor_id: "hp_flow_temperature"
+  # Heating - flow temperature band, fans ramp up as the water gets hotter
+  curve_a_temp1: "28.0"
+  curve_a_temp2: "33.0"
+  curve_a_temp3: "38.0"
+  curve_a_temp4: "45.0"
+  curve_a_temp5: "50.0"
+  curve_a_speed1: "0.0"
+  curve_a_speed2: "25.0"
+  curve_a_speed3: "50.0"
+  curve_a_speed4: "75.0"
+  curve_a_speed5: "100.0"
+  # Ventilation - room air band, gentle circulation while the heat pump is idle
+  curve_b_temp1: "18.0"
+  curve_b_temp2: "21.0"
+  curve_b_temp3: "24.0"
+  curve_b_temp4: "27.0"
+  curve_b_temp5: "30.0"
+  curve_b_speed1: "0.0"
+  curve_b_speed2: "20.0"
+  curve_b_speed3: "35.0"
+  curve_b_speed4: "50.0"
+  curve_b_speed5: "70.0"
+  # Cooling - flow temperature band again, but inverted. The AXIS still
+  # ascends 8 to 20; the SPEEDS descend 100 to 0, so colder water means faster
+  # fans.
+  curve_c_temp1: "8.0"
+  curve_c_temp2: "11.0"
+  curve_c_temp3: "14.0"
+  curve_c_temp4: "17.0"
+  curve_c_temp5: "20.0"
+  curve_c_speed1: "100.0"
+  curve_c_speed2: "80.0"
+  curve_c_speed3: "55.0"
+  curve_c_speed4: "30.0"
+  curve_c_speed5: "0.0"
+
+# Tip: pair the "Curve Selection" select with a Home Assistant automation driven
+# by your heat pump's operating mode. Note this uses select.select_option, not
+# switch.turn_on, and that the option string must match the profile name you
+# configured above.
+# Example (Home Assistant YAML, lives in HA, not here):
+#
+#   automation:
+#     - alias: "Radiator fans follow the heat pump into heating mode"
+#       trigger:
+#         - platform: state
+#           entity_id: sensor.heat_pump_operating_mode
+#           to: "heating"
+#       action:
+#         - service: select.select_option
+#           target: { entity_id: select.my_fancontroller_curve_selection }
+#           data:
+#             option: "Heating"
+#
+#     - alias: "Radiator fans follow the heat pump into cooling mode"
+#       trigger:
+#         - platform: state
+#           entity_id: sensor.heat_pump_operating_mode
+#           to: "cooling"
+#       action:
+#         - service: select.select_option
+#           target: { entity_id: select.my_fancontroller_curve_selection }
+#           data:
+#             option: "Cooling"
+#
+#     - alias: "Radiator fans fall back to ventilation when the heat pump idles"
+#       trigger:
+#         - platform: state
+#           entity_id: sensor.heat_pump_operating_mode
+#           to: "idle"
+#           for: "00:15:00"
+#       action:
+#         - service: select.select_option
+#           target: { entity_id: select.my_fancontroller_curve_selection }
+#           data:
+#             option: "Ventilation"
