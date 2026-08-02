@@ -6,7 +6,7 @@
 # one. ESPHOME_VERSION remains the override for trying another release.
 #
 #   ./esphome.sh config examples/basic-rev-3.1.yaml
-#   ESPHOME_VERSION=2026.7.0 ./esphome.sh compile fancontroller-rev3.3-esp32s2.yaml
+#   ESPHOME_VERSION=2026.7.2 ./esphome.sh compile fancontroller-rev3.3-esp32s2.yaml
 #
 # When the esphome CLI is already on PATH, which is the case inside the
 # official ESPHome image and therefore inside a CI container job, this script
