@@ -29,29 +29,29 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via t
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `friendly_name` | `"Fancontroller"` | Device name prefix for the output sensor |
-| `curveA_temp1` | `"20.0"` | Curve A temperature point 1 (C) |
-| `curveA_speed1` | `"0.0"` | Curve A fan speed at point 1 (%) |
-| `curveA_temp2` | `"22.0"` | Curve A temperature point 2 (C) |
-| `curveA_speed2` | `"30.0"` | Curve A fan speed at point 2 (%) |
-| `curveA_temp3` | `"28.0"` | Curve A temperature point 3 (C) |
-| `curveA_speed3` | `"60.0"` | Curve A fan speed at point 3 (%) |
-| `curveA_temp4` | `"35.0"` | Curve A temperature point 4 (C) |
-| `curveA_speed4` | `"85.0"` | Curve A fan speed at point 4 (%) |
-| `curveA_temp5` | `"40.0"` | Curve A temperature point 5 (C) |
-| `curveA_speed5` | `"100.0"` | Curve A fan speed at point 5 (%) |
-| `curveB_temp1` | `"25.0"` | Curve B temperature point 1 (C) |
-| `curveB_speed1` | `"0.0"` | Curve B fan speed at point 1 (%) |
-| `curveB_temp2` | `"35.0"` | Curve B temperature point 2 (C) |
-| `curveB_speed2` | `"25.0"` | Curve B fan speed at point 2 (%) |
-| `curveB_temp3` | `"45.0"` | Curve B temperature point 3 (C) |
-| `curveB_speed3` | `"50.0"` | Curve B fan speed at point 3 (%) |
-| `curveB_temp4` | `"50.0"` | Curve B temperature point 4 (C) |
-| `curveB_speed4` | `"65.0"` | Curve B fan speed at point 4 (%) |
-| `curveB_temp5` | `"55.0"` | Curve B temperature point 5 (C) |
-| `curveB_speed5` | `"80.0"` | Curve B fan speed at point 5 (%) |
+| Variable                | Default                       | Description                                        |
+| ----------------------- | ----------------------------- | -------------------------------------------------- |
+| `friendly_name`         | `"Fancontroller"`             | Device name prefix for the output sensor           |
+| `curveA_temp1`          | `"20.0"`                      | Curve A temperature point 1 (C)                    |
+| `curveA_speed1`         | `"0.0"`                       | Curve A fan speed at point 1 (%)                   |
+| `curveA_temp2`          | `"22.0"`                      | Curve A temperature point 2 (C)                    |
+| `curveA_speed2`         | `"30.0"`                      | Curve A fan speed at point 2 (%)                   |
+| `curveA_temp3`          | `"28.0"`                      | Curve A temperature point 3 (C)                    |
+| `curveA_speed3`         | `"60.0"`                      | Curve A fan speed at point 3 (%)                   |
+| `curveA_temp4`          | `"35.0"`                      | Curve A temperature point 4 (C)                    |
+| `curveA_speed4`         | `"85.0"`                      | Curve A fan speed at point 4 (%)                   |
+| `curveA_temp5`          | `"40.0"`                      | Curve A temperature point 5 (C)                    |
+| `curveA_speed5`         | `"100.0"`                     | Curve A fan speed at point 5 (%)                   |
+| `curveB_temp1`          | `"25.0"`                      | Curve B temperature point 1 (C)                    |
+| `curveB_speed1`         | `"0.0"`                       | Curve B fan speed at point 1 (%)                   |
+| `curveB_temp2`          | `"35.0"`                      | Curve B temperature point 2 (C)                    |
+| `curveB_speed2`         | `"25.0"`                      | Curve B fan speed at point 2 (%)                   |
+| `curveB_temp3`          | `"45.0"`                      | Curve B temperature point 3 (C)                    |
+| `curveB_speed3`         | `"50.0"`                      | Curve B fan speed at point 3 (%)                   |
+| `curveB_temp4`          | `"50.0"`                      | Curve B temperature point 4 (C)                    |
+| `curveB_speed4`         | `"65.0"`                      | Curve B fan speed at point 4 (%)                   |
+| `curveB_temp5`          | `"55.0"`                      | Curve B temperature point 5 (C)                    |
+| `curveB_speed5`         | `"80.0"`                      | Curve B fan speed at point 5 (%)                   |
 | `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
 
 ## How It Works
@@ -62,13 +62,13 @@ The result drives all four fans, gated per fan by the **Auto Control Fan 1**--**
 
 ## Entities
 
-| Entity | Type | Purpose |
-|--------|------|---------|
-| Curve Selection | switch | Selects curve A (off) or B (on). Remembers its last state across reboots. |
-| Curve A/B Temperature 1--5, Speed 1--5 | number (20) | The two curves' points, editable live |
-| Auto Control Fan 1--4 | switch (4) | Per-fan enable for automatic control |
-| `$friendly_name` Curve Output | sensor | The active curve's computed fan speed (%) |
-| Curve Configuration Warning | binary_sensor | Flags a non-monotonic curve at boot |
+| Entity                                 | Type          | Purpose                                                                   |
+| -------------------------------------- | ------------- | ------------------------------------------------------------------------- |
+| Curve Selection                        | switch        | Selects curve A (off) or B (on). Remembers its last state across reboots. |
+| Curve A/B Temperature 1--5, Speed 1--5 | number (20)   | The two curves' points, editable live                                     |
+| Auto Control Fan 1--4                  | switch (4)    | Per-fan enable for automatic control                                      |
+| `$friendly_name` Curve Output          | sensor        | The active curve's computed fan speed (%)                                 |
+| Curve Configuration Warning            | binary_sensor | Flags a non-monotonic curve at boot                                       |
 
 ## Switching Automatically
 
@@ -120,6 +120,8 @@ Omit the variable and it falls back to `fancontroller_temperature`, so existing 
 The Qwiic modules build their sensor ids from an id-prefix substitution, so [BME680](/reference/qwiic/examples/bme680/) gives you `bme680_temperature`, [SCD41](/reference/qwiic/examples/scd41/) gives `scd41_temperature`, and [DS2484](/reference/qwiic/examples/ds2484/) gives whatever ids you assign your own `dallas_temp` sensors.
 
 If you also run the [SSD1306 OLED](/reference/qwiic/examples/ssd1306/) module, note that it displays the onboard sensor regardless of this setting, so the screen and the fan control can show different temperatures.
+
+The module names the sensor it is reading in its boot log, so you can confirm from a log dump that the override took effect.
 
 :::caution[External sensors and startup]
 A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. During that window this module commands the fans **off**. Keep the sensor's `update_interval` short if that matters to you, and expect the fans not to spin until the first reading lands. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.

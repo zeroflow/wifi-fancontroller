@@ -52,6 +52,14 @@ substitutions:
   fanpercent1: "30.0"
   fanpercent2: "100.0"
 
+# Validate configuration at boot
+esphome:
+  on_boot:
+    - priority: -100 # Run late, after numbers are initialized
+      then:
+        - lambda: |-
+            ESP_LOGI("temperature_linear", "Control sensor: ${temperature_sensor_id}");
+
 number:
   - platform: template
     name: Linear Off Temperature

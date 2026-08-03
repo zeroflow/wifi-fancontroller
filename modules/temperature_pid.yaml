@@ -74,6 +74,14 @@ substitutions:
   target_temperature_step: 0.1
   current_temperature_step: 0.1
 
+# Validate configuration at boot
+esphome:
+  on_boot:
+    - priority: -100 # Run late, after numbers are initialized
+      then:
+        - lambda: |-
+            ESP_LOGI("temperature_pid", "Control sensor: ${temperature_sensor_id}");
+
 number:
   ## OPTIONAL:
   # RECEIVE KP, KI and KD parameters from input_text.kx helpers in

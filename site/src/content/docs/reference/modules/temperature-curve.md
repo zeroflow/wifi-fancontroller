@@ -25,19 +25,19 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `friendly_name` | `"Fancontroller"` | Device name prefix for all entities |
-| `curve_temp1` | `"20.0"` | Temperature point 1 (C) |
-| `curve_speed1` | `"0.0"` | Fan speed at point 1 (%) |
-| `curve_temp2` | `"25.0"` | Temperature point 2 (C) |
-| `curve_speed2` | `"25.0"` | Fan speed at point 2 (%) |
-| `curve_temp3` | `"30.0"` | Temperature point 3 (C) |
-| `curve_speed3` | `"50.0"` | Fan speed at point 3 (%) |
-| `curve_temp4` | `"40.0"` | Temperature point 4 (C) |
-| `curve_speed4` | `"75.0"` | Fan speed at point 4 (%) |
-| `curve_temp5` | `"50.0"` | Temperature point 5 (C) |
-| `curve_speed5` | `"100.0"` | Fan speed at point 5 (%) |
+| Variable                | Default                       | Description                                        |
+| ----------------------- | ----------------------------- | -------------------------------------------------- |
+| `friendly_name`         | `"Fancontroller"`             | Device name prefix for all entities                |
+| `curve_temp1`           | `"20.0"`                      | Temperature point 1 (C)                            |
+| `curve_speed1`          | `"0.0"`                       | Fan speed at point 1 (%)                           |
+| `curve_temp2`           | `"25.0"`                      | Temperature point 2 (C)                            |
+| `curve_speed2`          | `"25.0"`                      | Fan speed at point 2 (%)                           |
+| `curve_temp3`           | `"30.0"`                      | Temperature point 3 (C)                            |
+| `curve_speed3`          | `"50.0"`                      | Fan speed at point 3 (%)                           |
+| `curve_temp4`           | `"40.0"`                      | Temperature point 4 (C)                            |
+| `curve_speed4`          | `"75.0"`                      | Fan speed at point 4 (%)                           |
+| `curve_temp5`           | `"50.0"`                      | Temperature point 5 (C)                            |
+| `curve_speed5`          | `"100.0"`                     | Fan speed at point 5 (%)                           |
 | `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
 
 ## How It Works
@@ -55,38 +55,38 @@ The five temperature/speed pairs define a piecewise linear curve:
 
 ### Number Entities
 
-| Entity | Range | Step | Unit | Default | Description |
-|--------|-------|------|------|---------|-------------|
-| Curve Temperature 1 | 0 -- 60 | 0.5 | C | 20.0 | Temperature point 1 |
-| Curve Speed 1 | 0 -- 100 | 1 | % | 0 | Fan speed at point 1 |
-| Curve Temperature 2 | 0 -- 60 | 0.5 | C | 25.0 | Temperature point 2 |
-| Curve Speed 2 | 0 -- 100 | 1 | % | 25 | Fan speed at point 2 |
-| Curve Temperature 3 | 0 -- 60 | 0.5 | C | 30.0 | Temperature point 3 |
-| Curve Speed 3 | 0 -- 100 | 1 | % | 50 | Fan speed at point 3 |
-| Curve Temperature 4 | 0 -- 60 | 0.5 | C | 40.0 | Temperature point 4 |
-| Curve Speed 4 | 0 -- 100 | 1 | % | 75 | Fan speed at point 4 |
-| Curve Temperature 5 | 0 -- 60 | 0.5 | C | 50.0 | Temperature point 5 |
-| Curve Speed 5 | 0 -- 100 | 1 | % | 100 | Fan speed at point 5 |
+| Entity              | Range    | Step | Unit | Default | Description          |
+| ------------------- | -------- | ---- | ---- | ------- | -------------------- |
+| Curve Temperature 1 | 0 -- 60  | 0.5  | C    | 20.0    | Temperature point 1  |
+| Curve Speed 1       | 0 -- 100 | 1    | %    | 0       | Fan speed at point 1 |
+| Curve Temperature 2 | 0 -- 60  | 0.5  | C    | 25.0    | Temperature point 2  |
+| Curve Speed 2       | 0 -- 100 | 1    | %    | 25      | Fan speed at point 2 |
+| Curve Temperature 3 | 0 -- 60  | 0.5  | C    | 30.0    | Temperature point 3  |
+| Curve Speed 3       | 0 -- 100 | 1    | %    | 50      | Fan speed at point 3 |
+| Curve Temperature 4 | 0 -- 60  | 0.5  | C    | 40.0    | Temperature point 4  |
+| Curve Speed 4       | 0 -- 100 | 1    | %    | 75      | Fan speed at point 4 |
+| Curve Temperature 5 | 0 -- 60  | 0.5  | C    | 50.0    | Temperature point 5  |
+| Curve Speed 5       | 0 -- 100 | 1    | %    | 100     | Fan speed at point 5 |
 
 ### Sensor Entities
 
-| Entity | Unit | Description |
-|--------|------|-------------|
-| Curve Output | % | Current interpolated fan speed (updated every 10s) |
+| Entity       | Unit | Description                                        |
+| ------------ | ---- | -------------------------------------------------- |
+| Curve Output | %    | Current interpolated fan speed (updated every 10s) |
 
 ### Switch Entities
 
-| Entity | Default | Description |
-|--------|---------|-------------|
-| Auto Control Fan 1 | ON | Enable curve control for fan 1 |
-| Auto Control Fan 2 | ON | Enable curve control for fan 2 |
-| Auto Control Fan 3 | ON | Enable curve control for fan 3 |
-| Auto Control Fan 4 | ON | Enable curve control for fan 4 |
+| Entity             | Default | Description                    |
+| ------------------ | ------- | ------------------------------ |
+| Auto Control Fan 1 | ON      | Enable curve control for fan 1 |
+| Auto Control Fan 2 | ON      | Enable curve control for fan 2 |
+| Auto Control Fan 3 | ON      | Enable curve control for fan 3 |
+| Auto Control Fan 4 | ON      | Enable curve control for fan 4 |
 
 ### Binary Sensor
 
-| Entity | Category | Description |
-|--------|----------|-------------|
+| Entity                      | Category   | Description                                               |
+| --------------------------- | ---------- | --------------------------------------------------------- |
 | Curve Configuration Warning | Diagnostic | ON if temperature points are not monotonically increasing |
 
 ## YAML Examples

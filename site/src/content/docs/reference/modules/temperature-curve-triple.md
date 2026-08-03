@@ -55,32 +55,32 @@ There is no workaround today; it is tracked upstream as [esphome/feature-request
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `friendly_name` | `"Fancontroller"` | Device name prefix for the output sensor |
-| `curve_a_name` | `"Normal"` | Display name for profile A |
-| `curve_b_name` | `"Heating"` | Display name for profile B |
-| `curve_c_name` | `"Turbo"` | Display name for profile C |
-| `axis_temp1` | `"20.0"` | Shared temperature point 1 (C) |
-| `axis_temp2` | `"25.0"` | Shared temperature point 2 (C) |
-| `axis_temp3` | `"30.0"` | Shared temperature point 3 (C) |
-| `axis_temp4` | `"35.0"` | Shared temperature point 4 (C) |
-| `axis_temp5` | `"40.0"` | Shared temperature point 5 (C) |
-| `curve_a_speed1` | `"0.0"` | Profile A fan speed at point 1 (%) |
-| `curve_a_speed2` | `"30.0"` | Profile A fan speed at point 2 (%) |
-| `curve_a_speed3` | `"55.0"` | Profile A fan speed at point 3 (%) |
-| `curve_a_speed4` | `"80.0"` | Profile A fan speed at point 4 (%) |
-| `curve_a_speed5` | `"100.0"` | Profile A fan speed at point 5 (%) |
-| `curve_b_speed1` | `"0.0"` | Profile B fan speed at point 1 (%) |
-| `curve_b_speed2` | `"10.0"` | Profile B fan speed at point 2 (%) |
-| `curve_b_speed3` | `"30.0"` | Profile B fan speed at point 3 (%) |
-| `curve_b_speed4` | `"60.0"` | Profile B fan speed at point 4 (%) |
-| `curve_b_speed5` | `"90.0"` | Profile B fan speed at point 5 (%) |
-| `curve_c_speed1` | `"40.0"` | Profile C fan speed at point 1 (%) |
-| `curve_c_speed2` | `"60.0"` | Profile C fan speed at point 2 (%) |
-| `curve_c_speed3` | `"80.0"` | Profile C fan speed at point 3 (%) |
-| `curve_c_speed4` | `"95.0"` | Profile C fan speed at point 4 (%) |
-| `curve_c_speed5` | `"100.0"` | Profile C fan speed at point 5 (%) |
+| Variable                | Default                       | Description                                        |
+| ----------------------- | ----------------------------- | -------------------------------------------------- |
+| `friendly_name`         | `"Fancontroller"`             | Device name prefix for the output sensor           |
+| `curve_a_name`          | `"Normal"`                    | Display name for profile A                         |
+| `curve_b_name`          | `"Heating"`                   | Display name for profile B                         |
+| `curve_c_name`          | `"Turbo"`                     | Display name for profile C                         |
+| `axis_temp1`            | `"20.0"`                      | Shared temperature point 1 (C)                     |
+| `axis_temp2`            | `"25.0"`                      | Shared temperature point 2 (C)                     |
+| `axis_temp3`            | `"30.0"`                      | Shared temperature point 3 (C)                     |
+| `axis_temp4`            | `"35.0"`                      | Shared temperature point 4 (C)                     |
+| `axis_temp5`            | `"40.0"`                      | Shared temperature point 5 (C)                     |
+| `curve_a_speed1`        | `"0.0"`                       | Profile A fan speed at point 1 (%)                 |
+| `curve_a_speed2`        | `"30.0"`                      | Profile A fan speed at point 2 (%)                 |
+| `curve_a_speed3`        | `"55.0"`                      | Profile A fan speed at point 3 (%)                 |
+| `curve_a_speed4`        | `"80.0"`                      | Profile A fan speed at point 4 (%)                 |
+| `curve_a_speed5`        | `"100.0"`                     | Profile A fan speed at point 5 (%)                 |
+| `curve_b_speed1`        | `"0.0"`                       | Profile B fan speed at point 1 (%)                 |
+| `curve_b_speed2`        | `"10.0"`                      | Profile B fan speed at point 2 (%)                 |
+| `curve_b_speed3`        | `"30.0"`                      | Profile B fan speed at point 3 (%)                 |
+| `curve_b_speed4`        | `"60.0"`                      | Profile B fan speed at point 4 (%)                 |
+| `curve_b_speed5`        | `"90.0"`                      | Profile B fan speed at point 5 (%)                 |
+| `curve_c_speed1`        | `"40.0"`                      | Profile C fan speed at point 1 (%)                 |
+| `curve_c_speed2`        | `"60.0"`                      | Profile C fan speed at point 2 (%)                 |
+| `curve_c_speed3`        | `"80.0"`                      | Profile C fan speed at point 3 (%)                 |
+| `curve_c_speed4`        | `"95.0"`                      | Profile C fan speed at point 4 (%)                 |
+| `curve_c_speed5`        | `"100.0"`                     | Profile C fan speed at point 5 (%)                 |
 | `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
 
 ## How It Works
@@ -95,14 +95,14 @@ The result drives all four fans, gated per fan by the **Auto Control Fan 1**--**
 
 ## Entities
 
-| Entity | Type | Purpose |
-|--------|------|---------|
-| Curve Selection | select | Picks the active profile by name. Remembers its last choice across reboots. |
-| Temp 1--5 | number (5) | The shared temperature axis, editable live |
-| `$curve_a_name` 1--5, `$curve_b_name` 1--5, `$curve_c_name` 1--5 | number (15) | Each profile's five speeds, editable live |
-| Auto Control Fan 1--4 | switch (4) | Per-fan enable for automatic control |
-| `$friendly_name` Curve Output | sensor | The active profile's computed fan speed (%) |
-| Curve Configuration Warning | binary_sensor | Flags an unordered axis (live) or a dipping speed (at boot) |
+| Entity                                                           | Type          | Purpose                                                                     |
+| ---------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------- |
+| Curve Selection                                                  | select        | Picks the active profile by name. Remembers its last choice across reboots. |
+| Temp 1--5                                                        | number (5)    | The shared temperature axis, editable live                                  |
+| `$curve_a_name` 1--5, `$curve_b_name` 1--5, `$curve_c_name` 1--5 | number (15)   | Each profile's five speeds, editable live                                   |
+| Auto Control Fan 1--4                                            | switch (4)    | Per-fan enable for automatic control                                        |
+| `$friendly_name` Curve Output                                    | sensor        | The active profile's computed fan speed (%)                                 |
+| Curve Configuration Warning                                      | binary_sensor | Flags an unordered axis (live) or a dipping speed (at boot)                 |
 
 27 entities in total, the same count as Temperature Curve Dual.
 
@@ -159,6 +159,8 @@ Omit the variable and it falls back to `fancontroller_temperature`, so existing 
 The Qwiic modules build their sensor ids from an id-prefix substitution, so [BME680](/reference/qwiic/examples/bme680/) gives you `bme680_temperature`, [SCD41](/reference/qwiic/examples/scd41/) gives `scd41_temperature`, and [DS2484](/reference/qwiic/examples/ds2484/) gives whatever ids you assign your own `dallas_temp` sensors.
 
 If you also run the [SSD1306 OLED](/reference/qwiic/examples/ssd1306/) module, note that it displays the onboard sensor regardless of this setting, so the screen and the fan control can show different temperatures.
+
+The module names the sensor it is reading in its boot log, so you can confirm from a log dump that the override took effect.
 
 :::caution[External sensors and startup]
 A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. During that window this module commands the fans **off**. Keep the sensor's `update_interval` short if that matters to you, and expect the fans not to spin until the first reading lands. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
