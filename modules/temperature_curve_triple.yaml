@@ -33,8 +33,6 @@
 #   - curve_a_speed[1-5]: Speeds for profile A
 #   - curve_b_speed[1-5]: Speeds for profile B
 #   - curve_c_speed[1-5]: Speeds for profile C
-#   - temperature_sensor_id: Id of the sensor supplying the control temperature
-#       (default: fancontroller_temperature, the onboard sensor).
 #
 # Features:
 #   - Three 5-point profiles over one shared temperature axis
@@ -73,8 +71,6 @@
 #
 substitutions:
   friendly_name: "Fancontroller"
-  # Sensor supplying the control temperature. Defaults to the onboard sensor
-  temperature_sensor_id: fancontroller_temperature
   curve_a_name: "Normal"
   curve_b_name: "Heating"
   curve_c_name: "Turbo"
@@ -120,11 +116,11 @@ globals:
   - id: curve_config_warning
     type: bool
     restore_value: no
-    initial_value: "false"
+    initial_value: 'false'
   - id: curve_axis_fault
     type: bool
     restore_value: no
-    initial_value: "false"
+    initial_value: 'false'
 
 # Check all three profiles at boot.
 #
@@ -135,11 +131,9 @@ globals:
 # misleading. See the axis check in the curve_output_value lambda.
 esphome:
   on_boot:
-    - priority: -100 # Run late, after numbers are initialized
+    - priority: -100  # Run late, after numbers are initialized
       then:
         - lambda: |-
-            ESP_LOGI("temperature_curve_triple", "Control sensor: ${temperature_sensor_id}");
-
             // Informational only: speeds that dip as temperature rises. A
             // deliberate quiet band is a legitimate profile, so this never
             // triggers the failsafe. Unlike the axis, a dipping profile is a
@@ -483,7 +477,7 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
-      float temp = id(${temperature_sensor_id}).state;
+      float temp = id(fancontroller_temperature).state;
 
       float temps[5] = {
         id(axis_temp1).state,
@@ -577,7 +571,7 @@ sensor:
       then:
         - output.set_level:
             id: curve_proxy_output
-            level: !lambda "return x / 100.0;"
+            level: !lambda 'return x / 100.0;'
 
 # NOTE: The write_action lambda below is a verbatim copy of the one in
 # modules/temperature_curve.yaml (per-fan auto_control + usr_override +
@@ -657,4 +651,4 @@ binary_sensor:
     entity_category: diagnostic
     icon: mdi:alert-circle
     # Boot-time complaint about the configured defaults, or a live axis fault.
-    lambda: "return id(curve_config_warning) || id(curve_axis_fault);"
+    lambda: 'return id(curve_config_warning) || id(curve_axis_fault);'
