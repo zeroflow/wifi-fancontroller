@@ -25,19 +25,20 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 
 ## Configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `friendly_name` | `"Fancontroller"` | Device name prefix for all entities |
-| `curve_temp1` | `"20.0"` | Temperature point 1 (C) |
-| `curve_speed1` | `"0.0"` | Fan speed at point 1 (%) |
-| `curve_temp2` | `"25.0"` | Temperature point 2 (C) |
-| `curve_speed2` | `"25.0"` | Fan speed at point 2 (%) |
-| `curve_temp3` | `"30.0"` | Temperature point 3 (C) |
-| `curve_speed3` | `"50.0"` | Fan speed at point 3 (%) |
-| `curve_temp4` | `"40.0"` | Temperature point 4 (C) |
-| `curve_speed4` | `"75.0"` | Fan speed at point 4 (%) |
-| `curve_temp5` | `"50.0"` | Temperature point 5 (C) |
-| `curve_speed5` | `"100.0"` | Fan speed at point 5 (%) |
+| Variable                | Default                       | Description                                        |
+| ----------------------- | ----------------------------- | -------------------------------------------------- |
+| `friendly_name`         | `"Fancontroller"`             | Device name prefix for all entities                |
+| `curve_temp1`           | `"20.0"`                      | Temperature point 1 (C)                            |
+| `curve_speed1`          | `"0.0"`                       | Fan speed at point 1 (%)                           |
+| `curve_temp2`           | `"25.0"`                      | Temperature point 2 (C)                            |
+| `curve_speed2`          | `"25.0"`                      | Fan speed at point 2 (%)                           |
+| `curve_temp3`           | `"30.0"`                      | Temperature point 3 (C)                            |
+| `curve_speed3`          | `"50.0"`                      | Fan speed at point 3 (%)                           |
+| `curve_temp4`           | `"40.0"`                      | Temperature point 4 (C)                            |
+| `curve_speed4`          | `"75.0"`                      | Fan speed at point 4 (%)                           |
+| `curve_temp5`           | `"50.0"`                      | Temperature point 5 (C)                            |
+| `curve_speed5`          | `"100.0"`                     | Fan speed at point 5 (%)                           |
+| `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
 
 ## How It Works
 
@@ -54,38 +55,38 @@ The five temperature/speed pairs define a piecewise linear curve:
 
 ### Number Entities
 
-| Entity | Range | Step | Unit | Default | Description |
-|--------|-------|------|------|---------|-------------|
-| Curve Temperature 1 | 0 -- 60 | 0.5 | C | 20.0 | Temperature point 1 |
-| Curve Speed 1 | 0 -- 100 | 1 | % | 0 | Fan speed at point 1 |
-| Curve Temperature 2 | 0 -- 60 | 0.5 | C | 25.0 | Temperature point 2 |
-| Curve Speed 2 | 0 -- 100 | 1 | % | 25 | Fan speed at point 2 |
-| Curve Temperature 3 | 0 -- 60 | 0.5 | C | 30.0 | Temperature point 3 |
-| Curve Speed 3 | 0 -- 100 | 1 | % | 50 | Fan speed at point 3 |
-| Curve Temperature 4 | 0 -- 60 | 0.5 | C | 40.0 | Temperature point 4 |
-| Curve Speed 4 | 0 -- 100 | 1 | % | 75 | Fan speed at point 4 |
-| Curve Temperature 5 | 0 -- 60 | 0.5 | C | 50.0 | Temperature point 5 |
-| Curve Speed 5 | 0 -- 100 | 1 | % | 100 | Fan speed at point 5 |
+| Entity              | Range    | Step | Unit | Default | Description          |
+| ------------------- | -------- | ---- | ---- | ------- | -------------------- |
+| Curve Temperature 1 | 0 -- 60  | 0.5  | C    | 20.0    | Temperature point 1  |
+| Curve Speed 1       | 0 -- 100 | 1    | %    | 0       | Fan speed at point 1 |
+| Curve Temperature 2 | 0 -- 60  | 0.5  | C    | 25.0    | Temperature point 2  |
+| Curve Speed 2       | 0 -- 100 | 1    | %    | 25      | Fan speed at point 2 |
+| Curve Temperature 3 | 0 -- 60  | 0.5  | C    | 30.0    | Temperature point 3  |
+| Curve Speed 3       | 0 -- 100 | 1    | %    | 50      | Fan speed at point 3 |
+| Curve Temperature 4 | 0 -- 60  | 0.5  | C    | 40.0    | Temperature point 4  |
+| Curve Speed 4       | 0 -- 100 | 1    | %    | 75      | Fan speed at point 4 |
+| Curve Temperature 5 | 0 -- 60  | 0.5  | C    | 50.0    | Temperature point 5  |
+| Curve Speed 5       | 0 -- 100 | 1    | %    | 100     | Fan speed at point 5 |
 
 ### Sensor Entities
 
-| Entity | Unit | Description |
-|--------|------|-------------|
-| Curve Output | % | Current interpolated fan speed (updated every 10s) |
+| Entity       | Unit | Description                                        |
+| ------------ | ---- | -------------------------------------------------- |
+| Curve Output | %    | Current interpolated fan speed (updated every 10s) |
 
 ### Switch Entities
 
-| Entity | Default | Description |
-|--------|---------|-------------|
-| Auto Control Fan 1 | ON | Enable curve control for fan 1 |
-| Auto Control Fan 2 | ON | Enable curve control for fan 2 |
-| Auto Control Fan 3 | ON | Enable curve control for fan 3 |
-| Auto Control Fan 4 | ON | Enable curve control for fan 4 |
+| Entity             | Default | Description                    |
+| ------------------ | ------- | ------------------------------ |
+| Auto Control Fan 1 | ON      | Enable curve control for fan 1 |
+| Auto Control Fan 2 | ON      | Enable curve control for fan 2 |
+| Auto Control Fan 3 | ON      | Enable curve control for fan 3 |
+| Auto Control Fan 4 | ON      | Enable curve control for fan 4 |
 
 ### Binary Sensor
 
-| Entity | Category | Description |
-|--------|----------|-------------|
+| Entity                      | Category   | Description                                               |
+| --------------------------- | ---------- | --------------------------------------------------------- |
 | Curve Configuration Warning | Diagnostic | ON if temperature points are not monotonically increasing |
 
 ## YAML Examples
@@ -214,3 +215,40 @@ All 10 curve parameters can be adjusted live from Home Assistant without reflash
 - **Start with the Balanced preset** -- the default curve works well for most scenarios. Adjust individual points based on your environment.
 - **Consider your fans' minimum speed** -- if your fans need at least 20% PWM to spin reliably, make sure your lowest non-zero speed point is at or above that threshold.
 - **Use the Curve Output sensor for debugging** -- it updates every 10 seconds and shows the current interpolated fan speed, making it easy to verify your curve behaves as expected at different temperatures.
+
+## Controlling From a Different Sensor
+
+By default the module reads `fancontroller_temperature`, the onboard HDC1080 that every hardware package declares. Set `temperature_sensor_id` to the id of any other temperature sensor in your configuration to control from that instead:
+
+```yaml
+packages:
+  # modules/bme680.yaml is not standalone - it needs the shared I2C bus (bus_a)
+  # that your hardware package declares. Use your own board revision here.
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  bme680:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [modules/bme680.yaml]
+  temperature_curve:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_curve.yaml
+        vars:
+          temperature_sensor_id: "bme680_temperature"
+```
+
+Omit the variable and it falls back to `fancontroller_temperature`, so existing configurations keep working unchanged. A misspelled id fails the build rather than quietly falling back to the onboard sensor.
+
+The Qwiic modules build their sensor ids from an id-prefix substitution, so [BME680](/reference/qwiic/examples/bme680/) gives you `bme680_temperature`, [SCD41](/reference/qwiic/examples/scd41/) gives `scd41_temperature`, and [DS2484](/reference/qwiic/examples/ds2484/) gives whatever ids you assign your own `dallas_temp` sensors.
+
+If you also run the [SSD1306 OLED](/reference/qwiic/examples/ssd1306/) module, note that it displays the onboard sensor regardless of this setting, so the screen and the fan control can show different temperatures.
+
+The module names the sensor it is reading in its boot log, so you can confirm from a log dump that the override took effect.
+
+:::caution[External sensors and startup]
+A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. During that window this module commands the fans **off**. Keep the sensor's `update_interval` short if that matters to you, and expect the fans not to spin until the first reading lands. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
+:::

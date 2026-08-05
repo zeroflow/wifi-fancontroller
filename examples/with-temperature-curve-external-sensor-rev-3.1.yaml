@@ -1,0 +1,97 @@
+# Example: Hardware Rev 3.1 driving a temperature curve from an external
+# Qwiic BME680 instead of the onboard HDC1080.
+#
+# The temperature modules read whichever sensor temperature_sensor_id names. It
+# defaults to fancontroller_temperature, the onboard HDC1080 that every hardware
+# package declares. Here it points at the BME680 module's sensor instead, so the
+# curve responds to what the BME680 measures at the end of its cable - intake
+# air, exhaust, or room - rather than to the temperature of the board itself.
+#
+# modules/bme680.yaml builds its component ids from the bme680_id substitution,
+# so the default prefix "bme680" yields the sensor id bme680_temperature.
+#
+# The BME680 hangs on the shared I2C bus bus_a, which hardware-rev-3.1.yaml
+# already declares, so no extra bus configuration is needed. Its address 0x77
+# does not clash with the onboard HDC1080 at 0x40.
+
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.1.yaml]
+  bme680:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/bme680.yaml
+        vars:
+          # The sensor measures somewhere other than the board, so it takes a
+          # role name. Entities become "Intake Temperature" and so on.
+          bme680_name: "Intake"
+          # 10s rather than the module's 60s default, to match the curve
+          # sensor's own update_interval. See the startup note at the bottom.
+          bme680_interval: "10s"
+  temperature_curve:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_curve.yaml
+        vars:
+          friendly_name: "My Fan Controller"
+          # The point of this example. Omit this one line and the curve falls
+          # back to fancontroller_temperature, the onboard sensor.
+          temperature_sensor_id: "bme680_temperature"
+          # Curve tuned for intake air, which sits closer to room temperature
+          # than the board does, so the ramp starts lower than the module's
+          # balanced default.
+          curve_temp1: "18.0"
+          curve_speed1: "0.0"
+          curve_temp2: "22.0"
+          curve_speed2: "25.0"
+          curve_temp3: "26.0"
+          curve_speed3: "50.0"
+          curve_temp4: "30.0"
+          curve_speed4: "75.0"
+          curve_temp5: "35.0"
+          curve_speed5: "100.0"
+
+esphome:
+  name: my-fancontroller
+  friendly_name: My Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# Startup behaviour worth knowing about:
+#
+# An external sensor reports no value until its first reading lands. While that
+# is true the curve has no temperature to interpolate and commands the fans OFF.
+# The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window
+# is normally too short to notice; a BME680 left on its 60 second default, an
+# SCD41 warming up, or a Dallas probe can stretch it considerably. bme680_interval
+# is set to 10s above to keep that window short. Verify at boot with the log
+# line the curve module emits, which names the sensor it is actually reading.
