@@ -76,3 +76,43 @@ number:
     web_server:
       sorting_group_id: grp_temp_linear
       sorting_weight: 10
+  - id: !extend linear_t1
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 20
+  - id: !extend linear_t2
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 30
+  - id: !extend linear_fanpercent1
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 40
+  - id: !extend linear_fanpercent2
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 50
+
+sensor:
+  - id: !extend linear_output_value
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 60
+
+switch:
+  - id: !extend auto_control_fan1
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 70
+  - id: !extend auto_control_fan2
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 80
+  - id: !extend auto_control_fan3
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 90
+  - id: !extend auto_control_fan4
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 100
