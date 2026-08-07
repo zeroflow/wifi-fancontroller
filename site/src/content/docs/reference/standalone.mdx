@@ -1,0 +1,46 @@
+---
+title: Standalone Usage
+description: Run the fan controller fully without Home Assistant, load modules from a local checkout, and group their entities in the web UI.
+---
+
+import { Steps, Aside } from '@astrojs/starlight/components';
+
+The WiFi Fan Controller works completely on its own, without Home Assistant and without pulling optional modules from an external URL. This page covers three things: running the board standalone with its own web interface, loading modules from files already on your disk, and grouping module entities into named sections in that web interface.
+
+## Standalone usage without Home Assistant
+
+Home Assistant is optional, not required. When the board runs standalone, `api:` can be dropped from your configuration entirely, since there is no Home Assistant instance for it to authenticate against. Its replacement is ESPHome's built-in `web_server:` component at `version: 3`, served directly from the board at `http://<board-ip>`, with no cloud service and no companion app.
+
+The web server is not enabled by default, and this page does not change that. It was removed from every configuration on 2026-03-06 in commit `895a55d`, in response to issue #21, for two reasons that are still valid: an unauthenticated HTTP server on port 80 with full fan control should not run on a customer's board unasked, and for Home Assistant users it is redundant attack surface with no benefit, since Home Assistant already talks to the board over the encrypted native API. Standalone use is the one case where that second reason does not apply: there is no Home Assistant taking over control, so enabling the web server here is not redundant, it is the control surface.
+
+<Aside type="caution" title="Trusted network only">
+The web server serves plain, unauthenticated HTTP by default.
+
+- Trusted LAN only. Treat it like any other unauthenticated device on your network.
+- Never expose it to the internet: no router port forwarding, no reverse proxy reachable from outside your LAN.
+- If your network is shared with people or devices you do not fully trust, set an `auth:` block. See [Web Interface](/reference/web-server/) for the walkthrough.
+</Aside>
+
+`local: true` is mandatory for standalone use, not an optional tuning knob. Without it, the web interface fetches its JavaScript and CSS from esphome.io the first time a browser opens the page. That works fine when the board shares an internet-connected network, but a standalone board has no such guarantee, and the interface simply fails to load on a board with no internet access, which is exactly the case this page is about.
+
+That convenience has a measured flash cost. Compiled against the finished [`examples/standalone.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/standalone.yaml) on a Rev 3.1 board, the firmware uses 884,566 bytes (48.2%) without `web_server:`, and 992,826 bytes (54.1%) with `web_server: {version: 3, local: true}`, a delta of 108,260 bytes, about 5.9 percentage points of the app partition. That app partition is 1,835,008 bytes, one of the two OTA slots in the ESPHome default 4 MB flash layout that every configuration in this repository uses unmodified: nothing sets its own `partitions:` table. Rev 1.0 uses an ESP32 (`esp32dev`); Rev 2.0 through 3.3 use an ESP32-S2 (`esp32-s2-saola-1`).
+
+WiFi provisioning does not need Home Assistant either:
+
+<Steps>
+
+1. **Fallback access point (`captive_portal:`).** If the board cannot join your WiFi network on first boot, or after a credential change, it opens its own access point named "Fancontroller Fallback." Connect to it from a phone or laptop, and a captive portal page lets you enter WiFi credentials.
+
+2. **Browser-over-USB (`improv_serial:`).** Plug the board in over USB, and a compatible browser can provision WiFi credentials directly over the serial connection, using the Improv protocol.
+
+</Steps>
+
+Both components are already present in `examples/standalone.yaml`, and validate together with `web_server:` and no `api:` block.
+
+MQTT is also a viable standalone control path if you already run a broker, though wiring it up is outside the scope of this page.
+
+<Aside type="note" title="Keeping api: without Home Assistant">
+ESPHome's `api:` component has a `reboot_timeout` that defaults to 15 minutes: if no client connects within that window, the board reboots. Nothing in this repository overrides it, so a board that keeps `api:` but never has Home Assistant connect will reboot every 15 minutes. Drop `api:` entirely if you do not need it, which is the recommended standalone approach, or set `reboot_timeout: 0s` if you want to keep `api:` around for another reason. This is cited from the ESPHome documentation, not verified against hardware in this phase.
+</Aside>
+
+A minimum standalone configuration needs no speed-control module at all. With nothing loaded beyond the hardware package and `web_server:`, the fans simply hold whatever speed they were last commanded to, and the web UI still exposes the four fan entities directly for manual control. [`examples/standalone.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/standalone.yaml) goes one step further and loads a module: it is the complete, compiling starting point for the standalone and local-checkout workflows described on the rest of this page.
