@@ -89,6 +89,91 @@ The five temperature/speed pairs define a piecewise linear curve:
 | --------------------------- | ---------- | --------------------------------------------------------- |
 | Curve Configuration Warning | Diagnostic | ON if temperature points are not monotonically increasing |
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_temp_curve
+      name: "Temperature Curve"
+      sorting_weight: 110
+
+number:
+  - id: !extend curve_temp1
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 10
+  - id: !extend curve_speed1
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 20
+  - id: !extend curve_temp2
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 30
+  - id: !extend curve_speed2
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 40
+  - id: !extend curve_temp3
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 50
+  - id: !extend curve_speed3
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 60
+  - id: !extend curve_temp4
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 70
+  - id: !extend curve_speed4
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 80
+  - id: !extend curve_temp5
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 90
+  - id: !extend curve_speed5
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 100
+
+sensor:
+  - id: !extend curve_output_value
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 110
+
+switch:
+  - id: !extend auto_control_fan1
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 120
+  - id: !extend auto_control_fan2
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 130
+  - id: !extend auto_control_fan3
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 140
+  - id: !extend auto_control_fan4
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 150
+
+binary_sensor:
+  - id: !extend curve_config_warning_sensor
+    web_server:
+      sorting_group_id: grp_temp_curve
+      sorting_weight: 900
+```
+
 ## YAML Examples
 
 ### Basic Usage (Default Balanced Curve)

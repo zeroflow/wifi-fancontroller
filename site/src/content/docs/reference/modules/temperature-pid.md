@@ -96,6 +96,111 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 | -------------------- | ---------------------------------------------------- |
 | PID Climate Autotune | Starts ESPHome's automatic PID parameter calculation |
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_temp_pid
+      name: "PID Temperature Control"
+      sorting_weight: 160
+
+number:
+  - id: !extend pid_kp_number
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 10
+  - id: !extend pid_ki_number
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 20
+  - id: !extend pid_kd_number
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 30
+  - id: !extend pid_threshold_low
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 40
+  - id: !extend pid_threshold_high
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 50
+  - id: !extend pid_ki_multiplier
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 60
+  - id: !extend pwm_minimum_pid
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 70
+
+fan:
+  - id: !extend manual_fan_control
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 80
+
+switch:
+  - id: !extend pid_control_fan1
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 90
+  - id: !extend pid_control_fan2
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 100
+  - id: !extend pid_control_fan3
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 110
+  - id: !extend pid_control_fan4
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 120
+
+sensor:
+  - id: !extend p_term
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 130
+  - id: !extend i_term
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 140
+  - id: !extend d_term
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 150
+  - id: !extend o_term
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 160
+  - id: !extend e_term
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 170
+  - id: !extend in_deadband_term
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 180
+
+climate:
+  - id: !extend pid_thermostat
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 190
+
+button:
+  - id: !extend pid_autotune
+    web_server:
+      sorting_group_id: grp_temp_pid
+      sorting_weight: 200
+```
+
 ## YAML Examples
 
 ### Basic Usage (Default Settings)

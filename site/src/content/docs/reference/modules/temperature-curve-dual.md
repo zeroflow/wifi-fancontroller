@@ -70,6 +70,135 @@ The result drives all four fans, gated per fan by the **Auto Control Fan 1**--**
 | `$friendly_name` Curve Output          | sensor        | The active curve's computed fan speed (%)                                 |
 | Curve Configuration Warning            | binary_sensor | Flags a non-monotonic curve at boot                                       |
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_temp_curve_dual
+      name: "Temperature Curve Dual"
+      sorting_weight: 120
+
+number:
+  - id: !extend curveA_temp1
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 10
+  - id: !extend curveA_speed1
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 20
+  - id: !extend curveA_temp2
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 30
+  - id: !extend curveA_speed2
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 40
+  - id: !extend curveA_temp3
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 50
+  - id: !extend curveA_speed3
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 60
+  - id: !extend curveA_temp4
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 70
+  - id: !extend curveA_speed4
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 80
+  - id: !extend curveA_temp5
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 90
+  - id: !extend curveA_speed5
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 100
+  - id: !extend curveB_temp1
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 110
+  - id: !extend curveB_speed1
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 120
+  - id: !extend curveB_temp2
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 130
+  - id: !extend curveB_speed2
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 140
+  - id: !extend curveB_temp3
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 150
+  - id: !extend curveB_speed3
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 160
+  - id: !extend curveB_temp4
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 170
+  - id: !extend curveB_speed4
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 180
+  - id: !extend curveB_temp5
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 190
+  - id: !extend curveB_speed5
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 200
+
+switch:
+  - id: !extend curve_select
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 210
+  - id: !extend auto_control_fan1
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 220
+  - id: !extend auto_control_fan2
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 230
+  - id: !extend auto_control_fan3
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 240
+  - id: !extend auto_control_fan4
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 250
+
+sensor:
+  - id: !extend curve_output_value
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 260
+
+binary_sensor:
+  - id: !extend curve_config_warning_sensor
+    web_server:
+      sorting_group_id: grp_temp_curve_dual
+      sorting_weight: 900
+```
+
 ## Switching Automatically
 
 Pair the **Curve Selection** switch with a Home Assistant automation. For example, switch to the defensive curve when an air-quality sensor reports poor air:
