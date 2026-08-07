@@ -170,6 +170,10 @@ These are the component ids the module defines. They are the surface you can rea
 | `scd41_temperature` | sensor | Temperature reading |
 | `scd41_humidity` | sensor | Humidity reading |
 
+:::note[No Web UI group for this module]
+This module's 3 named entities do not get their own [Web UI group](/reference/standalone/#grouping-module-entities-in-the-web-ui). The module declares them as nested sub-keys of a single `platform: scd4x` sensor entry rather than as top-level list items each with their own `id:`, so `!extend` cannot reach them (the same top-level-only limitation the [modules overview](/reference/modules/#customizing-a-module) already documents). Instead they fall back to ESPHome's documented default: grouping by `entity_category`. That works, but it is not per-module grouping.
+:::
+
 When you override a nested sensor you must repeat its `platform` line, but not `i2c_id` or `address`. For example, to give the CO2 entity a role name and drop the median filter:
 
 ```yaml

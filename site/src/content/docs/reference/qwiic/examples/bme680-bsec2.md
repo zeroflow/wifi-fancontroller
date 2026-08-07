@@ -135,6 +135,10 @@ These are the component ids the module defines. They are the surface you can rea
 | `bme_humidity` | sensor | Humidity, **internal** by default |
 | `bme_iaq_accuracy` | text_sensor | Calibration state |
 
+:::note[No Web UI group for this module]
+This module's 7 named entities do not get their own [Web UI group](/reference/standalone/#grouping-module-entities-in-the-web-ui). The module declares them as nested sub-keys of a single `platform: bme68x_bsec2` sensor entry rather than as top-level list items each with their own `id:`, so `!extend` cannot reach them (the same top-level-only limitation the [modules overview](/reference/modules/#customizing-a-module) already documents). Instead they fall back to ESPHome's documented default: grouping by `entity_category`. That works, but it is not per-module grouping.
+:::
+
 To publish the temperature and humidity after all, extend them and drop `internal`:
 
 ```yaml

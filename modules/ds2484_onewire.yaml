@@ -78,6 +78,7 @@ sensor:
 button:
   - platform: template
     name: "${ow_prefix} Rescan"
+    id: ow_rescan
     icon: mdi:magnify-scan
     entity_category: config
     on_press:
