@@ -131,6 +131,95 @@ One per fan. Shows `"OK"` when clear, or a message like `"Fancontroller Fan 1 st
 |--------|-------------|
 | Fan 1–4 Stall Guard | Enable/disable stall detection per fan |
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_stall_guard
+      name: "Stall Guard"
+      sorting_weight: 200
+
+binary_sensor:
+  - id: !extend fan1_stall_sensor
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 900
+  - id: !extend fan2_stall_sensor
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 910
+  - id: !extend fan3_stall_sensor
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 920
+  - id: !extend fan4_stall_sensor
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 930
+
+text_sensor:
+  - id: !extend fan1_stall_message
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 940
+  - id: !extend fan2_stall_message
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 950
+  - id: !extend fan3_stall_message
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 960
+  - id: !extend fan4_stall_message
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 970
+
+button:
+  - id: !extend stall_guard_clear_button
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 10
+
+number:
+  - id: !extend stall_guard_min_rpm_number
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 20
+  - id: !extend stall_guard_step_pct_number
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 30
+  - id: !extend stall_guard_grace_ticks_number
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 40
+
+switch:
+  - id: !extend stall_guard_fan1_enabled
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 50
+  - id: !extend stall_guard_fan2_enabled
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 60
+  - id: !extend stall_guard_fan3_enabled
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 70
+  - id: !extend stall_guard_fan4_enabled
+    web_server:
+      sorting_group_id: grp_stall_guard
+      sorting_weight: 80
+```
+
+The 8 non-diagnostic entities (the clear button, the three number entities, and the four per-fan switches) take weights 10 through 80. The 8 diagnostic entities (the four stall binary sensors and the four stall message text sensors) take weights 900 through 970, so they sort last within the group.
+
 ## How It Works
 
 1. Every `stall_guard_interval`, the module checks each enabled fan

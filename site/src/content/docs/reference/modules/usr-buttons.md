@@ -73,6 +73,45 @@ The three USR buttons (labeled top to bottom on the board) each have a fixed fun
 
 The override switches let you release individual fans from manual control without affecting the others. You can also turn them on from Home Assistant to lock a fan at its current speed without pressing any physical buttons.
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_usr_buttons
+      name: "USR Buttons"
+      sorting_weight: 400
+
+button:
+  - id: !extend usr_clear_overrides
+    web_server:
+      sorting_group_id: grp_usr_buttons
+      sorting_weight: 10
+
+switch:
+  - id: !extend usr_override_sw_fan1
+    web_server:
+      sorting_group_id: grp_usr_buttons
+      sorting_weight: 20
+  - id: !extend usr_override_sw_fan2
+    web_server:
+      sorting_group_id: grp_usr_buttons
+      sorting_weight: 30
+  - id: !extend usr_override_sw_fan3
+    web_server:
+      sorting_group_id: grp_usr_buttons
+      sorting_weight: 40
+  - id: !extend usr_override_sw_fan4
+    web_server:
+      sorting_group_id: grp_usr_buttons
+      sorting_weight: 50
+```
+
+None of this module's 5 entities are diagnostic, so all of them fall in the 10-50 range.
+
 ## YAML Examples
 
 ### Basic Usage

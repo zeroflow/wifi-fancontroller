@@ -80,6 +80,67 @@ With the defaults (t_off=25, t1=30, t2=50, fanpercent1=30%, fanpercent2=100%):
 | Auto Control Fan 3 | ON      | Enable linear control for fan 3 |
 | Auto Control Fan 4 | ON      | Enable linear control for fan 4 |
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_temp_linear
+      name: "Linear Temperature Control"
+      sorting_weight: 100
+
+number:
+  - id: !extend linear_t_off
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 10
+  - id: !extend linear_t1
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 20
+  - id: !extend linear_t2
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 30
+  - id: !extend linear_fanpercent1
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 40
+  - id: !extend linear_fanpercent2
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 50
+
+sensor:
+  - id: !extend linear_output_value
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 60
+
+switch:
+  - id: !extend auto_control_fan1
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 70
+  - id: !extend auto_control_fan2
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 80
+  - id: !extend auto_control_fan3
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 90
+  - id: !extend auto_control_fan4
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 100
+```
+
+This is the same block `examples/standalone.yaml` ships, entity for entity and weight for weight. Copy it verbatim into a config that already declares `web_server:` with `version: 3`.
+
 ## YAML Examples
 
 ### Basic Usage (Default Settings)

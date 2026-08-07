@@ -81,6 +81,153 @@ PI control switches default to **OFF**. You must enable each fan individually be
 |--------|-------------|
 | Reset PI Integrators | Resets all four integral terms to zero (useful when tuning) |
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_rpm_pi
+      name: "RPM PI Control"
+      sorting_weight: 150
+
+number:
+  - id: !extend pi_kp
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 10
+  - id: !extend pi_ki
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 20
+  - id: !extend pi_integral_limit
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 30
+  - id: !extend pwm_minimum_pi
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 40
+  - id: !extend pi_deadband
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 50
+  - id: !extend pi_setpoint_threshold
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 60
+  - id: !extend fan1_target_rpm
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 70
+  - id: !extend fan2_target_rpm
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 80
+  - id: !extend fan3_target_rpm
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 90
+  - id: !extend fan4_target_rpm
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 100
+
+switch:
+  - id: !extend pi_control_fan1
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 110
+  - id: !extend pi_control_fan2
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 120
+  - id: !extend pi_control_fan3
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 130
+  - id: !extend pi_control_fan4
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 140
+
+sensor:
+  - id: !extend fan1_error
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 900
+  - id: !extend fan1_p_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 910
+  - id: !extend fan1_i_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 920
+  - id: !extend fan1_pwm_sensor
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 930
+  - id: !extend fan2_error
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 940
+  - id: !extend fan2_p_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 950
+  - id: !extend fan2_i_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 960
+  - id: !extend fan2_pwm_sensor
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 970
+  - id: !extend fan3_error
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 980
+  - id: !extend fan3_p_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 990
+  - id: !extend fan3_i_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 1000
+  - id: !extend fan3_pwm_sensor
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 1010
+  - id: !extend fan4_error
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 1020
+  - id: !extend fan4_p_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 1030
+  - id: !extend fan4_i_term
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 1040
+  - id: !extend fan4_pwm_sensor
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 1050
+
+button:
+  - id: !extend pi_reset_button
+    web_server:
+      sorting_group_id: grp_rpm_pi
+      sorting_weight: 150
+```
+
+The 15 non-diagnostic entities (the six PI parameters, the four target RPMs, the four control switches, and the reset button) take weights 10 through 150 in declaration order. The 16 diagnostic sensors take weights 900 through 1050, so they sort last within the group regardless of how many non-diagnostic entities this module gains in the future.
+
 ## YAML Examples
 
 ### Basic Usage
