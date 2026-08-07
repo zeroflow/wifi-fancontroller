@@ -22,6 +22,7 @@
 #             curveA_temp1: "20.0"
 #             curveA_speed1: "0.0"
 #             # ... etc
+# Local use (no github:// required): see /reference/standalone/
 #
 # Configuration Variables:
 #   - friendly_name: Device name prefix (default: "Fancontroller")

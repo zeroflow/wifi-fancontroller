@@ -29,6 +29,7 @@
 # Temperature and humidity are redundant with the onboard HDC1080, so they are
 # internal by default. Expose them with !extend on bme_temperature / bme_humidity.
 #
+# Local use (no github:// required): see /reference/standalone/
 substitutions:
   bme680_name: "Air"
   bme680_address: "0x77"

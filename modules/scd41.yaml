@@ -14,6 +14,7 @@
 #       ref: main
 #       files:
 #         - modules/scd41.yaml
+# Local use (no github:// required): see /reference/standalone/
 #
 # BUS SPEED - read this:
 #   The SCD41 is limited to a 100 kHz I2C clock (hard datasheet limit). The shared

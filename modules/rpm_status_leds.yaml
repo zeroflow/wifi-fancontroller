@@ -16,6 +16,7 @@
 #             brightness: "0.3"       # LED brightness 0.0–1.0 (default: 0.5)
 #             update_interval: "5s"   # LED update frequency (default: 1s)
 #             fan3_led_enabled: "false"  # disable LED for unused fan channels
+# Local use (no github:// required): see /reference/standalone/
 #
 #
 # Configuration Variables:

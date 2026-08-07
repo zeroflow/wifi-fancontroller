@@ -12,6 +12,7 @@
 #   packages:
 #     hardware: !include hardware-rev-3.1.yaml
 #     bme680:   !include modules/bme680.yaml
+# Local use (no github:// required): see /reference/standalone/
 #
 # The sensor is meant to hang on a cable and measure somewhere other than the
 # board (intake, exhaust, room), so it takes a ROLE name, not a sensor name.

@@ -15,6 +15,7 @@
 #       ref: main
 #       files:
 #         - modules/oled_128x64.yaml
+# Local use (no github:// required): see /reference/standalone/
 #
 # I2C bus speed (recommended, not enabled here):
 #   The display works at the default bus speed (50 kHz), but the screen refreshes

@@ -26,6 +26,7 @@
 #         t2: "50.0"           # Upper temperature setpoint
 #         fanpercent1: "30.0"  # Fan speed at t1
 #         fanpercent2: "100.0" # Fan speed at t2 and above
+# Local use (no github:// required): see /reference/standalone/
 #
 # Configuration Variables:
 #   - friendly_name: Device name prefix (default: "fancontroller")

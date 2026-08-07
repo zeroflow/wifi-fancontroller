@@ -33,6 +33,7 @@
 #             selection_color_r: "0"
 #             selection_color_g: "0"
 #             selection_color_b: "255"
+# Local use (no github:// required): see /reference/standalone/
 #
 substitutions:
   friendly_name: "Fan Controller"

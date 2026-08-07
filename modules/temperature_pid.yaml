@@ -29,6 +29,7 @@
 #             max_integral: "0.0"                # Maximum integral term
 #             output_averaging_samples: "1"      # Output smoothing samples
 #             derivative_averaging_samples: "5"  # Derivative smoothing samples
+# Local use (no github:// required): see /reference/standalone/
 #
 # Configuration Variables:
 #   - friendly_name: Device name prefix (default: "Fancontroller")

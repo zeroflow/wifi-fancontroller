@@ -17,6 +17,7 @@
 #       ref: main
 #       files:
 #         - modules/ds2484_onewire.yaml
+# Local use (no github:// required): see /reference/standalone/
 #
 # What it exposes:
 #   - one_wire bus (id: ow_bus) that your own dallas_temp sensors attach to

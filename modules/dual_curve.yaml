@@ -19,6 +19,7 @@
 #         - path: modules/temperature_curve_dual.yaml
 #
 # See https://fancontroller.arthofer.dev/reference/modules/temperature-curve-dual/
+# Local use (no github:// required): see /reference/standalone/
 
 packages:
   temperature_curve_dual: !include temperature_curve_dual.yaml

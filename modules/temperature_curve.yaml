@@ -23,6 +23,7 @@
 #             curve_speed4: "75.0"
 #             curve_temp5: "50.0"    # Point 5: Maximum speed
 #             curve_speed5: "100.0"
+# Local use (no github:// required): see /reference/standalone/
 #
 # Configuration Variables:
 #   - friendly_name: Device name prefix (default: "fancontroller")

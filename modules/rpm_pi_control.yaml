@@ -28,6 +28,7 @@
 #       filters:
 #         - sliding_window_moving_average: {window_size: 3, send_every: 1}
 #     # Repeat for fan2_speed, fan3_speed, fan4_speed...
+# Local use (no github:// required): see /reference/standalone/
 #
 # Configuration Variables:
 #   - friendly_name: Device name prefix (default: "Fancontroller")
