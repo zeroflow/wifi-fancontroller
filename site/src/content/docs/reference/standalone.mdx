@@ -44,3 +44,107 @@ ESPHome's `api:` component has a `reboot_timeout` that defaults to 15 minutes: i
 </Aside>
 
 A minimum standalone configuration needs no speed-control module at all. With nothing loaded beyond the hardware package and `web_server:`, the fans simply hold whatever speed they were last commanded to, and the web UI still exposes the four fan entities directly for manual control. [`examples/standalone.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/standalone.yaml) goes one step further and loads a module: it is the complete, compiling starting point for the standalone and local-checkout workflows described on the rest of this page.
+
+## Using modules from a local checkout
+
+Pulling a module from GitHub is the default path, and it stays the recommended one for most readers. It is a convenience, not a requirement: every firmware config's `dashboard_import.package_import_url` points at a `github://` URL, so the standard adoption path genuinely does fetch from GitHub. But GitHub access is not required to use a module. If you would rather work from files already on your own disk, here are three ways to do that.
+
+### Variant A: pull from GitHub (the default)
+
+This is the shape already used throughout this repository, in every module's own usage header and in every example: a `packages:` entry with `url:`, `ref:`, and `files:`, optionally carrying `vars:`.
+
+```yaml
+packages:
+  temperature_linear:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_linear.yaml
+        vars:
+          friendly_name: "My Fan Controller"
+          t_off: "25.0"
+          t1: "30.0"
+          t2: "50.0"
+          fanpercent1: "30.0"
+          fanpercent2: "100.0"
+```
+
+This is the most convenient path, and the right one for most readers: nothing to download, nothing to keep in sync yourself. `ref:` is what decides which version of the module you get; pin it to a tag or commit if you want a version that never changes underneath you, or leave it at `main` to always pull the latest.
+
+### Variant B: download the files and use them locally
+
+There are two ways to get the files onto your disk, depending on how much of the repository you want:
+
+- **Clone the whole repository** with `git clone https://github.com/zeroflow/wifi-fancontroller`, which gives you `hardware-rev-3.1.yaml` and every file under `modules/` at once.
+- **Download a single file**, if you only need one module: save `modules/temperature_linear.yaml` from GitHub's raw file view into your own project.
+
+Either way, `packages:` changes from a remote URL to a local `!include`. The single most important detail here is the shape of that `!include`. The short scalar form passes no variables at all:
+
+```yaml
+# Passes NO vars: every substitution silently falls back to its module
+# default. Fine only if every default is already what you want.
+packages:
+  temperature_linear: !include modules/temperature_linear.yaml
+```
+
+If you need to set even one variable, the mapping form with `file:` and `vars:` is the correct shape:
+
+```yaml
+packages:
+  hardware: !include hardware-rev-3.1.yaml
+  temperature_linear: !include
+    file: modules/temperature_linear.yaml
+    vars:
+      friendly_name: "My Fan Controller"
+      t_off: "25.0"
+      t1: "30.0"
+      t2: "50.0"
+      fanpercent1: "30.0"
+      fanpercent2: "100.0"
+```
+
+Miss this and every substitution quietly takes its module-internal default. There is no error, just a config that behaves differently than the values you thought you set. If you land on "variable not defined," or a config that ignores values you typed into `vars:`, check whether the `!include` is the short scalar form or the mapping form first.
+
+Get the relative path right for your own layout, not the repository's. `!include` resolves the path relative to the directory of the file doing the including, not the repository root and not your current working directory. A typical customer layout puts the config next to a `modules/` folder in the same directory:
+
+```
+my-fancontroller/
+├── my-config.yaml
+└── modules/
+    └── temperature_linear.yaml
+```
+
+From `my-config.yaml`, that path is `modules/temperature_linear.yaml`, no `../` needed. The shipped `examples/standalone.yaml` looks different: it uses `../hardware-rev-3.1.yaml` and `../modules/temperature_linear.yaml`, because that file lives one directory below the repository root (`examples/`), while the hardware package and the `modules/` folder both sit at the root. Copy the example's `../` paths into a differently shaped directory and they will not resolve. Match the path to where your own files actually are.
+
+Local use costs something in return: no automatic updates, `ref:` no longer applies since there is no remote source to pin a version of, and picking up a fix or a new feature means downloading the file again.
+
+### Variant C: merge a module into your own config by hand
+
+`modules/temperature_linear.yaml` is the smallest real speed-control module at 252 lines, and it is the same file variants A and B and `examples/standalone.yaml` already use, so one file carries you through the whole page. Merging it by hand means copying its blocks into the matching top-level key of your own config, and replacing every `${var}` placeholder with a fixed value:
+
+- its `substitutions:` entries become literal values wherever `${t_off}`, `${t1}`, and so on appear, or you keep them as your own `substitutions:` if you want the placeholders to stay
+- its `esphome: on_boot:` entry merges into your own `esphome:` block's `on_boot:` list
+- its `number:`, `sensor:`, `output:`, and `switch:` lists merge into your own top-level `number:`, `sensor:`, `output:`, and `switch:` lists
+
+For example, `${t_off}` in the module becomes a literal `25.0` directly in your `number:` entry once merged, instead of a substitution the module resolves for you:
+
+```yaml
+number:
+  - platform: template
+    name: Linear Off Temperature
+    id: linear_t_off
+    initial_value: 25.0 # was: ${t_off}
+    min_value: 20
+    max_value: 50
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+```
+
+This is worth doing when you intend to modify the module anyway, since you already have to edit the file to make the change. It gets painful fast on the larger modules: `modules/temperature_curve_triple_independent.yaml` is 1051 lines, and hand-merging that is a lot more to keep straight than swapping one `!include` line.
+
+All three variants share two things worth knowing before you start.
+
+Several speed-control modules cannot run at once: they all write to the same fan outputs, and having more than one active leads to unpredictable behavior. See the compatibility table on the [Modules Overview](/reference/modules/) page for the full list of which modules conflict.
+
+A module also has to be loaded exactly once. Loading `modules/temperature_linear.yaml` both as a `github://` package and as a local `!include` in the same config collides: `esphome config` rejects it with a duplicate-entity error, confirmed by an actual run against this repository's files, because both copies declare the same component ids. Load a module one way or the other, never both.
