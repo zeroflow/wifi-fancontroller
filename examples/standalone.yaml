@@ -1,0 +1,78 @@
+# Example: Standalone Rev 3.1 with a local web UI (no Home Assistant)
+#
+# This example demonstrates a controller configured without Home Assistant
+# and without any remote package source: both the hardware package and the
+# speed-control module are pulled from a local checkout via relative
+# !include, and the fan curve is controlled entirely through the built-in
+# web_server v3 UI, grouped into one named section.
+#
+# See /reference/standalone/ for the full walkthrough of both workflows this
+# example demonstrates: running without Home Assistant, and using modules
+# from a local checkout.
+
+packages:
+  hardware: !include ../hardware-rev-3.1.yaml
+  temperature_linear: !include
+    file: ../modules/temperature_linear.yaml
+    vars:
+      friendly_name: "Fancontroller"
+      t_off: "25.0"
+      t1: "30.0"
+      t2: "50.0"
+      fanpercent1: "30.0"
+      fanpercent2: "100.0"
+
+esphome:
+  name: standalone-fancontroller
+  friendly_name: Standalone Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# No api: block. This is the standalone case: without Home Assistant there
+# is nothing for the API to connect to. See /reference/standalone/ for the
+# alternative (set reboot_timeout: 0s) if you keep api: for other reasons.
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# Enable Improv Serial for first-time WiFi provisioning over USB, no app or
+# Home Assistant required. See /reference/standalone/ for the walkthrough.
+improv_serial:
+
+# Security: web_server serves plain, unauthenticated HTTP on port 80.
+#   - Trusted LAN only. Do not forward this port through your router.
+#   - Never expose it to the internet.
+#   - If your network is shared, set auth: -- see /reference/web-server/
+#     for the walkthrough.
+web_server:
+  version: 3
+  local: true
+  sorting_groups:
+    - id: grp_temp_linear
+      name: "Linear Temperature Control"
+      sorting_weight: 100
+
+number:
+  - id: !extend linear_t_off
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 10
