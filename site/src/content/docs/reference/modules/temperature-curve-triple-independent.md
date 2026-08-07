@@ -189,6 +189,177 @@ The result drives all four fans, gated per fan by the **Auto Control Fan 1** to 
 
 Entity names are laid out profile-major, so with the names from the example Home Assistant sorts them as `Cooling Speed 1..5`, `Cooling Temp 1..5`, `Heating Speed 1..5`, `Heating Temp 1..5`, and so on. Each profile is one contiguous block, which makes tuning a profile a straight read down the list.
 
+## Web UI grouping
+
+This block goes in **your own configuration**, not in the module. See [why the assignment lives in the consuming config](/reference/standalone/#grouping-module-entities-in-the-web-ui) for the reason. `version: 3` is what makes entity grouping work at all; without it, entity grouping has no effect.
+
+```yaml
+web_server:
+  version: 3
+  sorting_groups:
+    - id: grp_temp_curve_triple_ind
+      name: "Temperature Curve Triple Independent"
+      sorting_weight: 140
+
+number:
+  - id: !extend curve_a_temp1
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 10
+  - id: !extend curve_a_temp2
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 20
+  - id: !extend curve_a_temp3
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 30
+  - id: !extend curve_a_temp4
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 40
+  - id: !extend curve_a_temp5
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 50
+  - id: !extend curve_a_speed1
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 60
+  - id: !extend curve_a_speed2
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 70
+  - id: !extend curve_a_speed3
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 80
+  - id: !extend curve_a_speed4
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 90
+  - id: !extend curve_a_speed5
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 100
+  - id: !extend curve_b_temp1
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 110
+  - id: !extend curve_b_temp2
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 120
+  - id: !extend curve_b_temp3
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 130
+  - id: !extend curve_b_temp4
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 140
+  - id: !extend curve_b_temp5
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 150
+  - id: !extend curve_b_speed1
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 160
+  - id: !extend curve_b_speed2
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 170
+  - id: !extend curve_b_speed3
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 180
+  - id: !extend curve_b_speed4
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 190
+  - id: !extend curve_b_speed5
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 200
+  - id: !extend curve_c_temp1
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 210
+  - id: !extend curve_c_temp2
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 220
+  - id: !extend curve_c_temp3
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 230
+  - id: !extend curve_c_temp4
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 240
+  - id: !extend curve_c_temp5
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 250
+  - id: !extend curve_c_speed1
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 260
+  - id: !extend curve_c_speed2
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 270
+  - id: !extend curve_c_speed3
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 280
+  - id: !extend curve_c_speed4
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 290
+  - id: !extend curve_c_speed5
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 300
+
+select:
+  - id: !extend curve_select
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 310
+
+switch:
+  - id: !extend auto_control_fan1
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 320
+  - id: !extend auto_control_fan2
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 330
+  - id: !extend auto_control_fan3
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 340
+  - id: !extend auto_control_fan4
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 350
+
+sensor:
+  - id: !extend curve_output_value
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 360
+
+binary_sensor:
+  - id: !extend curve_config_warning_sensor
+    web_server:
+      sorting_group_id: grp_temp_curve_triple_ind
+      sorting_weight: 900
+```
+
 ## Switching Automatically
 
 Pair the **Curve Selection** select with a Home Assistant automation driven by your heat pump's operating mode. Note that this uses `select.select_option` rather than `switch.turn_on`, and that the `option` value must match the profile name you configured.
