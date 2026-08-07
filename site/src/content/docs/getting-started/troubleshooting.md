@@ -34,7 +34,7 @@ Find solutions to common issues below. Each section is organized by symptom so y
 
 - **The web server is off by default** -- the firmware ships without the built-in web interface for security and memory reasons, so `http://<board-ip>` returns `ERR_CONNECTION_REFUSED`. This is expected, not a fault.
 - **Home Assistant does not need it** -- the board is controlled over the encrypted ESPHome API. Fan control, sensors, and automations all work without the web interface.
-- **Enable it yourself** -- add the `web_server` component (with authentication) to your own ESPHome config and re-flash. See [Web Interface](/reference/web-server/) for the exact configuration.
+- **Enable it yourself** -- add the `web_server` component (with authentication) to your own ESPHome config and re-flash. See [Web Interface](/reference/web-server/) for the exact configuration, or [Standalone Usage](/reference/standalone/) if you're running without Home Assistant entirely.
 - **`dashboard_import` won't do it** -- importing the package does not start a web server. You have to add the `web_server` block yourself.
 
 ## Temperature or humidity reads wrong

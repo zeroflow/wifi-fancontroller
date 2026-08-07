@@ -44,6 +44,8 @@ Because you pull a module in as a remote package, you never edit its file. Every
 | Configure the module (names, intervals) | `vars:` on the package, or top-level `substitutions:` | `ow_prefix: "Aquarium"` |
 | Change or remove an entity the module defines | `!extend <id>` / `!remove <id>` | `- id: !extend ow_device_count` |
 
+There's a fourth thing readers sometimes want: using a module with no `github://` URL at all, which is a different question from customizing one you already pulled in. See [Using modules from a local checkout](/reference/standalone/#using-modules-from-a-local-checkout) for the three ways to do that.
+
 **Adding your own entities** needs no special syntax. ESPHome merges same-named lists (`sensor:`, `switch:`, and so on) across all packages and your config. Just declare your entity and point it at the module's bus or components by their `id`.
 
 **Configuring** a module is done through the substitution variables it exposes. Set them with `vars:` under the package's `files:` entry, or as top-level `substitutions:` in your own config. Each module page lists its variables and defaults.

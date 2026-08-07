@@ -148,3 +148,57 @@ All three variants share two things worth knowing before you start.
 Several speed-control modules cannot run at once: they all write to the same fan outputs, and having more than one active leads to unpredictable behavior. See the compatibility table on the [Modules Overview](/reference/modules/) page for the full list of which modules conflict.
 
 A module also has to be loaded exactly once. Loading `modules/temperature_linear.yaml` both as a `github://` package and as a local `!include` in the same config collides: `esphome config` rejects it with a duplicate-entity error, confirmed by an actual run against this repository's files, because both copies declare the same component ids. Load a module one way or the other, never both.
+
+## Grouping module entities in the web UI
+
+The `web_server:` v3 UI can group entities into named, ordered sections instead of one flat list. Any entity carrying a `web_server:` sub-key (`sorting_group_id:` or `sorting_weight:`) requires the `web_server:` component to be declared in the same merged config, regardless of what the key's value is: an entity assigned to a group in a config with no `web_server:` block fails validation with "This option requires component web_server." If a module wrote that key into its own entity declarations, every Home Assistant user who loads that module without also declaring `web_server:`, which is the default, documented state for this board, would fail validation on their next update. That is why the assignment lives in your own config, the same place `examples/standalone.yaml` puts it, rather than inside the module file itself. It is exactly the kind of constraint that otherwise gets rediscovered the hard way, so it is written down here.
+
+The shape, matching `examples/standalone.yaml`:
+
+```yaml
+web_server:
+  version: 3
+  local: true
+  sorting_groups:
+    - id: grp_temp_linear
+      name: "Linear Temperature Control"
+      sorting_weight: 100
+
+number:
+  - id: !extend linear_t_off
+    web_server:
+      sorting_group_id: grp_temp_linear
+      sorting_weight: 10
+```
+
+`version: 3` is what adds grouping at all; the older default, `version: 2`, has no concept of `sorting_groups:`.
+
+The [Modules Overview](/reference/modules/) page already notes that `!extend` is not for adding a new entity, only for changing one that already exists. That caution still holds here: what a grouping assignment does is add a new key to an entity the module already defines, which is exactly the case `!extend` is for, not the case the caution warns against.
+
+Ten modules get their own group this way. This table is the fixed set of group IDs and group-level weights that each module's own reference page uses in its copy-paste snippet:
+
+| Group ID | Module | Weight | Band |
+|---|---|---|---|
+| `grp_temp_linear` | Temperature Linear | 100 | Speed Control |
+| `grp_temp_curve` | Temperature Curve | 110 | Speed Control |
+| `grp_temp_curve_dual` | Temperature Curve Dual | 120 | Speed Control |
+| `grp_temp_curve_triple` | Temperature Curve Triple | 130 | Speed Control |
+| `grp_temp_curve_triple_ind` | Temperature Curve Triple Independent | 140 | Speed Control |
+| `grp_rpm_pi` | RPM PI Control | 150 | Speed Control |
+| `grp_temp_pid` | Temperature PID | 160 | Speed Control |
+| `grp_stall_guard` | Stall Guard | 200 | Safety |
+| `grp_${ow_prefix}_onewire` | DS2484 1-Wire | 330 | Sensors |
+| `grp_usr_buttons` | USR Buttons | 400 | Controls |
+
+`grp_${ow_prefix}_onewire`'s ID derives from that module's own `ow_prefix` substitution, so a second DS2484 instance gets its own group automatically instead of colliding with the first.
+
+Inside a group, entities step by 10 in the order the module declares them (10, 20, 30, and so on). Diagnostic entities inside a group start at 900 and step by 10 from there, so diagnostics always sort last regardless of how many other entities the module adds later.
+
+Three modules do not get a group this way, and it is worth saying so plainly rather than leaving the gap to be discovered: `bme680`, `bme680_bsec2`, and `scd41` declare their entities as nested sub-keys of one combined-sensor platform entry, for example `temperature:` and `humidity:` nested inside a single `platform: bme680` block, not as top-level list items with their own `id:`. `!extend` can only reach top-level ids, a limitation already documented on the [Modules Overview](/reference/modules/) page, so it cannot add a `web_server:` key to these nested entities. Those 14 entities fall back to ESPHome's own default grouping instead, by `entity_category`, which works and looks reasonable, but groups by category rather than by module. Each module's own reference page carries the exact copy-paste snippet for the modules this mechanism does reach.
+
+## Related
+
+- [Web Interface](/reference/web-server/) for the `auth:` walkthrough and the full `web_server:` options table
+- [Modules Overview](/reference/modules/) for the module compatibility matrix and the `!extend` / `!remove` mechanics
+- [`examples/standalone.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/standalone.yaml) for the complete, compiling starting point
+- [Troubleshooting](/getting-started/troubleshooting/) for other common issues

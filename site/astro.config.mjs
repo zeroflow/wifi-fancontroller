@@ -63,6 +63,7 @@ export default defineConfig({
             },
             { slug: 'reference/fan-compatibility' },
             { slug: 'reference/web-server' },
+            { slug: 'reference/standalone' },
           ],
         },
       ],

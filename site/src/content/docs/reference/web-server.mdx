@@ -18,6 +18,8 @@ The firmware ships secure-by-default. The built-in web server is left out for tw
 
 You don't need the web server for normal use. Home Assistant talks to the board over the encrypted ESPHome native API, which is fully independent of port 80. All fan control, sensors, and automations work whether or not the web interface is enabled.
 
+The one exception is running the board fully standalone, without Home Assistant at all. There, the web server is the control surface rather than a redundant one. See [Standalone Usage](/reference/standalone/) for that case.
+
 <Aside type="note" title="dashboard_import does not enable it">
 `dashboard_import` (with or without `import_full_config: true`) only tells the ESPHome Dashboard which package to base a new configuration on. It does not start a web server. To get the web interface back you have to add the `web_server` component to your configuration and re-flash or OTA the board, as shown below.
 </Aside>
