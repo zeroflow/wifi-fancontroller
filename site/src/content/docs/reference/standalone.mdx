@@ -187,10 +187,10 @@ Ten modules get their own group this way. This table is the fixed set of group I
 | `grp_rpm_pi` | RPM PI Control | 150 | Speed Control |
 | `grp_temp_pid` | Temperature PID | 160 | Speed Control |
 | `grp_stall_guard` | Stall Guard | 200 | Safety |
-| `grp_${ow_prefix}_onewire` | DS2484 1-Wire | 330 | Sensors |
+| `grp_ds2484_onewire` | DS2484 1-Wire | 330 | Sensors |
 | `grp_usr_buttons` | USR Buttons | 400 | Controls |
 
-`grp_${ow_prefix}_onewire`'s ID derives from that module's own `ow_prefix` substitution, so a second DS2484 instance gets its own group automatically instead of colliding with the first.
+Every ID in this table is a fixed literal, copied verbatim from the module's own page. None of them is built from a substitution variable at config time. The [DS2484 1-Wire](/reference/qwiic/examples/ds2484/#web-ui-grouping) page explains why that module in particular cannot key its group off its display-name variable.
 
 Inside a group, entities step by 10 in the order the module declares them (10, 20, 30, and so on). Diagnostic entities inside a group start at 900 and step by 10 from there, so diagnostics always sort last regardless of how many other entities the module adds later.
 
