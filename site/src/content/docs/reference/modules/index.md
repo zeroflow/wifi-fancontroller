@@ -103,6 +103,7 @@ Substitution names live in one shared namespace across every package. If two mod
 | [RPM PI Control](/reference/modules/rpm-pi-control/) | Advanced | Exact RPM targeting per fan | 31 (numbers, sensors, switches, button) | All |
 | [RPM Status LEDs](/reference/modules/rpm-status-leds/) | Simple | Visual RPM feedback via board LEDs | 0 (writes to existing LED entities) | Rev 3.1+ |
 | [Stall Guard](/reference/modules/stall-guard/) | Simple | Fan stall detection and automatic recovery | 9 (binary sensors, text sensors, button) | All |
+| [Fallback Mode](/reference/modules/fallback-mode/) | Simple | Keeps fans running when the Home Assistant control loop dies | 10 (binary sensors, text sensor, sensors, buttons) | All |
 | [USR Buttons](/reference/modules/usr-buttons/) | Simple | Physical button control of individual fan speeds | 5 (button, 4 switches) | Rev 3.1+ |
 
 ## Compatibility
@@ -121,22 +122,27 @@ You can only use **one** temperature control module at a time (PID, Linear, Curv
 **Temperature PID** and **RPM PI Control** can run side by side, but only when each fan is assigned to one or the other. PID exposes `PID Control Fan 1`--`Fan 4` switches (default ON), PI exposes `PI Control Fan 1`--`Fan 4` switches (default OFF). If both are enabled for the same fan, the two loops fight over the PWM output. See [`examples/with-pid-and-pi.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-pid-and-pi.yaml) for a working split configuration.
 :::
 
+:::caution
+**Fallback Mode** and **RPM PI Control** cannot be used together. RPM PI Control writes directly to PWM outputs, bypassing the fan entity that Fallback Mode raises its floor through. A fan entity floor cannot reach a control loop that never goes through the fan entity.
+:::
+
 ### Compatibility matrix
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
 
-| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | Temp Curve Triple Indep. | RPM PI Control | RPM Status LEDs | Stall Guard | USR Buttons |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Temperature PID** | -- | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ |
-| **Temperature Linear** | ❌ | -- | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve** | ❌ | ❌ | -- | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Dual** | ❌ | ❌ | ❌ | -- | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Triple Independent** | ❌ | ❌ | ❌ | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ |
-| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ❌ | ✅ |
-| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ |
-| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ |
-| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
+| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | Temp Curve Triple Indep. | RPM PI Control | RPM Status LEDs | Stall Guard | Fallback Mode | USR Buttons |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Temperature PID** | -- | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Linear** | ❌ | -- | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve** | ❌ | ❌ | -- | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Dual** | ❌ | ❌ | ❌ | -- | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Triple Independent** | ❌ | ❌ | ❌ | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ❌ | ❌ | ✅ |
+| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ | ✅ |
+| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ | ✅ |
+| **[Fallback Mode](/reference/modules/fallback-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | -- | ✅ |
+| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
 
 ## Module List
 
@@ -163,6 +169,8 @@ Most modules can be combined freely. The two exceptions are: temperature modules
 ### Fan Safety
 
 - **[Stall Guard](/reference/modules/stall-guard/)** -- Detects fan stalls (0 RPM when commanded on) and automatically raises fan speed to attempt recovery. Works cooperatively with temperature modules via a safety floor mechanism. Flags persistent warnings in Home Assistant so you know to investigate.
+
+- **[Fallback Mode](/reference/modules/fallback-mode/)**: keeps fans running at a known speed when the Home Assistant control loop dies, supervised by a Home Assistant blueprint that pets the board on an interval, conditional on upstream data freshness. An availability feature, not a protective function; see its own reference page for the scope statement.
 
 ### Physical Controls
 
