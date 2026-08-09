@@ -1,0 +1,329 @@
+# Fallback Mode Module
+#
+# Home Assistant link supervision with a PWM floor. Today, a board driven from
+# Home Assistant holds its last commanded PWM value forever when the HA control
+# loop dies. This module gives the board its own deadline supervisor, petted by
+# Home Assistant, so it falls back to a known speed instead of holding a stale
+# value indefinitely.
+#
+# SCOPE. This is an availability feature, not a protective function. There is
+# no FMEA, no FMEDA, no fault tree, no hazard analysis, no defined safety goal
+# or fault tolerant time interval, no diagnostic coverage figure, and no claim
+# against ISO 26262, IEC 61508 or IEC 60730. In IEC 60730 terms this is a
+# control function, not a Type 2 protective action. For the originating use
+# case (external fans supporting a hybrid inverter), the actual protection
+# layer is the cooled device's own thermal management: its internal fans, its
+# derating and its shutdown behaviour. This module makes that device quieter
+# and its temperature more stable. It does not protect it. See the docs page
+# for the full scope statement and the list of failure modes not covered.
+#
+# REQUIREMENT: the consuming firmware config MUST set `api: reboot_timeout: 0s`.
+# ESPHome's default is 15 minutes: with no client connected the board reboots,
+# which would kill the fallback at exactly the moment it is needed. Leave
+# `wifi: reboot_timeout` at its default so a wedged WiFi stack is still caught.
+#
+# OPEN ITEM RESOLUTION (spec section 6). There is no shared output stage in
+# this project: every existing clamp (rpm_pi_control's pwm_minimum_pi,
+# temperature_linear/curve/pid's fanN_safety_floor) lives inside its own
+# module's own computation, not at a common point every writer passes through.
+# So this module supplies the floor at the point of actuation itself, inside
+# its own apply_output script, rather than trying to intercept every writer.
+# It owns its own fallback_floor global rather than reusing fanN_safety_floor.
+# The concrete reason: stall_guard's Clear Stall Warnings button assigns
+# fanN_safety_floor = 0.0f, which would silently wipe an active fallback floor
+# if the two shared a variable. fanN_safety_floor is restore_value: no and is
+# not HA writable, so the spec's other two candidate reasons (restore_value
+# hazard, HA writability) do not apply to it and are not repeated here as if
+# they did.
+#
+# LIMITATION: arbitration is not instantaneous. A later writer (Home Assistant,
+# a temperature module) can still command a speed below the floor after
+# apply_output has run. The supervision interval re-asserts the floor every
+# cycle while fallback is active, so the floor wins back within one
+# sup_cycle, not immediately.
+#
+# INCOMPATIBLE WITH rpm_pi_control. rpm_pi_control writes pwm_fanN directly,
+# bypassing the fan entity this module writes through, so a fan entity floor
+# cannot constrain it. Do not combine the two.
+#
+# Usage:
+#   packages:
+#     fallback_mode:
+#       url: https://github.com/zeroflow/wifi-fancontroller
+#       ref: main
+#       files:
+#         - path: modules/fallback_mode.yaml
+#           vars:
+#             friendly_name: "My Fan Controller"
+#             sup_cycle: "5s"
+#             sup_alive_init: "20"
+#             sup_thr_margin: "12"
+#             sup_thr_fallback: "4"
+#             sup_release: "12"
+#             fallback_pwm: "80"
+# Local use (no github:// required): see /reference/standalone/
+#
+substitutions:
+  friendly_name: "Fancontroller"
+  sup_cycle: "5s"
+  sup_alive_init: "20"
+  sup_thr_margin: "12"
+  sup_thr_fallback: "4"
+  sup_release: "12"
+  fallback_pwm: "80"
+  # Per-port scope, compile-time only. An unused port folds away at compile
+  # time via the "if (${fallback_portN})" guards below.
+  fallback_port1: "true"
+  fallback_port2: "true"
+  fallback_port3: "true"
+  fallback_port4: "true"
+
+globals:
+  - id: sup_alive
+    type: int16_t
+    restore_value: no
+    initial_value: '0' # R3: boot enters fallback, not idle
+  - id: sup_alive_min
+    type: int16_t
+    restore_value: no
+    initial_value: '32767'
+  - id: sup_ep_margin
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: sup_ep_fallback
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: sup_margin_count
+    type: uint16_t
+    restore_value: no
+    initial_value: '0'
+  - id: sup_fb_count
+    type: uint16_t
+    restore_value: no
+    initial_value: '0'
+  - id: sup_margin_latched
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: sup_fb_latched
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: fallback_active
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: fallback_floor
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+
+script:
+  - id: apply_output
+    mode: single
+    then:
+      - lambda: |-
+          // Raises a port's commanded speed to fallback_floor when it is
+          // below the floor. Never lowers a commanded speed. Write through
+          // the fanN fan entity, never pwm_fanN, matching stall_guard and
+          // the temperature modules.
+          //
+          // Raising a port that is currently off is deliberate (R3): a cold
+          // boot with no Home Assistant present must reach the fallback
+          // speed, not stay off. This is the one place fallback floor
+          // semantics differ from fanN_safety_floor semantics, where off
+          // always means off.
+          if (id(fallback_floor) <= 0.0f) {
+            return;
+          }
+          if (${fallback_port1}) {
+            bool on1 = id(fan1).state;
+            float speed1 = on1 ? (float)id(fan1).speed : 0.0f;
+            if (!on1 || speed1 < id(fallback_floor)) {
+              auto call1 = id(fan1).turn_on();
+              call1.set_speed(id(fallback_floor));
+              call1.perform();
+            }
+          }
+          if (${fallback_port2}) {
+            bool on2 = id(fan2).state;
+            float speed2 = on2 ? (float)id(fan2).speed : 0.0f;
+            if (!on2 || speed2 < id(fallback_floor)) {
+              auto call2 = id(fan2).turn_on();
+              call2.set_speed(id(fallback_floor));
+              call2.perform();
+            }
+          }
+          if (${fallback_port3}) {
+            bool on3 = id(fan3).state;
+            float speed3 = on3 ? (float)id(fan3).speed : 0.0f;
+            if (!on3 || speed3 < id(fallback_floor)) {
+              auto call3 = id(fan3).turn_on();
+              call3.set_speed(id(fallback_floor));
+              call3.perform();
+            }
+          }
+          if (${fallback_port4}) {
+            bool on4 = id(fan4).state;
+            float speed4 = on4 ? (float)id(fan4).speed : 0.0f;
+            if (!on4 || speed4 < id(fallback_floor)) {
+              auto call4 = id(fan4).turn_on();
+              call4.set_speed(id(fallback_floor));
+              call4.perform();
+            }
+          }
+
+button:
+  - platform: template
+    name: "${friendly_name} Supervision Pet"
+    id: fallback_pet_button
+    entity_category: diagnostic
+    icon: mdi:paw
+    on_press:
+      - lambda: |-
+          // Close any open episode first, counted as a fallback episode if
+          // it escalated, otherwise as a margin episode. A margin-low event
+          // is only recorded when the episode did NOT escalate to fallback,
+          // otherwise every fallback also latches a margin warning.
+          if (id(sup_ep_fallback)) {
+            id(sup_fb_count)++;
+            id(sup_fb_latched) = true;
+          } else if (id(sup_ep_margin)) {
+            id(sup_margin_count)++;
+            id(sup_margin_latched) = true;
+          }
+          id(sup_ep_margin) = false;
+          id(sup_ep_fallback) = false;
+
+          id(sup_alive) = ${sup_alive_init};
+
+          // sup_release is trivially satisfied by a full-increment pet
+          // today. Kept as an explicit check anyway: it documents intent
+          // and protects a future partial-increment pet scheme from
+          // silently breaking release behaviour.
+          if (id(fallback_active) && id(sup_alive) >= ${sup_release}) {
+            id(fallback_active) = false;
+            id(fallback_floor) = 0.0f;
+            id(apply_output).execute();
+          }
+
+  - platform: template
+    name: "${friendly_name} Reset Supervision Latches"
+    id: fallback_reset_button
+    entity_category: diagnostic
+    icon: mdi:lock-reset
+    on_press:
+      - lambda: |-
+          // Clears the diagnostic latches and counters only. Must not
+          // touch sup_alive, fallback_active or fallback_floor.
+          id(sup_margin_latched) = false;
+          id(sup_fb_latched) = false;
+          id(sup_margin_count) = 0;
+          id(sup_fb_count) = 0;
+          id(sup_alive_min) = 32767;
+
+binary_sensor:
+  - platform: template
+    name: "${friendly_name} Fallback Active"
+    id: fallback_active_sensor
+    device_class: problem
+    # No entity_category: the only non-diagnostic entity in this module, and
+    # the natural automation trigger.
+  - platform: template
+    name: "${friendly_name} Fallback Triggered"
+    id: fallback_triggered_sensor
+    entity_category: diagnostic
+  - platform: template
+    name: "${friendly_name} Margin Low"
+    id: fallback_margin_low_sensor
+    entity_category: diagnostic
+    # Deliberately no device_class: problem. This is a hint, not a problem.
+
+text_sensor:
+  - platform: template
+    name: "${friendly_name} Supervision State"
+    id: fallback_state_text
+    entity_category: diagnostic
+
+sensor:
+  - platform: template
+    name: "${friendly_name} Supervision Margin"
+    id: fallback_margin
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: template
+    name: "${friendly_name} Supervision Margin Min"
+    id: fallback_margin_min
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: template
+    name: "${friendly_name} Margin Low Events"
+    id: fallback_margin_events
+    entity_category: diagnostic
+    accuracy_decimals: 0
+  - platform: template
+    name: "${friendly_name} Fallback Events"
+    id: fallback_events
+    entity_category: diagnostic
+    accuracy_decimals: 0
+
+esphome:
+  on_boot:
+    - then:
+        - lambda: |-
+            // Publish initial states to avoid "Unavailable" in Home Assistant
+            id(fallback_active_sensor).publish_state(false);
+            id(fallback_triggered_sensor).publish_state(false);
+            id(fallback_margin_low_sensor).publish_state(false);
+            id(fallback_state_text).publish_state("OK");
+            id(fallback_margin).publish_state(id(sup_alive));
+            id(fallback_margin_min).publish_state(id(sup_alive_min));
+            id(fallback_margin_events).publish_state(id(sup_margin_count));
+            id(fallback_events).publish_state(id(sup_fb_count));
+            ESP_LOGI("fallback_mode", "Fallback mode initialized");
+
+interval:
+  - id: fallback_supervision_interval
+    interval: ${sup_cycle}
+    then:
+      - lambda: |-
+          // Decrement, floored at 0 so a long outage cannot underflow.
+          if (id(sup_alive) > 0) id(sup_alive)--;
+          if (id(sup_alive) < id(sup_alive_min)) id(sup_alive_min) = id(sup_alive);
+
+          if (id(sup_alive) <= ${sup_thr_margin}) {
+            id(sup_ep_margin) = true;
+          }
+
+          if (id(sup_alive) <= ${sup_thr_fallback} && !id(fallback_active)) {
+            id(sup_ep_fallback) = true;
+            id(fallback_active) = true;
+            id(fallback_floor) = ${fallback_pwm};
+            id(apply_output).execute();
+          }
+
+          // Unconditional re-assertion: while fallback is active, a writer
+          // that commanded below the floor between cycles is lifted back
+          // within this one cycle. This bounded latency is the honest
+          // limit of arbitration; it is not instantaneous.
+          if (id(fallback_active)) {
+            id(apply_output).execute();
+          }
+
+          // Publish state text and sensors
+          if (id(sup_alive) <= ${sup_thr_fallback}) {
+            id(fallback_state_text).publish_state("FALLBACK");
+          } else if (id(sup_alive) <= ${sup_thr_margin}) {
+            id(fallback_state_text).publish_state("MARGIN_LOW");
+          } else {
+            id(fallback_state_text).publish_state("OK");
+          }
+          id(fallback_margin).publish_state(id(sup_alive));
+          id(fallback_margin_min).publish_state(id(sup_alive_min));
+          id(fallback_margin_events).publish_state(id(sup_margin_count));
+          id(fallback_events).publish_state(id(sup_fb_count));
+          id(fallback_active_sensor).publish_state(id(fallback_active));
+          id(fallback_triggered_sensor).publish_state(id(sup_fb_latched));
+          id(fallback_margin_low_sensor).publish_state(id(sup_margin_latched));
