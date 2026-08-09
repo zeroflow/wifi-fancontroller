@@ -1,0 +1,90 @@
+blueprint:
+  name: Fancontroller Supervision Pet
+  description: >
+    Pets a WiFi Fan Controller's Supervision Pet button on a fixed interval,
+    but only while the upstream data source this automation feeds from is
+    fresh. If the source sensor goes unknown, unavailable, or stops updating,
+    the pet stops and the board's own fallback mode takes over on its own
+    deadline.
+
+    This is an availability feature, not a protective function: it keeps
+    fans running at a known speed instead of holding a stale value forever
+    when Home Assistant or its upstream data dies. It does not ensure that
+    cooling occurs. See the fallback mode docs page for the full scope and
+    limits: https://fancontroller.arthofer.dev/reference/modules/fallback-mode/
+
+    Two requirements this automation depends on:
+
+    1. The paired firmware module (modules/fallback_mode.yaml) must be
+    compiled with a sup_cycle and thresholds sized for the same pet interval
+    chosen below. Changing the interval here without recompiling the board
+    changes the margin the module was sized for.
+
+    2. The consuming firmware config must set api: reboot_timeout: 0s, or the
+    board reboots after 15 minutes without a connected client and takes the
+    fallback down with it, at exactly the moment it would be needed.
+  domain: automation
+  input:
+    source_sensor:
+      name: Source Sensor
+      description: >
+        The upstream data source whose freshness gates the pet, for example
+        the sensor Home Assistant reads to compute the fan setpoint. If this
+        sensor goes stale, the pet stops even while Home Assistant and the
+        board's API connection stay healthy.
+      selector:
+        entity:
+          domain: sensor
+    staleness_limit:
+      name: Staleness Limit
+      description: >
+        Maximum age, in seconds, of the source sensor's last update before
+        the pet is withheld.
+      default: 120
+      selector:
+        number:
+          min: 30
+          max: 600
+          unit_of_measurement: seconds
+          mode: box
+    pet_button:
+      name: Pet Button
+      description: The board's Supervision Pet button entity.
+      selector:
+        entity:
+          domain: button
+    pet_interval_pattern:
+      name: Pet Interval Pattern
+      description: >
+        How often to attempt a pet. Consumed directly as the time_pattern
+        seconds field, so it must match the interval the firmware module was
+        compiled for.
+      default: "/30"
+      selector:
+        select:
+          options:
+            - "/15"
+            - "/30"
+            - "/60"
+
+variables:
+  source_sensor: !input source_sensor
+  staleness_limit: !input staleness_limit
+
+trigger:
+  - platform: time_pattern
+    seconds: !input pet_interval_pattern
+
+condition:
+  - condition: template
+    value_template: >
+      {{ states(source_sensor) not in ['unknown', 'unavailable', 'none'] and
+         (now() - states[source_sensor].last_updated).total_seconds() < staleness_limit }}
+
+action:
+  - service: button.press
+    target:
+      entity_id: !input pet_button
+
+mode: single
+max_exceeded: silent

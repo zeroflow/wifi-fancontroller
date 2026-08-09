@@ -1,0 +1,79 @@
+# Example: Hardware Rev 3.3 with Fallback Mode
+#
+# This example shows how to use the fallback_mode module to keep fans running
+# at a known speed when the Home Assistant control loop dies. It ships the
+# single validated preset documented on the module's reference page: a 30
+# second pet interval from the paired Home Assistant blueprint
+# (fancontroller_supervision_pet.yaml), matched to sup_cycle: 5s and the
+# thresholds below.
+#
+# This is an availability feature, not a protective function. See
+# /reference/modules/fallback-mode/ for the full scope statement, the failure
+# modes not covered, and the entity reference.
+
+packages:
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.3.yaml]
+  fallback_mode:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/fallback_mode.yaml
+        vars:
+          friendly_name: "My Fan Controller"
+          sup_cycle: "5s"
+          sup_alive_init: "20"
+          sup_thr_margin: "12"
+          sup_thr_fallback: "4"
+          sup_release: "12"
+          fallback_pwm: "80"
+
+esphome:
+  name: my-fancontroller
+  friendly_name: My Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API.
+#
+# reboot_timeout: 0s is required (R1). ESPHome's default is 15 minutes: with
+# no client connected the board reboots, which would kill the fallback at
+# exactly the moment it is needed. wifi: reboot_timeout is deliberately left
+# at its default below, so a wedged WiFi stack is still caught.
+api:
+  reboot_timeout: 0s
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# How to use:
+# 1. Flash this config to your fan controller
+# 2. In Home Assistant, import the blueprint at
+#    blueprints/automation/zeroflow_fancontroller/fancontroller_supervision_pet.yaml
+#    and create the pet automation, pointed at your upstream data source and
+#    this board's Supervision Pet button
+# 3. Watch the Fallback Active binary sensor; it is the natural automation
+#    trigger for a notification
+# 4. Read Supervision Margin Min after a few days to judge how much headroom
+#    your pet interval actually has
