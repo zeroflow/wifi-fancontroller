@@ -83,6 +83,7 @@ Either way, `packages:` changes from a remote URL to a local `!include`. The sin
 ```yaml
 # Passes NO vars: every substitution silently falls back to its module
 # default. Fine only if every default is already what you want.
+# The path is an example: point it at wherever the file sits on your system.
 packages:
   temperature_linear: !include modules/temperature_linear.yaml
 ```
@@ -90,6 +91,7 @@ packages:
 If you need to set even one variable, the mapping form with `file:` and `vars:` is the correct shape:
 
 ```yaml
+# The paths are examples: point them at wherever the files sit on your system.
 packages:
   hardware: !include hardware-rev-3.1.yaml
   temperature_linear: !include
