@@ -878,9 +878,9 @@ sensor:
       //
       // All three axes are scanned, not just the active one, so the warning
       // sensor tells you about a profile you have misconfigured but not yet
-      // selected. Only the ACTIVE profile's axis forces the fans to 100%,
-      // further down: a broken profile sitting idle must not run your fans
-      // flat out, but the profile actually in control must fail loud.
+      // selected. Only the ACTIVE profile's axis triggers the failsafe,
+      // further down: a broken profile sitting idle must not disturb your
+      // fans, but the profile actually in control must fail loud.
       bool prev_bad[3] = {
         id(curve_a_axis_bad),
         id(curve_b_axis_bad),
@@ -925,7 +925,7 @@ sensor:
       id(curve_axis_warning) = axis_bad[0] || axis_bad[1] || axis_bad[2];
 
       // Separate edge log for the failsafe itself, because "profile B is
-      // misconfigured" and "the fans are being forced to 100% right now" are
+      // misconfigured" and "the fans are in the failsafe right now" are
       // different events and can happen minutes apart.
       if (axis_bad[profile] && !id(curve_axis_fault)) {
         if (failsafe_hold && id(curve_last_output_valid)) {
@@ -966,7 +966,9 @@ sensor:
       // whenever its Home Assistant entity is unavailable, restarting, or has
       // simply not sent its first state yet, so a brief NAN is normal and must
       // not disturb the fans. Ride it out on the last good reading for 60 s,
-      // then fail loud at 100% rather than drifting on stale data forever.
+      // then fail loud into the configured failsafe rather than drifting on
+      // stale data forever. In "hold" mode the ride-out has no expiry, which
+      // is the whole point of that mode.
       const uint32_t hold_window_ms = 60000;
       if (isnan(temp)) {
         uint32_t now = millis();
