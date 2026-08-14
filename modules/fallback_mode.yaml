@@ -42,6 +42,12 @@
 # cycle while fallback is active, so the floor wins back within one
 # sup_cycle, not immediately.
 #
+# GRAPHING: the four numeric diagnostic sensors (Supervision Margin,
+# Supervision Margin Min, Margin Low Events, Fallback Events) carry a
+# unit_of_measurement and a state_class. Without either attribute Home
+# Assistant classifies the entity as non numeric, and its history view
+# renders it as a strip of discrete state labels rather than as a line.
+#
 # INCOMPATIBLE WITH rpm_pi_control. rpm_pi_control writes pwm_fanN directly,
 # bypassing the fan entity this module writes through, so a fan entity floor
 # cannot constrain it. Do not combine the two.
@@ -252,21 +258,29 @@ sensor:
     name: "${friendly_name} Supervision Margin"
     id: fallback_margin
     entity_category: diagnostic
+    unit_of_measurement: "cycles"
+    state_class: measurement
     accuracy_decimals: 0
   - platform: template
     name: "${friendly_name} Supervision Margin Min"
     id: fallback_margin_min
     entity_category: diagnostic
+    unit_of_measurement: "cycles"
+    state_class: measurement
     accuracy_decimals: 0
   - platform: template
     name: "${friendly_name} Margin Low Events"
     id: fallback_margin_events
     entity_category: diagnostic
+    unit_of_measurement: "events"
+    state_class: total_increasing
     accuracy_decimals: 0
   - platform: template
     name: "${friendly_name} Fallback Events"
     id: fallback_events
     entity_category: diagnostic
+    unit_of_measurement: "events"
+    state_class: total_increasing
     accuracy_decimals: 0
 
 esphome:
