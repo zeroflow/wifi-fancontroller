@@ -64,7 +64,7 @@ If you see that, check the spelling of your sensor ids first. The value must be 
 
 A sensor reads NAN whenever it has no value, which for a `platform: homeassistant` sensor happens while the Home Assistant entity is unavailable, while HA restarts, or simply before the first state arrives. A brief NAN is normal and must not disturb the fans.
 
-The module holds the last good reading for 60 seconds and keeps controlling from it. If the sensor has still not recovered by then, it forces every fan to 100% until it does. Entry into the hold, expiry into the failsafe, and recovery are each logged at warning level.
+The module holds the last good reading for 60 seconds and keeps controlling from it. If the sensor has still not recovered by then, it triggers the failsafe. In `hold` mode the 60 second window does not expire; control simply continues from the last good reading until the sensor returns. Entry into the hold, expiry into the failsafe (or the fault condition persisting, in `hold` mode), and recovery are each logged at warning level.
 
 Switching profiles discards the held value. Holding one profile's flow temperature and feeding it into another profile's ambient curve would produce a plausible looking but wrong speed.
 
@@ -72,10 +72,10 @@ Switching profiles discards the held value. Holding one profile's flow temperatu
 
 The module never sorts your points at runtime. For every profile, point 1 must be the coldest and point 5 the warmest.
 
-:::danger[An unordered axis forces the fans to 100%, but only while that profile is active]
+:::danger[An unordered axis is a hard configuration fault, but only while that profile is active]
 If any temperature point is not strictly greater than the one before it, the board logs a warning naming the offending profile and raises the **Curve Configuration Warning** sensor. All three axes are checked every cycle, so you find out about a profile you have misconfigured but not yet selected.
 
-The failsafe is narrower than the warning. The fans are forced to 100% only while the broken profile is the **active** one. A misconfigured profile sitting idle must not run your fans flat out, but the profile actually in control has to fail loud, because interpolating over an unordered axis produces meaningless speeds.
+The failsafe is narrower than the warning. It triggers only while the broken profile is the **active** one, and what it actually does is set by `curve_failsafe_mode` and `curve_failsafe_speed`, defaulting to 100%. A misconfigured profile sitting idle must not run your fans flat out, but the profile actually in control has to fail loud, because interpolating over an unordered axis produces meaningless speeds.
 
 This is checked against the values actually in use, so it also catches an axis you put out of order by editing the number entities in Home Assistant. Fixing the order restores normal control within a few seconds. No reboot needed.
 :::
@@ -158,8 +158,16 @@ There is no workaround today; it is tracked upstream as [esphome/feature-request
 | `curve_c_speed3` | `"80.0"` | Profile C fan speed at point 3 (%) |
 | `curve_c_speed4` | `"95.0"` | Profile C fan speed at point 4 (%) |
 | `curve_c_speed5` | `"100.0"` | Profile C fan speed at point 5 (%) |
+| `curve_failsafe_speed` | `"100.0"` | Fan speed (%) the failsafe commands |
+| `curve_failsafe_mode` | `"speed"` | `speed` or `hold` |
 
 All three axes default to the same 20 to 40 C band, so a config that sets nothing but the speeds behaves like the shared-axis module.
+
+Leaving `curve_failsafe_speed` and `curve_failsafe_mode` at their defaults is exactly the behaviour of every earlier version of this module. `hold` keeps controlling from the last good reading when the source sensor is gone, and keeps the last commanded speed when the active profile's axis is unordered. `hold` falls back to `curve_failsafe_speed` whenever there is nothing yet to hold, which is the case right after a boot or right after a profile switch.
+
+:::caution[Lower the failsafe only where a stalled fan is safe]
+Lowering `curve_failsafe_speed` or choosing `hold` is the right call only where a stalled fan cannot cause harm, for example fan arrays on central-heating radiators, where a sensor dropout carries no overheating risk. 100% remains the default precisely because it is the safe assumption for a cooling application.
+:::
 
 ## How It Works
 
@@ -169,7 +177,7 @@ Every 10 seconds it resolves the active profile from the select entity's index p
 
 1. Scans all three live temperature axes, raising the warning sensor and logging the offending profile by name if any is unordered. The logging is edge triggered, so a persistent misconfiguration is logged once when it appears and once when it clears, not every 10 seconds.
 2. Reads the active profile's source sensor, applying the 60 second hold if it is unavailable.
-3. Returns 100% if the active profile's axis is unordered or the hold has expired.
+3. Returns the configured failsafe (`curve_failsafe_speed` and `curve_failsafe_mode`) if the active profile's axis is unordered or the hold has expired.
 4. Otherwise linearly interpolates the active profile's speeds over its own axis. Below the lowest point it holds the first speed; above the highest point it holds the last speed.
 
 The result drives all four fans, gated per fan by the **Auto Control Fan 1** to **Fan 4** switches and by any active user override, and clamped by each fan's safety floor. The floor only applies to non-zero speeds; a commanded 0% always turns the fan off.
