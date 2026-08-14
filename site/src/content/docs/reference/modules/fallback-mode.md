@@ -78,10 +78,22 @@ The consuming firmware config must set `api: reboot_timeout: 0s`. ESPHome's defa
 | Fallback Triggered | `binary_sensor` | diagnostic | Latched: it engaged since boot. |
 | Margin Low | `binary_sensor` | diagnostic | Latched. Not `device_class: problem`, a hint rather than a problem. |
 | Supervision State | `text_sensor` | diagnostic | `OK`, `MARGIN_LOW` or `FALLBACK`. |
-| Supervision Margin | `sensor` | diagnostic | Live alive counter. |
-| Supervision Margin Min | `sensor` | diagnostic | Low water mark since boot or last latch reset. See below. |
-| Margin Low Events | `sensor` | diagnostic | Count of episodes that reached Margin Low without escalating. |
-| Fallback Events | `sensor` | diagnostic | Count of episodes that reached Fallback. |
+| Supervision Margin | `sensor` | diagnostic | Live alive counter, in supervision cycles. `state_class: measurement`. |
+| Supervision Margin Min | `sensor` | diagnostic | Low water mark since boot or last latch reset, in supervision cycles. `state_class: measurement`. See below. |
+| Margin Low Events | `sensor` | diagnostic | Count of episodes that reached Margin Low without escalating. `state_class: total_increasing`. |
+| Fallback Events | `sensor` | diagnostic | Count of episodes that reached Fallback. `state_class: total_increasing`. |
+
+## Graphing the diagnostics
+
+All four numeric diagnostics carry a `unit_of_measurement` and a `state_class`, so Home Assistant treats them as numeric and draws them as line charts.
+
+This matters because Home Assistant sorts an entity into its line chart set only when it has a unit or a state class. An entity with neither falls through to the timeline strip, which renders each value as a discrete state label. That is why an earlier version of this module showed the margin as a text state such as `12.0`.
+
+The two margin sensors, Supervision Margin and Supervision Margin Min, use `state_class: measurement` in `cycles`, the class for a level that rises and falls. Home Assistant records min, mean and max statistics for them.
+
+The two event counters, Margin Low Events and Fallback Events, use `state_class: total_increasing` in `events`, the class for a counter that only climbs and occasionally returns to zero. Both a reboot and a Reset Supervision Latches press send the counter back to 0, and Home Assistant reads that drop as a meter reset rather than as a negative jump, so the accumulated total survives in long term statistics.
+
+Supervision State stays a `text_sensor`. Its three values, `OK`, `MARGIN_LOW` and `FALLBACK`, are categorical, and the timeline strip is the right rendering for them.
 
 ## Reading Supervision Margin Min
 
@@ -90,7 +102,7 @@ Supervision Margin Min is the most useful number in the set. Against the shipped
 - A minimum of 11 is noise.
 - A minimum of 5 means the pet interval is running on almost no margin, and should be halved before it bites.
 
-Read the event counters the same way: a board with 40 fallback or margin low events in a week has a WiFi problem, not a Home Assistant problem.
+Read the event counters the same way: a board with 40 fallback or margin low events in a week has a WiFi problem, not a Home Assistant problem. With `total_increasing` set, Home Assistant's own statistics answer that question directly: put either counter on a Statistics graph card and read the weekly sum.
 
 ## The boot episode
 
