@@ -71,9 +71,13 @@
 #   A sensor can report NAN, most commonly a platform: homeassistant sensor
 #   whose Home Assistant entity is unavailable or has not arrived yet. When the
 #   active profile's sensor reads NAN the module holds the last valid reading
-#   for 60 seconds and keeps controlling from it. If the sensor has still not
-#   recovered by then, it forces every fan to 100% until it does. Entry into
-#   the hold, expiry into the failsafe, and recovery are each logged at WARN.
+#   for 60 seconds and keeps controlling from it. What happens next is set by
+#   curve_failsafe_mode: in the default "speed" mode the module commands
+#   curve_failsafe_speed (default "100.0", reproducing the original behaviour)
+#   until the sensor returns. In "hold" mode the 60 second window never
+#   expires and control simply continues from the last good reading
+#   indefinitely. Entry into the hold, the fault condition persisting past the
+#   window, and recovery are each logged at WARN.
 #
 #   Switching profiles discards the held value. Holding one profile's flow
 #   temperature and feeding it into another profile's ambient curve would
@@ -81,12 +85,25 @@
 #
 # Configuration validation at boot, two severity levels:
 #   - Temperature axis not strictly ascending is a hard fault. It logs a
-#     warning, raises the configuration warning sensor, and forces every fan to
-#     100% until the configuration is corrected. Failing loud is safe for a fan
-#     controller; failing silent is not.
+#     warning, raises the configuration warning sensor, and triggers the
+#     failsafe until the configuration is corrected: curve_failsafe_speed in
+#     "speed" mode (default 100%), or the last curve-derived speed in "hold"
+#     mode, falling back to curve_failsafe_speed if nothing has been commanded
+#     yet. Failing loud is safe for a fan controller; failing silent is not.
 #   - Speeds that do not rise monotonically with temperature are informational
 #     only. A deliberate quiet band is a legitimate profile, so this raises the
 #     warning sensor but never triggers the failsafe.
+#
+# Configurable failsafe:
+#   curve_failsafe_speed (default "100.0") and curve_failsafe_mode (default
+#   "speed", or "hold") control what both failsafe sites above actually do.
+#   The defaults reproduce the original behaviour exactly: force every fan to
+#   100% the moment either fault is active. Setting curve_failsafe_speed
+#   changes the commanded percentage in "speed" mode. Setting
+#   curve_failsafe_mode to "hold" keeps the module riding the last good
+#   reading on the sensor path and the last commanded speed on the axis path,
+#   falling back to curve_failsafe_speed only when there is nothing yet to
+#   hold, such as right after boot or right after a profile switch.
 #
 # Component IDs are fixed literals and are never derived from the name
 # substitutions, so renaming a profile leaves every lambda intact. Note that
@@ -142,6 +159,14 @@ substitutions:
   curve_c_speed3: "80.0"
   curve_c_speed4: "95.0"
   curve_c_speed5: "100.0"
+  # Configurable failsafe. These defaults reproduce the original hard-wired
+  # behaviour: force every fan to 100% the moment either failsafe site
+  # triggers. curve_failsafe_speed is a percentage. curve_failsafe_mode
+  # "hold" means the module keeps commanding what it was last commanding
+  # instead of jumping to a fixed speed, falling back to curve_failsafe_speed
+  # when there is nothing yet to hold.
+  curve_failsafe_speed: "100.0"
+  curve_failsafe_mode: "speed"
 
 # Configuration validation flags.
 #   curve_config_warning: a profile's speeds dip as temperature rises.
@@ -164,12 +189,21 @@ substitutions:
 #                         surviving into a global initializer.
 #   curve_temp_stale_since: millis() when the sensor first went NAN, 0 when it
 #                         is healthy. The hold window is measured from here.
-#   curve_temp_hold_fault: the hold window expired and the fans are being
-#                         forced to 100%. Edge flag, so the WARN is logged once
-#                         rather than every 10 seconds.
+#   curve_temp_hold_fault: the sensor has been unavailable long enough that the
+#                         failsafe is active (speed mode) or would be if hold
+#                         had nothing to ride on (hold mode). Edge flag, so the
+#                         WARN is logged once rather than every 10 seconds.
 #   curve_last_profile:   the profile index the held reading came from, -1
 #                         before the first evaluation. A profile switch may
 #                         change the source sensor, which invalidates the hold.
+#   curve_last_output:    the last speed the curve itself produced. Written
+#                         only on the curve-derived return path, never by a
+#                         failsafe return, so hold mode never latches onto a
+#                         failsafe value.
+#   curve_last_output_valid: whether curve_last_output has ever been set.
+#                         False right after boot and right after a profile
+#                         switch, so hold mode falls back to
+#                         curve_failsafe_speed while this is false.
 globals:
   - id: curve_config_warning
     type: bool
@@ -199,6 +233,14 @@ globals:
     type: int
     restore_value: no
     initial_value: '-1'
+  - id: curve_last_output
+    type: float
+    restore_value: no
+    initial_value: '0.0'
+  - id: curve_last_output_valid
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 # Check all three profiles at boot.
 #
@@ -239,6 +281,24 @@ esphome:
 
             if (speeds_ok) {
               ESP_LOGI("temperature_curve_triple", "All three profiles validated OK");
+            }
+
+            // Configurable failsafe: validate the two substitutions once at
+            // boot. Log only, never clamp, because a silent value change is
+            // worse than a visible complaint.
+            std::string failsafe_mode_str = "${curve_failsafe_mode}";
+            if (failsafe_mode_str != "speed" && failsafe_mode_str != "hold") {
+              ESP_LOGW("temperature_curve_triple",
+                "curve_failsafe_mode value \"%s\" is not recognised. Treating "
+                "it as \"speed\".",
+                failsafe_mode_str.c_str());
+            }
+            float boot_failsafe_speed_pct = ${curve_failsafe_speed};
+            if (boot_failsafe_speed_pct < 0.0 || boot_failsafe_speed_pct > 100.0) {
+              ESP_LOGW("temperature_curve_triple",
+                "curve_failsafe_speed (%.1f) is outside the 0 to 100 percent "
+                "range.",
+                boot_failsafe_speed_pct);
             }
 
 number:
@@ -555,6 +615,15 @@ sensor:
     accuracy_decimals: 1
     update_interval: 10s
     lambda: |-
+      // Configurable failsafe locals. The float local is load bearing, not
+      // cosmetic: the substitution value is bare text, so a user writing
+      // "40" would otherwise be an int handed to a %f conversion in the log
+      // calls below, which is undefined behaviour. Every log argument and
+      // every failsafe return uses failsafe_speed_pct, never the
+      // substitution directly.
+      const float failsafe_speed_pct = ${curve_failsafe_speed};
+      const bool failsafe_hold = (std::string("${curve_failsafe_mode}") == "hold");
+
       // Dispatch on the select index rather than the option string, so that
       // renaming a profile cannot break selection. An empty optional (no
       // option active yet) falls back to profile A.
@@ -598,23 +667,47 @@ sensor:
         uint32_t now = millis();
         if (id(curve_temp_stale_since) == 0) {
           id(curve_temp_stale_since) = now;
-          ESP_LOGW("temperature_curve_triple",
-            "Source sensor for profile %s is unavailable. Holding the last "
-            "reading for up to %u s.",
-            profile_names[profile], hold_window_ms / 1000);
+          if (failsafe_hold) {
+            ESP_LOGW("temperature_curve_triple",
+              "Source sensor for profile %s is unavailable. Failsafe mode is "
+              "hold, so control continues from the last good reading until "
+              "it returns.",
+              profile_names[profile]);
+          } else {
+            ESP_LOGW("temperature_curve_triple",
+              "Source sensor for profile %s is unavailable. Holding the last "
+              "reading for up to %u s.",
+              profile_names[profile], hold_window_ms / 1000);
+          }
         }
-        if (id(curve_last_temp_valid) &&
-            (now - id(curve_temp_stale_since)) < hold_window_ms) {
+        bool within_window = (now - id(curve_temp_stale_since)) < hold_window_ms;
+        if (id(curve_last_temp_valid) && (within_window || failsafe_hold)) {
           temp = id(curve_last_temp);
-        } else {
-          if (!id(curve_temp_hold_fault)) {
+          if (failsafe_hold && !within_window && !id(curve_temp_hold_fault)) {
             ESP_LOGW("temperature_curve_triple",
               "FAULT: source sensor for profile %s still unavailable after "
-              "%u s. Running fans at 100%% until it returns.",
-              profile_names[profile], hold_window_ms / 1000);
+              "%u s. Failsafe mode is hold, so control continues from the "
+              "last good reading (%.1f C) until it returns.",
+              profile_names[profile], hold_window_ms / 1000, id(curve_last_temp));
             id(curve_temp_hold_fault) = true;
           }
-          return 100.0;
+        } else {
+          if (!id(curve_temp_hold_fault)) {
+            if (failsafe_hold) {
+              ESP_LOGW("temperature_curve_triple",
+                "FAULT: source sensor for profile %s still unavailable after "
+                "%u s and there is no held reading to fall back on. Running "
+                "fans at %.1f%% until it returns.",
+                profile_names[profile], hold_window_ms / 1000, failsafe_speed_pct);
+            } else {
+              ESP_LOGW("temperature_curve_triple",
+                "FAULT: source sensor for profile %s still unavailable after "
+                "%u s. Running fans at %.1f%% until it returns.",
+                profile_names[profile], hold_window_ms / 1000, failsafe_speed_pct);
+            }
+            id(curve_temp_hold_fault) = true;
+          }
+          return failsafe_speed_pct;
         }
       } else {
         if (id(curve_temp_stale_since) != 0) {
@@ -649,14 +742,36 @@ sensor:
       }
       if (!axis_ok) {
         if (!id(curve_axis_fault)) {
-          ESP_LOGW("temperature_curve_triple",
-            "FAULT: live temperature axis is not strictly ascending "
-            "(%.1f, %.1f, %.1f, %.1f, %.1f). Running fans at 100%% until "
-            "the points are corrected.",
-            temps[0], temps[1], temps[2], temps[3], temps[4]);
+          if (failsafe_hold && id(curve_last_output_valid)) {
+            ESP_LOGW("temperature_curve_triple",
+              "FAULT: live temperature axis is not strictly ascending "
+              "(%.1f, %.1f, %.1f, %.1f, %.1f). Failsafe mode is hold, so the "
+              "last commanded speed (%.1f%%) is held until the points are "
+              "corrected.",
+              temps[0], temps[1], temps[2], temps[3], temps[4],
+              id(curve_last_output));
+          } else if (failsafe_hold) {
+            ESP_LOGW("temperature_curve_triple",
+              "FAULT: live temperature axis is not strictly ascending "
+              "(%.1f, %.1f, %.1f, %.1f, %.1f). Failsafe mode is hold but no "
+              "speed has been commanded yet, so the fans run at %.1f%% "
+              "until the points are corrected.",
+              temps[0], temps[1], temps[2], temps[3], temps[4],
+              failsafe_speed_pct);
+          } else {
+            ESP_LOGW("temperature_curve_triple",
+              "FAULT: live temperature axis is not strictly ascending "
+              "(%.1f, %.1f, %.1f, %.1f, %.1f). Running fans at %.1f%% until "
+              "the points are corrected.",
+              temps[0], temps[1], temps[2], temps[3], temps[4],
+              failsafe_speed_pct);
+          }
         }
         id(curve_axis_fault) = true;
-        return 100.0;
+        if (failsafe_hold && id(curve_last_output_valid)) {
+          return id(curve_last_output);
+        }
+        return failsafe_speed_pct;
       }
       if (id(curve_axis_fault)) {
         ESP_LOGI("temperature_curve_triple",
@@ -688,26 +803,35 @@ sensor:
       // Points are never sorted. They must be entered in ascending order;
       // the live axis check above catches it when they are not.
 
-      // Below first point: use first speed
+      float result = 0.0;
       if (temp <= temps[0]) {
-        return speeds[0];
-      }
-      // Above last point: use last speed
-      if (temp >= temps[4]) {
-        return speeds[4];
-      }
-      // Interpolate between the two surrounding points
-      for (int i = 0; i < 4; i++) {
-        if (temp >= temps[i] && temp <= temps[i+1]) {
-          float temp_range = temps[i+1] - temps[i];
-          if (temp_range <= 0.0001) {
-            return speeds[i];
+        // Below first point: use first speed
+        result = speeds[0];
+      } else if (temp >= temps[4]) {
+        // Above last point: use last speed
+        result = speeds[4];
+      } else {
+        // Interpolate between the two surrounding points
+        for (int i = 0; i < 4; i++) {
+          if (temp >= temps[i] && temp <= temps[i+1]) {
+            float temp_range = temps[i+1] - temps[i];
+            if (temp_range <= 0.0001) {
+              result = speeds[i];
+            } else {
+              float ratio = (temp - temps[i]) / temp_range;
+              result = speeds[i] + ratio * (speeds[i+1] - speeds[i]);
+            }
+            break;
           }
-          float ratio = (temp - temps[i]) / temp_range;
-          return speeds[i] + ratio * (speeds[i+1] - speeds[i]);
         }
       }
-      return 0.0;
+
+      // This is the only place curve_last_output is ever written. The
+      // on_value trigger below also fires for failsafe values, so recording
+      // the output there would poison the held value used by hold mode.
+      id(curve_last_output) = result;
+      id(curve_last_output_valid) = true;
+      return result;
     on_value:
       then:
         - output.set_level:
