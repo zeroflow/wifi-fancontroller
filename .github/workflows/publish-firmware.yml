@@ -8,9 +8,15 @@ permissions:
   contents: write
 
 jobs:
+  # Two independent version lines meet in this file. The @tag on each `uses:`
+  # has to be a tag that actually exists in esphome/workflows, which only tags
+  # a subset of ESPHome releases, and Dependabot keeps those refs current. The
+  # `esphome-version:` input below is the ESPHome release itself. Bumping one
+  # does not imply bumping the other, and pasting an ESPHome version into a
+  # `uses:` tag makes GitHub reject the whole file as invalid.
   build-firmware:
     name: Build Firmware
-    uses: esphome/workflows/.github/workflows/build.yml@2026.7.4
+    uses: esphome/workflows/.github/workflows/build.yml@2026.8.1
     with:
       files: |
         fancontroller-rev1.0-esp32.factory.yaml
@@ -27,7 +33,7 @@ jobs:
 
   upload-to-release:
     name: Upload to Release
-    uses: esphome/workflows/.github/workflows/upload-to-gh-release.yml@2026.7.4
+    uses: esphome/workflows/.github/workflows/upload-to-gh-release.yml@2026.8.1
     needs:
       - build-firmware
     with:
