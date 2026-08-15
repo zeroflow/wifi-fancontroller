@@ -1,0 +1,228 @@
+---
+// Shared print layout for the Rev 3.3 datasheet PDFs.
+//
+// Mirrors the manual pipeline (src/pages/de/manual-print/index.astro): a plain
+// standalone route, NOT wrapped in <StarlightPage>, so it carries none of
+// Starlight's nav/sidebar/search chrome. Unlike the manual there are two
+// language variants, so the shared parts live here and the two routes under
+// src/pages/{,de/}datasheet-print/ stay thin.
+//
+// These routes have no sidebar entry and are linked from nowhere. They exist
+// purely as render targets for scripts/render-datasheet-pdf.mjs, driven by
+// .github/workflows/publish-datasheet.yml. The browsable datasheet lives at
+// /reference/datasheet/ and /de/reference/datasheet/ instead.
+import { getEntry, render } from 'astro:content';
+
+interface Props {
+  /** Content collection id, e.g. 'reference/datasheet' or 'de/reference/datasheet'. */
+  entryId: string;
+  /** Document language, drives <html lang> and the printed strings below. */
+  lang: 'en' | 'de';
+}
+
+const { entryId, lang } = Astro.props;
+
+// Fail the build loudly if the datasheet source is missing, rather than
+// silently emitting an empty PDF or falling back to the other language the way
+// Starlight's own i18n fallback would. Same gate as the manual print route.
+const entry = await getEntry('docs', entryId);
+if (!entry) {
+  throw new Error(
+    `[datasheet-print] Missing datasheet content for "${entryId}". ` +
+      `Add site/src/content/docs/${entryId}.md, or drop the corresponding ` +
+      `route under site/src/pages/ if that language is no longer in scope.`
+  );
+}
+
+const { Content } = await render(entry);
+
+const strings = {
+  en: {
+    product: 'ESP32 WiFi Fan Controller',
+    kicker: 'Datasheet',
+    revision: 'Hardware revision 3.3',
+  },
+  de: {
+    product: 'ESP32 WiFi Lüftersteuerung',
+    kicker: 'Datenblatt',
+    revision: 'Hardware-Revision 3.3',
+  },
+}[lang];
+---
+
+<html lang={lang}>
+  <head>
+    <meta charset="utf-8" />
+    {/*
+      These routes are CI render targets, not pages for readers. The browsable
+      datasheet is /reference/datasheet/ and /de/reference/datasheet/; without
+      this the chrome-less print copies compete with them in search results as
+      duplicate content.
+    */}
+    <meta name="robots" content="noindex, nofollow" />
+    {/*
+      Single expression on purpose: <title> is an HTML raw-text element, so two
+      adjacent expressions get split and everything after the first one is
+      pushed out into the body, where it renders as stray text above the page
+      header. Build the string first, interpolate once.
+    */}
+    <title>{`${strings.kicker}: ${strings.product}`}</title>
+  </head>
+  <body>
+    <header class="datasheet-header">
+      <p class="kicker">{strings.kicker}</p>
+      <h1>{strings.product}</h1>
+      <p class="revision">{strings.revision}</p>
+    </header>
+    <main class="datasheet-body">
+      <Content />
+    </main>
+    {/*
+      The datasheet sources link root-relatively (/reference/compliance/) so the
+      browsable docs pages navigate normally. In a downloaded PDF those hrefs
+      resolve against nothing and the links are dead, so rewrite them to
+      absolute production URLs before Chromium takes the print. Done in the page
+      rather than via <base href>, which would also redirect Astro's own script
+      tag away from the local preview server during the render.
+      Playwright waits for networkidle, so this has run by then.
+    */}
+    <script is:inline>
+      for (const a of document.querySelectorAll('a[href^="/"]')) {
+        a.setAttribute(
+          'href',
+          new URL(a.getAttribute('href'), 'https://fancontroller.arthofer.dev').href
+        );
+      }
+    </script>
+  </body>
+</html>
+
+<style>
+  /*
+    Screen rules keep local preview readable; the @media print rules are what
+    actually governs the Playwright-rendered PDF. Denser than the manual's
+    stylesheet on purpose: a datasheet is mostly tables and should stay
+    compact rather than reading like a booklet.
+  */
+  body {
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: #1a1a1a;
+    background: #fff;
+    margin: 0;
+    padding: 2rem;
+    line-height: 1.45;
+    font-size: 10pt;
+  }
+
+  .datasheet-header {
+    max-width: 48rem;
+    margin: 0 auto 2rem auto;
+    border-bottom: 2px solid #1a1a1a;
+    padding-bottom: 0.75rem;
+  }
+
+  .datasheet-header .kicker {
+    margin: 0;
+    font-size: 9pt;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #555;
+  }
+
+  .datasheet-header h1 {
+    margin: 0.2rem 0;
+    font-size: 20pt;
+    line-height: 1.2;
+  }
+
+  .datasheet-header .revision {
+    margin: 0;
+    font-size: 10pt;
+    color: #555;
+  }
+
+  .datasheet-body {
+    max-width: 48rem;
+    margin: 0 auto;
+  }
+
+  .datasheet-body :global(h2) {
+    font-size: 13pt;
+    margin: 1.4rem 0 0.5rem;
+    border-bottom: 1px solid #ccc;
+    padding-bottom: 0.2rem;
+  }
+
+  .datasheet-body :global(h3) {
+    font-size: 11pt;
+    margin: 1rem 0 0.35rem;
+  }
+
+  /*
+    Starlight's rehype-autolink-headings runs on every content collection entry,
+    including the ones rendered here. Its "Section titled ..." label is only
+    visually hidden by Starlight's own stylesheet, which this standalone route
+    deliberately does not load, so without this rule the label prints as a
+    visible line under every heading.
+  */
+  .datasheet-body :global(.sl-anchor-link) {
+    display: none;
+  }
+
+  .datasheet-body :global(img) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  .datasheet-body :global(table) {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.5rem 0 1rem;
+    font-size: 9pt;
+  }
+
+  .datasheet-body :global(th),
+  .datasheet-body :global(td) {
+    border: 1px solid #ccc;
+    padding: 0.25rem 0.45rem;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .datasheet-body :global(th) {
+    background: #f2f2f2;
+  }
+
+  .datasheet-body :global(code) {
+    font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+    font-size: 0.92em;
+  }
+
+  @media print {
+    body {
+      padding: 0;
+    }
+
+    .datasheet-header,
+    .datasheet-body {
+      max-width: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .datasheet-header {
+      margin-bottom: 1.2rem;
+    }
+
+    /* Keep spec tables and their heading together across page breaks. */
+    .datasheet-body :global(table),
+    .datasheet-body :global(figure) {
+      break-inside: avoid;
+    }
+
+    .datasheet-body :global(h2),
+    .datasheet-body :global(h3) {
+      break-after: avoid;
+    }
+  }
+</style>

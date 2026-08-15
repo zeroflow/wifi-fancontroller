@@ -25,10 +25,17 @@ site/node_modules/
 site/dist/
 site/.astro/
 site/public/firmware/
+# Populated in CI by publish-pages.yml from the latest release's datasheet
+# assets, never committed to source control
+site/public/datasheet/
 
 # 19.1-03: render-manual-pdf.mjs build output - a release-artifact PDF
 # attached by publish-manual.yml (plan 04), never committed to source control
 site/manual.pdf
+
+# render-datasheet-pdf.mjs build output - release-artifact PDFs attached by
+# publish-datasheet.yml, never committed to source control
+site/fancontroller-rev*-datasheet-*.pdf
 
 # Claude
 CLAUDE.md
