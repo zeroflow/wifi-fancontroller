@@ -12,6 +12,8 @@ Luftfeuchte misst und über ESPHome nativ mit Home Assistant zusammenarbeitet.
 Rev 3.1, 3.2 und 3.3 sind elektrisch kompatibel und teilen sich diese Spezifikation. Unterschiede
 zwischen den Unterrevisionen betreffen ausschließlich die Fertigung.
 
+![ESP32-S2 WiFi Lüftersteuerung Rev 3.3, Platinenoberseite mit den vier PWM-Lüfteranschlüssen, dem HDC1080-Sensor für Temperatur und Luftfeuchte, den RGB-Status-LEDs, dem Qwiic-Anschluss, der USB-C-Buchse und der DC-Hohlbuchse](/images/board_rev3.3_front.jpg)
+
 ## Hauptmerkmale
 
 - 4 unabhängige PWM-Lüfterausgänge mit 25 kHz und Signalpufferung
@@ -185,10 +187,21 @@ Fahrzeugen.
 
 ### Firmware-Warnhinweis
 
-Die Platine wird mit werkseitig getesteter Firmware ausgeliefert. Wird die Firmware verändert,
-etwa durch eigene ESPHome-YAML-Konfigurationen, eigene Module oder Firmware von Dritten, erlischt
-die CE-Konformität des Produkts in der ausgelieferten Form, und der Garantieanspruch entfällt für
-Schäden, die auf diese Änderung zurückzuführen sind.
+Die Platine wird mit werkseitig getesteter Firmware ausgeliefert, und die Konformitätserklärung
+bezieht sich auf das Produkt in diesem Zustand. Eigene ESPHome-YAML-Konfigurationen, eigene Module
+oder Firmware von Dritten können die CE-Konformität berühren. Ob sie das tun, hängt davon ab, was
+die Änderung verändert.
+
+Konfigurationen, die sich im dokumentierten Rahmen bewegen, etwa ein geänderter Gerätename, eine
+ergänzte Temperaturkurve oder ein Steuerungsmodul aus diesem Repository, verändern weder das
+funktechnische noch das elektrische Verhalten, auf dem die Bewertung beruht. Änderungen, die
+diesen Rahmen verlassen, insbesondere eine veränderte Sendeleistung, eine von 25 kHz abweichende
+PWM-Ausgangsfrequenz oder der Betrieb der Ausgänge außerhalb der spezifizierten Grenzen, lassen
+die CE-Konformität des Produkts in der ausgelieferten Form erlöschen. Für veränderte Firmware wird
+keine generelle Freigabe erteilt, und die Verantwortung für eine veränderte Konfiguration liegt bei
+der Person, die sie betreibt.
+
+Der Garantieanspruch entfällt für Schäden, die auf eine solche Änderung zurückzuführen sind.
 
 Den vollständigen normativen Wortlaut finden Sie auf der Seite
 [Sicherheit und Konformität](/de/reference/compliance/). Wo dieses Datenblatt und jene Seite

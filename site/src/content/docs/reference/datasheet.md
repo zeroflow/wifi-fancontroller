@@ -12,6 +12,8 @@ integrates natively with Home Assistant through ESPHome.
 Rev 3.1, 3.2 and 3.3 are electrically compatible and share this specification. Sub-revision
 differences are manufacturing improvements only.
 
+![ESP32-S2 WiFi Fan Controller Rev 3.3 PCB front, showing the four PWM fan headers, the HDC1080 temperature and humidity sensor, the RGB status LEDs, the Qwiic port, the USB-C connector and the DC barrel jack](/images/board_rev3.3_front.jpg)
+
 ## Key features
 
 - 4 independent 25 kHz PWM fan outputs with signal buffering
@@ -182,9 +184,19 @@ continuous operation without regular checks, or in vehicles.
 
 ### Firmware notice
 
-The board ships with factory tested firmware. Modifying the firmware, whether through custom
-ESPHome YAML, custom modules or third party firmware, voids the CE conformity of the product
-as delivered and voids warranty claims for damage attributable to that change.
+The board ships with factory tested firmware, and the declaration of conformity covers the
+product in that state. Custom ESPHome YAML, custom modules or third party firmware may affect
+CE conformity, depending on what the change alters.
+
+Configurations that stay within the documented envelope, such as a changed device name, an
+added temperature curve or a control module from this repository, change neither the radio nor
+the electrical behaviour the assessment rests on. Changes that leave it, in particular altering
+radio parameters like transmit power, changing the PWM output frequency away from 25 kHz, or
+operating the outputs outside their specified limits, void CE conformity of the product as
+delivered. No general approval is given for modified firmware, and responsibility for a
+modified configuration rests with whoever operates it.
+
+Warranty claims are void for damage attributable to such a change.
 
 The full normative wording is on the [Safety and Compliance](/reference/compliance/) page. Where
 this datasheet and that page differ, that page applies.
