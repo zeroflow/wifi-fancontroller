@@ -1,0 +1,97 @@
+name: Publish Datasheet
+
+on:
+  release:
+    types: [published]
+  # Dry-run on pull requests that touch the datasheet sources or this pipeline.
+  # publish-pages.yml already catches a build-breaking source error on PRs, but
+  # not a broken render or a failed content check. Without this the first signal
+  # would be a red status on an already-published release. The upload step below
+  # is gated on the release event, so a PR run never publishes anything.
+  pull_request:
+    paths:
+      - 'site/src/content/docs/reference/datasheet.md'
+      - 'site/src/content/docs/de/reference/datasheet.md'
+      - 'site/src/layouts/DatasheetPrint.astro'
+      - 'site/src/pages/datasheet-print/**'
+      - 'site/src/pages/de/datasheet-print/**'
+      - 'site/scripts/render-datasheet-pdf.mjs'
+      - 'site/scripts/verify-datasheet.sh'
+      - '.github/workflows/publish-datasheet.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-upload-datasheet:
+    name: Build and Verify Rev 3.3 Datasheet PDFs (EN + DE)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      # --with-deps is required so Chromium has the OS font packages needed to
+      # render German glyphs (umlauts, sharp s) correctly in the DE datasheet.
+      - name: Install Playwright Chromium
+        working-directory: site
+        run: npx playwright install --with-deps chromium
+
+      # Fails loudly here if either datasheet source is missing: the print
+      # layout throws on a missing content entry rather than emitting an empty
+      # or English-fallback PDF.
+      - name: Build site
+        working-directory: site
+        run: npm run build
+
+      # A failed render fails this whole job. On a release that surfaces as a
+      # red status on the triggering release: `release: published` fires after
+      # the release already exists, so there is no automatic un-publish here.
+      # The red status is the signal, matching publish-manual.yml's posture.
+      #
+      # On a pull request the version and date are dry-run values. They only
+      # reach the printed footer, and the upload step below does not run.
+      - name: Render datasheet PDFs
+        working-directory: site
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || format('pr-{0}-dry-run', github.event.number) }}
+          RELEASE_DATE: ${{ github.event_name == 'release' && github.event.release.published_at || github.event.pull_request.updated_at }}
+        run: |
+          npm run preview -- --port 4321 &
+          npx wait-on http://localhost:4321
+          node scripts/render-datasheet-pdf.mjs
+
+      - name: Install poppler-utils for PDF verification
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Verify rendered datasheets
+        run: bash site/scripts/verify-datasheet.sh
+
+      # publish-pages.yml pulls every asset of the latest release into
+      # site/public/ on its next run, and relocates anything matching
+      # *datasheet*.pdf into site/public/datasheet/. Keep that substring in
+      # these filenames or the PDFs will be served from /firmware/ instead.
+      - name: Upload PDFs to release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            site/fancontroller-rev3.3-datasheet-en.pdf \
+            site/fancontroller-rev3.3-datasheet-de.pdf \
+            --clobber
