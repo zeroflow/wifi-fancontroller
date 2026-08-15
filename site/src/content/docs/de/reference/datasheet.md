@@ -72,6 +72,7 @@ nackte Leiterplatte geliefert und muss in ein schützendes Gehäuse eingebaut we
 | Maximale Bauhöhe über der Platine | 11,0 mm |
 | Maximale Bauhöhe unter der Platine | 2,5 mm |
 | Gesamtabmessungen | 70,0 × 45,0 × 15,1 mm |
+| Gewicht | 17 g Platine, 56 g Platine mit Gehäuse |
 
 Ein STEP-Modell der bestückten Platine liegt im Verzeichnis [`hardware/`](https://github.com/zeroflow/wifi-fancontroller/tree/main/hardware)
 des Repositorys bereit, für Gehäusekonstruktion und die Prüfung von Einbaufreiräumen.

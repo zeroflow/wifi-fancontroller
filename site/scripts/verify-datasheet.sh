@@ -223,6 +223,18 @@ check_specs() {
     fi
   done
 
+  # The two documents are structurally parallel by design: same sections, same
+  # spec tables, same rows. Equal row counts catch a spec added to one language
+  # and forgotten in the other, which is how the two versions silently drift.
+  local en_rows de_rows
+  en_rows=$(echo "$EN_HTML" | grep -oE '<tr[ >]' | wc -l | tr -d ' ')
+  de_rows=$(echo "$DE_HTML" | grep -oE '<tr[ >]' | wc -l | tr -d ' ')
+  if [[ "$en_rows" == "$de_rows" ]]; then
+    pass "specs: EN and DE carry the same number of table rows ($en_rows)"
+  else
+    fail "specs: table row count differs, EN has $en_rows and DE has $de_rows - a spec was added to one language only"
+  fi
+
   if echo "$DE_HTML" | grep -qF "2.5 A"; then
     fail "specs DE: English decimal point found in '2.5 A' - use the German comma"
   else
