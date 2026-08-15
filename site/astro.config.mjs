@@ -41,6 +41,7 @@ export default defineConfig({
           label: 'Reference',
           items: [
             { label: 'Overview', slug: 'reference' },
+            { slug: 'reference/datasheet' },
             { slug: 'reference/compliance' },
             {
               label: 'Hardware',
