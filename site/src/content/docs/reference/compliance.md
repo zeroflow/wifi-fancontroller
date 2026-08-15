@@ -65,3 +65,66 @@ In the factory firmware the buttons are exposed to Home Assistant as binary sens
 their pressed state. They trigger no action on the board itself unless you configure one.
 
 See [USR Buttons](/reference/modules/usr-buttons/) for one ready-made way to assign them.
+
+## Intended use
+
+The WiFi Fan Controller is intended for the following operating conditions:
+
+- Supply from an external 12 V DC SELV power supply, not included
+- Operation in dry indoor locations only
+- Connection of 4-pin PWM fans only
+- Maximum total input current of 2.5 A
+
+The 2.5 A figure is the maximum total input current of the board, set by the DC barrel jack.
+It applies to the sum of all connected fans plus the board electronics. Size the supply to the
+combined draw of the fans you connect, with headroom.
+
+## Explicit exclusions
+
+The WiFi Fan Controller is NOT suitable for, and must not be used in, the following
+applications:
+
+- Safety critical applications (for example personal protection, fire protection, emergency shutdown)
+- Explosive atmospheres
+- Medical applications
+- Operation without an enclosure (open assembly with no protective cover)
+- Unattended continuous operation without regular checks
+- Use in motor vehicles or other vehicles
+
+No suitability is warranted for any of these applications.
+
+## External power supply requirements
+
+The external power supply you provide must meet the following requirements:
+
+- **Voltage:** 12 V DC
+- **Regulation:** regulated switch-mode supply (SMPS), not an unregulated transformer-based supply
+- **Maximum voltage:** must never exceed 15 V under any circumstances, including no load
+- **Marking:** CE marked
+- **Current limiting:** the supply must limit its output current
+- **Polarity:** correct polarity, centre positive (5.5 × 2.1 mm barrel jack)
+
+## Firmware notice
+
+The Fancontroller ships with factory tested firmware. The declaration of conformity covers the
+product in that state. Custom ESPHome YAML, custom modules or third party firmware may affect
+CE conformity. Whether they do depends on what the change alters.
+
+Configurations that stay within the documented envelope change neither the radio behaviour nor
+the electrical behaviour the assessment rests on. These include a changed device name, changed
+update intervals, an added temperature curve or a control module from this repository, and the
+firmware update provided by the manufacturer.
+
+CE conformity of the product as delivered is void, however, for changes that leave the
+documented envelope. These include in particular:
+
+- Altering radio parameters, for example transmit power via `wifi: output_power:`
+- Changing the PWM output frequency away from 25 kHz
+- Operating the outputs outside their specified limits
+- Operation outside the intended use described in this document
+
+Not every possible configuration can be assessed in advance. No general approval is therefore
+given for modified firmware, and responsibility for a modified configuration rests with whoever
+operates it.
+
+Warranty claims are void for damage attributable to such a change.

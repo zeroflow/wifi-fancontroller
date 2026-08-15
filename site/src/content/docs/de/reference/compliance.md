@@ -88,6 +88,19 @@ Das von Ihnen bereitgestellte externe Netzteil muss folgende Anforderungen erfü
 
 ## Firmware-Warnhinweis
 
-Der Fancontroller wird mit werkseitig getesteter Firmware ausgeliefert. Wird die Firmware verändert, etwa durch eigene ESPHome-YAML-Konfigurationen, eigene Module oder Firmware von Dritten, erlischt die CE-Konformität des Produkts in der ausgelieferten Form, und der Garantieanspruch entfällt für Schäden, die auf diese Änderung zurückzuführen sind. Eine solche Änderung stellt eine bestimmungswidrige Verwendung dar (Instruktionswidrigkeit) und kann im Schadensfall als Mitverschulden der Nutzerin oder des Nutzers berücksichtigt werden.
+Der Fancontroller wird mit werkseitig getesteter Firmware ausgeliefert. Die Konformitätserklärung bezieht sich auf das Produkt in diesem Zustand. Eigene ESPHome-YAML-Konfigurationen, eigene Module oder Firmware von Dritten können die CE-Konformität berühren. Ob sie das tun, hängt davon ab, was die Änderung verändert.
+
+Konfigurationen, die sich im dokumentierten Rahmen bewegen, verändern weder das funktechnische noch das elektrische Verhalten, auf dem die Bewertung beruht. Dazu zählen etwa ein geänderter Gerätename, geänderte Aktualisierungsintervalle, eine ergänzte Temperaturkurve oder ein Steuerungsmodul aus diesem Repository sowie das vom Hersteller bereitgestellte Firmware-Update.
+
+Die CE-Konformität des Produkts in der ausgelieferten Form erlischt dagegen bei Änderungen, die den dokumentierten Rahmen verlassen. Dazu zählen insbesondere:
+
+- Veränderung der Funkparameter, etwa der Sendeleistung über `wifi: output_power:`
+- Verstellen der PWM-Ausgangsfrequenz von 25 kHz
+- Betrieb der Ausgänge außerhalb der spezifizierten Grenzen
+- Betrieb außerhalb der bestimmungsgemäßen Verwendung nach diesem Dokument
+
+Nicht jede mögliche Konfiguration lässt sich vorab bewerten. Für veränderte Firmware wird daher keine generelle Freigabe erteilt, und die Verantwortung für eine veränderte Konfiguration liegt bei der Person, die sie betreibt.
+
+Der Garantieanspruch entfällt für Schäden, die auf eine solche Änderung zurückzuführen sind. Eine Änderung, die den dokumentierten Rahmen verlässt, stellt eine bestimmungswidrige Verwendung dar (Instruktionswidrigkeit) und kann im Schadensfall als Mitverschulden der Nutzerin oder des Nutzers berücksichtigt werden.
 
 Dieser Hinweis schränkt die Produkthaftung nach dem Produkthaftungsgesetz nicht vollständig aus; ein solcher genereller Ausschluss wäre nach § 9 ProdHG gegenüber Verbraucherinnen und Verbrauchern unwirksam. Er weist lediglich darauf hin, dass eine Änderung der Firmware außerhalb der bestimmungsgemäßen Verwendung erfolgt und entsprechende Folgen für Konformität, Garantie und die Berücksichtigung eines Mitverschuldens haben kann.
