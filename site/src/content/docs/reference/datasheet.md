@@ -71,6 +71,7 @@ printed circuit assembly and must be installed inside a protective enclosure.
 | Maximum component height above PCB | 11.0 mm |
 | Maximum component height below PCB | 2.5 mm |
 | Overall envelope | 70.0 x 45.0 x 15.1 mm |
+| Weight | 17g PCB, 56g PCB & Case |
 
 A STEP model of the assembled board is available in the [`hardware/`](https://github.com/zeroflow/wifi-fancontroller/tree/main/hardware)
 directory of the repository, for enclosure design and mounting clearance checks.
