@@ -1,0 +1,171 @@
+# WiFi Fan Controller - Revision 3.3 (ESP32-S2) - QC Test Firmware
+#
+# Production test image, flashed before the board leaves the factory. It is not
+# a customer firmware: it has no wifi, no API and no OTA, and it drives the
+# board into a state where a tester can pass or fail it by looking at the LEDs.
+#
+# Three checks, all visual:
+#
+#   1. Fan PWM and tach loop
+#      All four PWM outputs run at 1000 Hz instead of the production 25 kHz and
+#      are started at 50% duty. The pulse counter on the matching tach input
+#      reads that signal back, so a fan LED turning GREEN means "PWM out and
+#      tach in on this channel both work". RED means no signal.
+#      1000 Hz keeps the pulse well clear of the counter's glitch filter, which
+#      a 25 kHz square wave would not.
+#
+#   2. HDC1080 temperature and humidity sensor
+#      Every valid reading (0 °C < t < 85 °C) paints the board status LED dim
+#      PURPLE. A status LED that stays dark means the I2C sensor is not
+#      answering.
+#
+#   3. USR buttons
+#      While held, USR1 turns the status LED RED, USR2 GREEN, USR3 BLUE. The
+#      LED goes dark on release and returns to the purple heartbeat on the next
+#      sensor reading.
+#
+# The board config is expressed as overrides on the shipped hardware package,
+# so a pin or entity change in hardware-rev-3.3.yaml reaches this QC image
+# without anyone having to remember it exists.
+
+packages:
+  # Same hardware definition the customer firmware uses
+  hardware: github://zeroflow/wifi-fancontroller/hardware-rev-3.3.yaml@main
+
+  # Fan LEDs from the tach reading. full_rpm: "500" saturates the module's
+  # red-to-green ramp at the same point the fan LED is meant to flip green, so
+  # any detected tach signal reads as full green and a dead channel stays red.
+  rpm_status_leds:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/rpm_status_leds.yaml
+        vars:
+          full_rpm: "500"
+          brightness: "0.5"
+          update_interval: "1s"
+
+esphome:
+  name: fancontroller-qc-r3-3
+  friendly_name: fancontroller QC
+  # A single image for the whole batch
+  name_add_mac_suffix: true
+  project:
+    name: zeroflow.fancontroller-qc-rev3-3
+    version: "3.3"
+
+  on_boot:
+    # priority -100 runs after the hardware package's own boot trigger, so this
+    # clears its blue pulse rather than racing it. The status LED is then free
+    # for the sensor and button checks alone.
+    - priority: -100
+      then:
+        # Stop the package's boot pulse explicitly. A pulse effect keeps
+        # calling turn_on by itself, so clearing the effect is what actually
+        # hands the status LED over to the QC checks.
+        - lambda: |-
+            auto call = id(status_led).turn_off();
+            call.set_effect("none");
+            call.perform();
+        - delay: 1s
+        # 50% duty. At 100% the output sits high and the tach input sees no
+        # edges at all, which would fail a working channel.
+        - fan.turn_on:
+            id: fan1
+            speed: 50
+        - fan.turn_on:
+            id: fan2
+            speed: 50
+        - fan.turn_on:
+            id: fan3
+            speed: 50
+        - fan.turn_on:
+            id: fan4
+            speed: 50
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# The only channel this image talks on
+logger:
+
+# QC runs over USB. Removing the wifi component also removes the hardware
+# package's on_connect and on_disconnect status LED triggers, which would
+# otherwise fight the sensor and button colours on an unprovisioned board.
+wifi: !remove
+
+# 1000 Hz so the tach can read the PWM back. Production is 25 kHz.
+output:
+  - id: !extend pwm_fan1
+    frequency: "1000 Hz"
+  - id: !extend pwm_fan2
+    frequency: "1000 Hz"
+  - id: !extend pwm_fan3
+    frequency: "1000 Hz"
+  - id: !extend pwm_fan4
+    frequency: "1000 Hz"
+
+sensor:
+  # Purple status LED on every valid HDC1080 reading
+  - id: !extend temperature_sensor
+    update_interval: 5s
+    temperature:
+      on_value:
+        - if:
+            condition:
+              sensor.in_range:
+                id: fancontroller_temperature
+                above: 0.0
+                below: 85.0
+            then:
+              - light.turn_on:
+                  id: status_led
+                  effect: "None"
+                  red: 10%
+                  green: 0%
+                  blue: 10%
+
+binary_sensor:
+  # USR1 - red
+  - id: !extend btn_usr1
+    on_press:
+      - light.turn_on:
+          id: status_led
+          effect: "None"
+          brightness: 50%
+          red: 100%
+          green: 0%
+          blue: 0%
+    on_release:
+      - light.turn_off:
+          id: status_led
+
+  # USR2 - green
+  - id: !extend btn_usr2
+    on_press:
+      - light.turn_on:
+          id: status_led
+          effect: "None"
+          brightness: 50%
+          red: 0%
+          green: 100%
+          blue: 0%
+    on_release:
+      - light.turn_off:
+          id: status_led
+
+  # USR3 - blue
+  - id: !extend btn_usr3
+    on_press:
+      - light.turn_on:
+          id: status_led
+          effect: "None"
+          brightness: 50%
+          red: 0%
+          green: 0%
+          blue: 100%
+    on_release:
+      - light.turn_off:
+          id: status_led
