@@ -25,6 +25,7 @@ jobs:
         fancontroller-rev3.1-esp32s2.factory.yaml
         fancontroller-rev3.2-esp32s2.factory.yaml
         fancontroller-rev3.3-esp32s2.factory.yaml
+        fancontroller-rev3.3-esp32s2.qc.yaml
       esphome-version: 2026.7.4
 
       release-summary: ${{ github.event.release.body }}
