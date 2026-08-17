@@ -120,9 +120,13 @@ The USB-C port provides power to the ESP32-S2 microcontroller only. It cannot po
 
 Every board is tested with a QC firmware before it ships, and that same image is available here. It is a diagnostic build, not a usable controller firmware: it takes no WiFi credentials, joins no network and exposes nothing to Home Assistant. It exercises the hardware and reports the result through the onboard LEDs, so you can tell a genuine hardware fault from a configuration problem without attaching a serial console. Flash it if a fan channel, the sensor or a button seems dead and you want a second opinion before opening an issue.
 
+<Aside type="caution" title="Run the test on USB power only">
+Unplug the 12V supply and power the board from the USB-C port alone for the whole self test. The fan check asks you to bridge two pins on a fan header, and the pin right next to them carries the full 12V rail whenever the barrel jack is connected. USB power is all any of these checks need.
+</Aside>
+
 What it checks, and how to read it:
 
-- **Fan channels.** All four PWM outputs run at 1000 Hz and each tach input reads that signal back. The LED next to a fan header turns green as soon as its channel reports a signal and stays red if nothing comes back.
+- **Fan channels.** Each PWM output runs at 1000 Hz and the tach input beside it reads that signal back. To test a channel, bridge pins 3 and 4 of its fan header, counting from the left, which shorts TACH to PWM. The LED for that header turns green while the bridge is in place and returns to red once you remove it. Repeat for each of the four headers.
 - **Temperature and humidity sensor.** The board status LED shows dim purple on every valid HDC1080 reading, refreshed every 5 seconds. A status LED that stays dark means the sensor is not answering on the I2C bus.
 - **User buttons.** Hold USR1 for a red status LED, USR2 for green, USR3 for blue. The LED goes dark on release and returns to the purple heartbeat.
 
@@ -131,7 +135,7 @@ What it checks, and how to read it:
 The [config is in the repository](https://github.com/zeroflow/wifi-fancontroller/blob/main/fancontroller-rev3.3-esp32s2.qc.yaml) if you would rather read what it does before flashing it.
 
 <Aside type="caution" title="This replaces the firmware on the board">
-Flashing the QC image overwrites whatever is currently on the board, including your ESPHome config and its stored WiFi credentials. When you are done testing, flash the factory firmware above or your own ESPHome build to get back. Note also that the QC image drives the fans at 50% with a 1000 Hz test frequency instead of the usual 25 kHz, so fans may whine or run at an odd speed while it is loaded. That is the test, not a fault.
+Flashing the QC image overwrites whatever is currently on the board, including your ESPHome config and its stored WiFi credentials. When you are done testing, flash the factory firmware above or your own ESPHome build to get back.
 </Aside>
 
 ## ESP32-S2 Pin Assignment
