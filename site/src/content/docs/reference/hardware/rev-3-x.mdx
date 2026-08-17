@@ -116,6 +116,24 @@ Download prebuilt binaries: [Rev 3.1](/firmware/fancontroller-r3-1-esp32s2.facto
 The USB-C port provides power to the ESP32-S2 microcontroller only. It cannot power the fans. Fans require an external 12V DC power supply connected to the DC input jack (5.5x2.1mm).
 </Aside>
 
+## Hardware Self-Test Firmware
+
+Every board is tested with a QC firmware before it ships, and that same image is available here. It is a diagnostic build, not a usable controller firmware: it takes no WiFi credentials, joins no network and exposes nothing to Home Assistant. It exercises the hardware and reports the result through the onboard LEDs, so you can tell a genuine hardware fault from a configuration problem without attaching a serial console. Flash it if a fan channel, the sensor or a button seems dead and you want a second opinion before opening an issue.
+
+What it checks, and how to read it:
+
+- **Fan channels.** All four PWM outputs run at 1000 Hz and each tach input reads that signal back. The LED next to a fan header turns green as soon as its channel reports a signal and stays red if nothing comes back.
+- **Temperature and humidity sensor.** The board status LED shows dim purple on every valid HDC1080 reading, refreshed every 5 seconds. A status LED that stays dark means the sensor is not answering on the I2C bus.
+- **User buttons.** Hold USR1 for a red status LED, USR2 for green, USR3 for blue. The LED goes dark on release and returns to the purple heartbeat.
+
+<FlashButton manifest="/firmware/fancontroller-qc-r3-3.manifest.json" label="Flash QC Test Firmware (Rev 3.1 / 3.2 / 3.3)" />
+
+The [config is in the repository](https://github.com/zeroflow/wifi-fancontroller/blob/main/fancontroller-rev3.3-esp32s2.qc.yaml) if you would rather read what it does before flashing it.
+
+<Aside type="caution" title="This replaces the firmware on the board">
+Flashing the QC image overwrites whatever is currently on the board, including your ESPHome config and its stored WiFi credentials. When you are done testing, flash the factory firmware above or your own ESPHome build to get back. Note also that the QC image drives the fans at 50% with a 1000 Hz test frequency instead of the usual 25 kHz, so fans may whine or run at an odd speed while it is loaded. That is the test, not a fault.
+</Aside>
+
 ## ESP32-S2 Pin Assignment
 
 This pin table applies to all Rev 3.1, 3.2, and 3.3 boards.
