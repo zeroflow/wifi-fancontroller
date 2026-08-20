@@ -213,7 +213,7 @@ binary_sensor:
 light:
   # Status LED Bus (internal, not directly controlled)
   - platform: esp32_rmt_led_strip
-    rgb_order: GRB
+    channel_colors: GRB
     name: "Status LEDs"
     chipset: WS2812
     pin: GPIO01
