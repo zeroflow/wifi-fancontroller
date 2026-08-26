@@ -237,6 +237,10 @@ Lowering it silently redefines the unit for every module that speaks in percenta
 Leave the level count at the hardware default. You already get one percent resolution on the Home Assistant slider and whatever `speed_step` you choose meaning exactly that many percent, at the same time. They were never in conflict.
 :::
 
+One combination that caution does not cover: a Home Assistant slider that snaps in 5 percent steps is the one thing this setup cannot give you today. The slider's own step size comes from the fan's speed level count, not from `speed_step`. A 5 percent snap needs `speed_count: 20`, which is exactly the value the caution above says to avoid, because it is the value that breaks every module's percentage math. `speed_step` only governs how far a button press moves the fan; it has no effect on the slider's granularity in the Home Assistant UI.
+
+Lifting this would mean every module that calls `set_speed` reading the fan's actual level count at runtime, `get_traits().supported_speed_count()`, and converting a percentage to a level before writing it, rather than assuming the level count is 100. At the hardware default that conversion is a no-op, so nothing about an existing configuration would change. It touches all ten speed-setting modules and every example that loads one, which is why it has not been done yet. It is deferred, not overlooked: a known limitation, not a bug waiting to be found on a bench.
+
 ## Sensor offset
 
 ```yaml

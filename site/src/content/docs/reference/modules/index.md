@@ -131,6 +131,10 @@ You can only use **one** temperature control module at a time (PID, Linear, Curv
 **USR Buttons** and **USR Buttons with Auto/Manual Mode** cannot be used together. USR Buttons with Auto/Manual Mode is a superset of USR Buttons and defines the same component ids, so a configuration that loads both fails to validate with a duplicate entity error rather than misbehaving quietly.
 :::
 
+:::caution
+**Ten of these modules assume the fan speed level count stays at its hardware default of 100.** They read and write fan speed as though one level equals one percent, which only holds at that default. Lowering the level count, for example to make the Home Assistant slider snap in coarser steps, silently rescales every percentage these modules compute. See [Speed steps](/reference/modules/usr-buttons-mode/#speed-steps) for the full explanation and what lifting this would take.
+:::
+
 ### Compatibility matrix
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
