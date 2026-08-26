@@ -4,7 +4,7 @@
 # second on a selected fan -- or flipping its Manual Override switch in Home
 # Assistant -- takes that one fan out of the curve's hands and leaves its
 # speed exactly where it was. The other fans keep following the curve. The
-# RGB LEDs show live RPM the rest of the time, with a brief selection color
+# RGB LEDs show live RPM the rest of the time, with a mode-colored indicator
 # while you are choosing a fan on the board.
 #
 # usr_buttons_mode REPLACES usr_buttons. It is a superset that adds the
@@ -134,13 +134,50 @@ sensor:
       filters:
         - offset: 3.0
 
+# temperature_curve ships an "Auto Control Fan N" switch per fan, and
+# usr_buttons_mode ships a "Fan N Manual Override" switch per fan. Both land
+# in Home Assistant, so without this block a customer sees two switches per
+# fan for what is really one decision, and a fan can end up off the curve
+# for a reason the dashboard does not make obvious.
+#
+# internal: true hides the entity from Home Assistant and from the API. It
+# does not remove the object: the switch keeps its restore_mode:
+# RESTORE_DEFAULT_ON, stays on, and temperature_curve's own write_action
+# lambda keeps reading id(auto_control_fanN).state, so automatic control
+# keeps running and the Manual Override switch becomes the single per-fan
+# gate.
+#
+# This lives here, in the example, and not in usr_buttons_mode.yaml, because
+# that module deliberately does not know which temperature module is
+# loaded. temperature_pid names its equivalent switches pid_control_fanN
+# rather than auto_control_fanN, so usr_override_fanN stays the
+# module-neutral interface every temperature module in this project checks.
+# A module that hid another module's entity would have to hard-code that
+# other module's ids.
+#
+# auto_control_fan1 through auto_control_fan4 are top-level ids in
+# temperature_curve's switch: list, the same reason !extend reaches
+# temperature_sensor above.
+switch:
+  - id: !extend auto_control_fan1
+    internal: true
+  - id: !extend auto_control_fan2
+    internal: true
+  - id: !extend auto_control_fan3
+    internal: true
+  - id: !extend auto_control_fan4
+    internal: true
+
 # How to use:
 # 1. Flash this config to your fan controller
-# 2. Press USR2 to select a fan -- its LED lights up blue while selected
+# 2. Press USR2 to select a fan -- its LED lights up while selected, magenta
+#    if that fan is in manual and blue if it is under the curve
 # 3. Press USR1 or USR3 to step that fan's speed up or down -- this also
 #    puts the fan in manual, since you just told it what speed to run at
 # 4. Hold USR2 for about a second to toggle the selected fan between
 #    automatic (the curve drives it) and manual (it holds its speed)
 # 5. In Home Assistant, use the four "Fan N Manual Override" switches to do
 #    the same thing remotely, and "Clear Fan Overrides" to hand all four
-#    fans back to the curve at once
+#    fans back to the curve at once. These are now the only per-fan
+#    switches: the curve's own Auto Control switches are hidden by the
+#    block above
