@@ -87,6 +87,41 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Persisted mirror of the shared usr_override_fanN flags (which are
+  # restore_value: no in the frozen globals.yaml). These four survive a
+  # reboot and are re-asserted into the live flags in the on_boot trigger
+  # below, before any temperature module's first write.
+  - id: usr_mode_fan1
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+  - id: usr_mode_fan2
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+  - id: usr_mode_fan3
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+  - id: usr_mode_fan4
+    type: bool
+    restore_value: true
+    initial_value: 'false'
+
+esphome:
+  on_boot:
+    - priority: -100 # Run late, after every component is set up, and well
+                      # inside temperature_curve's 10s update_interval before
+                      # its output sensor's first write.
+      then:
+        - lambda: |-
+            id(usr_override_fan1) = id(usr_mode_fan1);
+            id(usr_override_fan2) = id(usr_mode_fan2);
+            id(usr_override_fan3) = id(usr_mode_fan3);
+            id(usr_override_fan4) = id(usr_mode_fan4);
+            ESP_LOGI("usr_buttons_mode", "Restored fan modes: %d %d %d %d",
+              id(usr_mode_fan1), id(usr_mode_fan2),
+              id(usr_mode_fan3), id(usr_mode_fan4));
 
 script:
   - id: usr_selection_timeout
@@ -177,6 +212,18 @@ script:
       - delay: 150ms
       - lambda: 'id(auto_led_override) = false;'
 
+  - id: usr_persist_modes
+    mode: single
+    then:
+      - lambda: |-
+          // Mirror the live flags into their persisted twins. This is the
+          // only direction that runs at runtime: live to persisted. The
+          // on_boot trigger above runs the other direction, once, at boot.
+          id(usr_mode_fan1) = id(usr_override_fan1);
+          id(usr_mode_fan2) = id(usr_override_fan2);
+          id(usr_mode_fan3) = id(usr_override_fan3);
+          id(usr_mode_fan4) = id(usr_override_fan4);
+
 # Poll buttons at 50ms for responsive edge detection
 interval:
   - id: usr_button_poll
@@ -221,6 +268,7 @@ interval:
             call.set_speed(speed);
             call.perform();
             *overrides[sel] = true;
+            id(usr_persist_modes).execute();
 
             id(usr_update_leds).execute();
             id(usr_selection_timeout).execute();
@@ -251,6 +299,7 @@ interval:
 
                   bool *overrides[] = {nullptr, &id(usr_override_fan1), &id(usr_override_fan2), &id(usr_override_fan3), &id(usr_override_fan4)};
                   *overrides[sel] = !*overrides[sel];
+                  id(usr_persist_modes).execute();
                   ESP_LOGI("usr_buttons_mode", "USR2 long-press: fan %d mode -> %s", sel, *overrides[sel] ? "manual" : "auto");
 
                   // Consume the selection: the toggle ends selection mode,
@@ -313,6 +362,7 @@ interval:
               call.perform();
             }
             *overrides[sel] = true;
+            id(usr_persist_modes).execute();
 
             id(usr_update_leds).execute();
             id(usr_selection_timeout).execute();
@@ -332,6 +382,7 @@ button:
           id(usr_override_fan3) = false;
           id(usr_override_fan4) = false;
           ESP_LOGI("usr_buttons_mode", "All manual fan overrides cleared");
+      - script.execute: usr_persist_modes
 
 switch:
   - platform: template
@@ -344,9 +395,11 @@ switch:
     turn_on_action:
       - lambda: |-
           id(usr_override_fan1) = true;
+      - script.execute: usr_persist_modes
     turn_off_action:
       - lambda: |-
           id(usr_override_fan1) = false;
+      - script.execute: usr_persist_modes
 
   - platform: template
     name: "${friendly_name} Fan 2 Manual Override"
@@ -358,9 +411,11 @@ switch:
     turn_on_action:
       - lambda: |-
           id(usr_override_fan2) = true;
+      - script.execute: usr_persist_modes
     turn_off_action:
       - lambda: |-
           id(usr_override_fan2) = false;
+      - script.execute: usr_persist_modes
 
   - platform: template
     name: "${friendly_name} Fan 3 Manual Override"
@@ -372,9 +427,11 @@ switch:
     turn_on_action:
       - lambda: |-
           id(usr_override_fan3) = true;
+      - script.execute: usr_persist_modes
     turn_off_action:
       - lambda: |-
           id(usr_override_fan3) = false;
+      - script.execute: usr_persist_modes
 
   - platform: template
     name: "${friendly_name} Fan 4 Manual Override"
@@ -386,6 +443,8 @@ switch:
     turn_on_action:
       - lambda: |-
           id(usr_override_fan4) = true;
+      - script.execute: usr_persist_modes
     turn_off_action:
       - lambda: |-
           id(usr_override_fan4) = false;
+      - script.execute: usr_persist_modes
