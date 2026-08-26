@@ -50,11 +50,12 @@ packages:
       - path: modules/usr_buttons_mode.yaml
         vars:
           friendly_name: "My Fan Controller"
-          # 5% per press. The fan: override block below sets speed_count: 20,
-          # which quantises every fan to five percent steps everywhere it is
-          # set -- the HA slider, a scene, an automation, and these buttons
-          # alike. A 5% button step lands exactly on one quantisation step,
-          # so a press never rounds to a value the fan can't actually hold.
+          # Five percent per press. The fans keep the hardware package's
+          # default of 100 discrete speed levels, so one level is one
+          # percent, and a press moves exactly five percent. Home Assistant
+          # keeps full one percent resolution on its slider at the same
+          # time: the level count is how many values the fan accepts, while
+          # this step is how far one press moves within them.
           speed_step: "5"
           override_timeout: "30s"
 
@@ -97,24 +98,6 @@ wifi:
 
 # Enable captive portal for WiFi setup
 captive_portal:
-
-# Quantise every fan to 5% steps (20 discrete levels instead of the hardware
-# package's default 100). This applies everywhere a fan's speed is set: the
-# Home Assistant slider, a scene, an automation, and the USR buttons alike.
-# One percent steps are not available at the same time as this. It is one or
-# the other. This lives here, in the example, and not in the hardware
-# package: making 20 the package default would silently re-quantise every
-# board already pulling the package from @main, including boards in the
-# middle of a running automation.
-fan:
-  - id: !extend fan1
-    speed_count: 20
-  - id: !extend fan2
-    speed_count: 20
-  - id: !extend fan3
-    speed_count: 20
-  - id: !extend fan4
-    speed_count: 20
 
 # Correct the onboard HDC1080 sensor for self-heating from the board itself.
 # The values below are placeholders, not a calibration to copy: the amount of
