@@ -7,7 +7,9 @@
 #   USR1 (speed up): Increases selected fan speed by speed_step%. Turns fan on if off.
 #                    Clamps to safety floor if stall_guard is active.
 #   USR2 (select): Cycles fan selection (1→2→3→4→1). First press enters selection mode.
-#                  Selected fan LED lights up in selection_color; others turn off.
+#                  The selected fan's LED shows that fan's current mode: magenta if it
+#                  is in manual, selection_color if it is under automatic control. The
+#                  other three LEDs turn off.
 #   USR2 (hold ~1s): Toggles the currently selected fan between automatic
 #                  temperature control and manual control. The toggle ends
 #                  selection mode; it never changes the fan's commanded speed.
@@ -155,12 +157,14 @@ script:
           // Light up selected fan with brightness mapped to speed
           light::LightState *leds[] = {nullptr, id(fan1_led), id(fan2_led), id(fan3_led), id(fan4_led)};
           fan::Fan *fans[] = {nullptr, id(fan1), id(fan2), id(fan3), id(fan4)};
+          bool modes[] = {false, id(usr_override_fan1), id(usr_override_fan2), id(usr_override_fan3), id(usr_override_fan4)};
           if (sel >= 1 && sel <= 4) {
             fan::Fan *f = fans[sel];
             float brightness = 0.2f;
             if (f->state) {
               brightness = 0.2f + (f->speed / 100.0f) * 0.8f;
             }
+            if (modes[sel]) { r = 1.0f; g = 0.0f; b = 1.0f; }
             auto call = leds[sel]->turn_on();
             call.set_transition_length(0);
             call.set_rgb(r, g, b);
@@ -174,9 +178,11 @@ script:
     then:
       - lambda: 'id(auto_led_override) = true;'
       - lambda: |-
-          // Magenta for manual, white for automatic. Neither colour occurs
-          // in the red-to-green RPM gradient rpm_status_leds paints, and
-          // neither is the blue selection indicator.
+          // Magenta means manual, white means automatic. The magenta here is
+          // intentionally the same colour the selection LED shows for a fan
+          // already in manual, so one colour carries one meaning across both
+          // indicators. Neither colour occurs in the red-to-green RPM
+          // gradient rpm_status_leds paints.
           float g = id(usr_mode_flash_manual) ? 0.0f : 1.0f;
           auto c1 = id(fan1_led).turn_on(); c1.set_transition_length(0);
           c1.set_rgb(1.0, g, 1.0); c1.set_brightness(0.6); c1.set_effect("none"); c1.perform();
