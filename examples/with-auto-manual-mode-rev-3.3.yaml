@@ -175,7 +175,9 @@ switch:
 # 3. Press USR1 or USR3 to step that fan's speed up or down -- this also
 #    puts the fan in manual, since you just told it what speed to run at
 # 4. Hold USR2 for about a second to toggle the selected fan between
-#    automatic (the curve drives it) and manual (it holds its speed)
+#    automatic (the curve drives it) and manual (it holds its speed) -- the
+#    fan stays selected afterward, so you can go straight back to step 3 to
+#    set its speed without pressing USR2 again
 # 5. In Home Assistant, use the four "Fan N Manual Override" switches to do
 #    the same thing remotely, and "Clear Fan Overrides" to hand all four
 #    fans back to the curve at once. These are now the only per-fan
