@@ -11,8 +11,11 @@
 #                  is in manual, selection_color if it is under automatic control. The
 #                  other three LEDs turn off.
 #   USR2 (hold ~1s): Toggles the currently selected fan between automatic
-#                  temperature control and manual control. The toggle ends
-#                  selection mode; it never changes the fan's commanded speed.
+#                  temperature control and manual control. The fan stays
+#                  selected and the selection window restarts, so USR1 and
+#                  USR3 can set its speed right away; the LEDs return to the
+#                  selection display after the confirmation flash. The
+#                  toggle never changes the fan's commanded speed.
 #   USR3 (speed down): Decreases selected fan speed by speed_step%. Turns fan off at 0%.
 #
 # Manual speed overrides persist until cleared via HA entities or the clear button.
@@ -82,9 +85,12 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
-  # Carries the mode a fan just landed in from the poll lambda to
-  # usr_mode_flash, which needs it after usr_selected_fan has already
-  # been cleared by the toggle.
+  # Snapshots the mode a fan just landed in at toggle time, so
+  # usr_mode_flash reports the toggle that actually happened. Reading this
+  # snapshot rather than the live usr_override_fanN flag matters because a
+  # USR1 or USR3 press landing inside the flash window forces the fan to
+  # manual; without the snapshot that would re-colour an in-progress flash
+  # mid-sequence to report something the hold itself did not do.
   - id: usr_mode_flash_manual
     type: bool
     restore_value: no
@@ -216,7 +222,18 @@ script:
           auto o3 = id(fan3_led).turn_off(); o3.set_transition_length(0); o3.perform();
           auto o4 = id(fan4_led).turn_off(); o4.set_transition_length(0); o4.perform();
       - delay: 150ms
-      - lambda: 'id(auto_led_override) = false;'
+      # Terminal step: the normal path hands the LEDs to the selection
+      # display so the just-toggled fan repaints in its new colour, held
+      # there by the fresh override_timeout the long-press branch restarted
+      # above. The guard covers the case where the selection expired while
+      # this flash was running: sel is then 0, auto_led_override goes
+      # false, and usr_update_leds below finds nothing selected and blanks
+      # all four LEDs, the same end state the timeout already produces on
+      # its own, not a stuck indicator.
+      - lambda: |-
+          int sel = id(usr_selected_fan);
+          id(auto_led_override) = (sel >= 1 && sel <= 4);
+      - script.execute: usr_update_leds
 
   - id: usr_persist_modes
     mode: single
@@ -308,14 +325,14 @@ interval:
                   id(usr_persist_modes).execute();
                   ESP_LOGI("usr_buttons_mode", "USR2 long-press: fan %d mode -> %s", sel, *overrides[sel] ? "manual" : "auto");
 
-                  // Consume the selection: the toggle ends selection mode,
-                  // exactly like usr_selection_timeout's own cleanup. Stop
-                  // the pending timeout so it cannot fire a second cleanup
-                  // later. The LEDs are handed back to rpm_status_leds by
-                  // usr_mode_flash, only after the confirmation flash has
-                  // been seen, not immediately here.
-                  id(usr_selected_fan) = 0;
-                  id(usr_selection_timeout).stop();
+                  // Keep the fan selected through the toggle so its speed
+                  // can be set with USR1 and USR3 right away, with no
+                  // second USR2 press needed. Rearm the pending timeout to
+                  // a fresh full override_timeout rather than cancelling
+                  // it: usr_selection_timeout is mode: restart, so calling
+                  // execute() again restarts the delay from zero instead
+                  // of stacking a second run.
+                  id(usr_selection_timeout).execute();
                   id(usr_mode_flash_manual) = *overrides[sel];
                   id(usr_mode_flash).execute();
                 }
