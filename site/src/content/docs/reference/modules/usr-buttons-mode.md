@@ -75,9 +75,9 @@ Manual mode sets that fan's manual override flag, the same flag the four Home As
 ### Reboot behaviour
 
 :::caution[Mode survives a reboot, outside a roughly one minute window]
-The mode is meant to survive a power cut, and does, once it has actually reached flash. ESPHome does not write these persisted globals to flash the instant a mode changes: they are batched by the `preferences` component and committed together on a fixed interval, 60 seconds by default. A mode change made less than about a minute before a power cut is still only in RAM when the power goes, so it was never committed, and the board comes back with that fan in its previous mode, not the one just set.
+The mode survives a power cut, once the change has actually reached flash. ESPHome does not write these persisted globals to flash the instant a mode changes: they are batched by the `preferences` component and committed together on a fixed interval, 60 seconds by default. A mode change made less than about a minute before a power cut is still only in RAM when the power goes, so it was never committed, and the board comes back with that fan in its previous mode, not the one just set.
 
-This is easy to miss on the bench, because the fan's own `restore_mode: RESTORE_DEFAULT_ON` setting restores its speed across the same power cut regardless of what happened to the mode, so the fan appears to come back exactly as it was. Only the mode is lost. The temperature curve then reclaims that fan on its next update tick, up to about ten seconds later, and it is that reclaim, not the reboot itself, that changes the fan's behaviour afterward.
+If a power cut does land inside that window, it is easy to miss on the bench, because the fan's own `restore_mode: RESTORE_DEFAULT_ON` setting restores its speed across the same power cut regardless of what happened to the mode, so the fan appears to come back exactly as it was. Only the mode is lost. The temperature curve then reclaims that fan on its next update tick, up to about ten seconds later, and it is that reclaim, not the reboot itself, that changes the fan's behaviour afterward.
 
 This is a known limitation with a known fix that has not been made yet: forcing an immediate flash commit from the mode-toggle path, guarded so it only fires on an actual change. It is deferred, not overlooked.
 
