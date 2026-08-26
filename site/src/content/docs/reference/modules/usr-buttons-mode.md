@@ -74,8 +74,14 @@ Manual mode sets that fan's manual override flag, the same flag the four Home As
 
 ### Reboot behaviour
 
-:::caution[Mode survives a reboot]
-The mode survives a power cut. A board that loses power at three in the morning while a fan is in manual comes back with that fan still in manual, the temperature curve idle for it, and the fan running at whatever speed its `restore_mode: RESTORE_DEFAULT_ON` setting gives it. This is a deliberate choice: the alternative was to force every fan back to automatic on every boot, and that was rejected because it would silently throw away a deliberate hand setting the moment the board restarts. If you want a fan to come back under automatic control after a reboot, release it from manual first, or use Clear Fan Overrides once the board is back online.
+:::caution[Mode survives a reboot, outside a roughly one minute window]
+The mode is meant to survive a power cut, and does, once it has actually reached flash. ESPHome does not write these persisted globals to flash the instant a mode changes: they are batched by the `preferences` component and committed together on a fixed interval, 60 seconds by default. A mode change made less than about a minute before a power cut is still only in RAM when the power goes, so it was never committed, and the board comes back with that fan in its previous mode, not the one just set.
+
+This is easy to miss on the bench, because the fan's own `restore_mode: RESTORE_DEFAULT_ON` setting restores its speed across the same power cut regardless of what happened to the mode, so the fan appears to come back exactly as it was. Only the mode is lost. The temperature curve then reclaims that fan on its next update tick, up to about ten seconds later, and it is that reclaim, not the reboot itself, that changes the fan's behaviour afterward.
+
+This is a known limitation with a known fix that has not been made yet: forcing an immediate flash commit from the mode-toggle path, guarded so it only fires on an actual change. It is deferred, not overlooked.
+
+Persisting the mode at all past a reboot is still the right default: the alternative was to force every fan back to automatic on every boot, and that was rejected because it would silently throw away a deliberate hand setting. Outside that roughly one minute window after the last toggle, the mode does survive a power cut as described. If you want a fan to come back under automatic control after a reboot, release it from manual first, or use Clear Fan Overrides once the board is back online.
 :::
 
 ### Stall Guard interaction
@@ -357,7 +363,7 @@ This is the shape [`examples/with-auto-manual-mode-rev-3.3.yaml`](https://github
 
 1. **Leave the speed level count at its default.** It is a count of discrete levels the fan accepts, not a percentage, and lowering it rescales `speed_step` along with every other percentage this project computes. See [Speed steps](#speed-steps).
 2. **Use the Clear Fan Overrides button when a fan stops responding to temperature.** A forgotten manual override, left on from an earlier test or press, is the most common reason a fan appears stuck at one speed.
-3. **Remember that the mode survives a reboot.** A fan you left in manual is still in manual after a power cycle. See Reboot behaviour above.
+3. **Remember that the mode survives a reboot, once it has reached flash.** A mode change needs up to about a minute before it is committed; a fan you leave in manual is still in manual after a power cycle only once that window has passed. See [Reboot behaviour](#reboot-behaviour) above.
 4. **Do not load both button modules.** `usr_buttons` and `usr_buttons_mode` define the same component ids; load one or the other, never both.
 5. **Increase `override_timeout` for slow adjustments.** If selection mode times out before you finish tuning, set `override_timeout: "60s"` or higher.
 6. **Combine with Stall Guard.** When Stall Guard sets a safety floor during recovery, both USR1 and manual mode respect it. You cannot accidentally hold a stalled fan below its recovery floor.

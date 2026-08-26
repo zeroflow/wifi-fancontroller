@@ -99,6 +99,16 @@ globals:
   # restore_value: no in the frozen globals.yaml). These four survive a
   # reboot and are re-asserted into the live flags in the on_boot trigger
   # below, before any temperature module's first write.
+  #
+  # restore_value: true does not mean the write is immediate. ESPHome's
+  # preferences component batches these globals and commits them to flash
+  # only on its own sync interval (60s by default), not on every change.
+  # A mode change made less than that interval before a power cut is still
+  # only in RAM when power is lost, so the fan comes back in its previous
+  # mode. Deferred fix: have usr_persist_modes call global_preferences->sync()
+  # to force an immediate commit, guarded so it only fires when a mirror
+  # actually changed, since USR1 and USR3 also call this script on every
+  # press and an unguarded sync() would write flash on every one of those.
   - id: usr_mode_fan1
     type: bool
     restore_value: true
@@ -242,6 +252,13 @@ script:
           // Mirror the live flags into their persisted twins. This is the
           // only direction that runs at runtime: live to persisted. The
           // on_boot trigger above runs the other direction, once, at boot.
+          //
+          // Note this only updates the in-RAM global; it does not force a
+          // flash write. The preferences component commits these globals
+          // to flash on its own interval (60s by default), so a power cut
+          // within that window after a call to this script loses the
+          // change. See the comment on the usr_mode_fanN globals above for
+          // the deferred fix.
           id(usr_mode_fan1) = id(usr_override_fan1);
           id(usr_mode_fan2) = id(usr_override_fan2);
           id(usr_mode_fan3) = id(usr_override_fan3);
