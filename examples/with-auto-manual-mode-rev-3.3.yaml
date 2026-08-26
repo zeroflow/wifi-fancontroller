@@ -1,0 +1,110 @@
+# Example: Hardware Rev 3.3 with Auto/Manual Mode
+#
+# A temperature curve drives all four fans automatically. Holding USR2 for a
+# second on a selected fan -- or flipping its Manual Override switch in Home
+# Assistant -- takes that one fan out of the curve's hands and leaves its
+# speed exactly where it was. The other fans keep following the curve. The
+# RGB LEDs show live RPM the rest of the time, with a brief selection color
+# while you are choosing a fan on the board.
+#
+# usr_buttons_mode REPLACES usr_buttons. It is a superset that adds the
+# long-press mode toggle and defines the same component ids -- loading both
+# in the same config breaks it. Use one or the other, never both.
+
+packages:
+  # Rev 3.3 hardware: pins, fan outputs, RPM sensors, the onboard temp/humidity sensor
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.3.yaml]
+
+  # Drives all four fans from a 5-point temperature curve
+  temperature_curve:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_curve.yaml
+        vars:
+          friendly_name: "My Fan Controller"
+          # Balanced curve (the module's own default, written out here so
+          # this file is self-describing rather than relying on a default
+          # the reader cannot see)
+          curve_temp1: "20.0"
+          curve_speed1: "0.0"
+          curve_temp2: "25.0"
+          curve_speed2: "25.0"
+          curve_temp3: "30.0"
+          curve_speed3: "50.0"
+          curve_temp4: "40.0"
+          curve_speed4: "75.0"
+          curve_temp5: "50.0"
+          curve_speed5: "100.0"
+
+  # USR1/USR2/USR3 button control, per-fan Manual Override switches, and the
+  # USR2 long-press auto/manual mode toggle. Superset of and mutually
+  # exclusive with usr_buttons -- see the header note above.
+  usr_buttons_mode:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/usr_buttons_mode.yaml
+        vars:
+          friendly_name: "My Fan Controller"
+          # 5% per press. The fan: override block below sets speed_count: 20,
+          # which quantises every fan to five percent steps everywhere it is
+          # set -- the HA slider, a scene, an automation, and these buttons
+          # alike. A 5% button step lands exactly on one quantisation step,
+          # so a press never rounds to a value the fan can't actually hold.
+          speed_step: "5"
+          override_timeout: "30s"
+
+  # RGB LED shows fan speed via RPM, red (stopped) to green (full speed)
+  rpm_status_leds:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/rpm_status_leds.yaml
+        vars:
+          full_rpm: "2500"
+
+esphome:
+  name: my-fancontroller
+  friendly_name: My Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    type: arduino
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# How to use:
+# 1. Flash this config to your fan controller
+# 2. Press USR2 to select a fan -- its LED lights up blue while selected
+# 3. Press USR1 or USR3 to step that fan's speed up or down -- this also
+#    puts the fan in manual, since you just told it what speed to run at
+# 4. Hold USR2 for about a second to toggle the selected fan between
+#    automatic (the curve drives it) and manual (it holds its speed)
+# 5. In Home Assistant, use the four "Fan N Manual Override" switches to do
+#    the same thing remotely, and "Clear Fan Overrides" to hand all four
+#    fans back to the curve at once

@@ -1,0 +1,342 @@
+# USR Buttons Fan Control Module with Auto/Manual Mode
+#
+# Physical button control for fan speed using the 3 USR buttons and per-fan RGB LEDs.
+# Requires Rev 3.1+ boards (which have per-fan RGB LEDs for visual feedback).
+#
+# Button functions (top to bottom on board):
+#   USR1 (speed up): Increases selected fan speed by speed_step%. Turns fan on if off.
+#                    Clamps to safety floor if stall_guard is active.
+#   USR2 (select): Cycles fan selection (1→2→3→4→1). First press enters selection mode.
+#                  Selected fan LED lights up in selection_color; others turn off.
+#   USR2 (hold ~1s): Toggles the currently selected fan between automatic
+#                  temperature control and manual control. The toggle ends
+#                  selection mode; it never changes the fan's commanded speed.
+#   USR3 (speed down): Decreases selected fan speed by speed_step%. Turns fan off at 0%.
+#
+# Manual speed overrides persist until cleared via HA entities or the clear button.
+# Selection mode auto-deactivates after override_timeout with no button presses.
+#
+# Coordinates with rpm_status_leds via auto_led_override global (defined in globals.yaml).
+# Coordinates with temperature modules via usr_override_fan{N} globals (defined in globals.yaml).
+# Respects fan{N}_safety_floor globals (defined in globals.yaml, written by stall_guard).
+#
+# Requires globals.yaml to be included (via hardware package or directly).
+#
+# SUPERSET OF usr_buttons.yaml. This module does everything usr_buttons.yaml
+# does (fan selection, speed up/down, LED feedback, the four per-fan manual
+# override switches) and adds the USR2 long-press mode toggle above. It
+# defines the same component ids as usr_buttons.yaml. Load one or the other,
+# never both.
+#
+# Usage:
+#   packages:
+#     usr_buttons_mode:
+#       url: https://github.com/zeroflow/wifi-fancontroller
+#       ref: main
+#       files:
+#         - path: modules/usr_buttons_mode.yaml
+#           vars:
+#             friendly_name: "My Fan Controller"
+#             speed_step: "10"
+#             override_timeout: "30s"
+#             selection_color_r: "0"
+#             selection_color_g: "0"
+#             selection_color_b: "255"
+# Local use (no github:// required): see /reference/standalone/
+#
+substitutions:
+  friendly_name: "Fan Controller"
+  speed_step: "10"
+  override_timeout: "30s"
+  selection_color_r: "0"
+  selection_color_g: "0"
+  selection_color_b: "255"
+
+globals:
+  - id: usr_selected_fan
+    type: int
+    restore_value: no
+    initial_value: '0'
+  # Previous button states for edge detection
+  - id: usr_prev_btn1
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: usr_prev_btn2
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  - id: usr_prev_btn3
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+  # USR2 long-press tracking: when the press started, and whether the
+  # long-press action already fired for the press currently in progress.
+  - id: usr_btn2_press_start_ms
+    type: uint32_t
+    restore_value: no
+    initial_value: '0'
+  - id: usr_btn2_long_fired
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+script:
+  - id: usr_selection_timeout
+    mode: restart
+    then:
+      - delay: ${override_timeout}
+      - lambda: |-
+          // Deactivate selection mode
+          id(usr_selected_fan) = 0;
+          id(auto_led_override) = false;
+          // Explicitly turn off all fan LEDs to prevent stale state
+          auto off1 = id(fan1_led).turn_off(); off1.set_transition_length(0); off1.perform();
+          auto off2 = id(fan2_led).turn_off(); off2.set_transition_length(0); off2.perform();
+          auto off3 = id(fan3_led).turn_off(); off3.set_transition_length(0); off3.perform();
+          auto off4 = id(fan4_led).turn_off(); off4.set_transition_length(0); off4.perform();
+          ESP_LOGI("usr_buttons_mode", "Selection timeout - mode deactivated, fan LEDs cleared");
+
+  - id: usr_update_leds
+    mode: restart
+    then:
+      - lambda: |-
+          int sel = id(usr_selected_fan);
+          float r = ${selection_color_r} / 255.0f;
+          float g = ${selection_color_g} / 255.0f;
+          float b = ${selection_color_b} / 255.0f;
+          // Turn off all fan LEDs first
+          auto off1 = id(fan1_led).turn_off(); off1.set_transition_length(0); off1.perform();
+          auto off2 = id(fan2_led).turn_off(); off2.set_transition_length(0); off2.perform();
+          auto off3 = id(fan3_led).turn_off(); off3.set_transition_length(0); off3.perform();
+          auto off4 = id(fan4_led).turn_off(); off4.set_transition_length(0); off4.perform();
+          // Light up selected fan with brightness mapped to speed
+          light::LightState *leds[] = {nullptr, id(fan1_led), id(fan2_led), id(fan3_led), id(fan4_led)};
+          fan::Fan *fans[] = {nullptr, id(fan1), id(fan2), id(fan3), id(fan4)};
+          if (sel >= 1 && sel <= 4) {
+            fan::Fan *f = fans[sel];
+            float brightness = 0.2f;
+            if (f->state) {
+              brightness = 0.2f + (f->speed / 100.0f) * 0.8f;
+            }
+            auto call = leds[sel]->turn_on();
+            call.set_transition_length(0);
+            call.set_rgb(r, g, b);
+            call.set_brightness(brightness);
+            call.set_effect("none");
+            call.perform();
+          }
+
+# Poll buttons at 50ms for responsive edge detection
+interval:
+  - id: usr_button_poll
+    interval: 50ms
+    then:
+      - lambda: |-
+          bool btn1 = id(btn_usr1).state;
+          bool btn2 = id(btn_usr2).state;
+          bool btn3 = id(btn_usr3).state;
+          bool prev1 = id(usr_prev_btn1);
+          bool prev2 = id(usr_prev_btn2);
+          bool prev3 = id(usr_prev_btn3);
+          id(usr_prev_btn1) = btn1;
+          id(usr_prev_btn2) = btn2;
+          id(usr_prev_btn3) = btn3;
+
+          // USR1 rising edge: speed up selected fan
+          if (btn1 && !prev1) {
+            int sel = id(usr_selected_fan);
+            if (sel <= 0) return;
+
+            int step = ${speed_step};
+            int speed = 0;
+
+            fan::Fan *fans[] = {nullptr, id(fan1), id(fan2), id(fan3), id(fan4)};
+            float floors[] = {0, id(fan1_safety_floor), id(fan2_safety_floor), id(fan3_safety_floor), id(fan4_safety_floor)};
+            bool *overrides[] = {nullptr, &id(usr_override_fan1), &id(usr_override_fan2), &id(usr_override_fan3), &id(usr_override_fan4)};
+
+            fan::Fan *f = fans[sel];
+            float floor_val = floors[sel];
+
+            if (f->state) {
+              speed = f->speed + step;
+            } else {
+              speed = step;
+            }
+            if (speed > 100) speed = 100;
+            int floor_int = (int)ceil(floor_val);
+            if (floor_val > 0 && speed > 0 && speed < floor_int) speed = floor_int;
+
+            auto call = f->turn_on();
+            call.set_speed(speed);
+            call.perform();
+            *overrides[sel] = true;
+
+            id(usr_update_leds).execute();
+            id(usr_selection_timeout).execute();
+            ESP_LOGI("usr_buttons_mode", "USR1: fan %d speed -> %d%%", sel, speed);
+          }
+
+          // USR2: three-part state machine that disambiguates a short press
+          // (cycle fan selection, fires on release) from a long press (toggle
+          // the selected fan's auto/manual mode, fires while still held).
+          const uint32_t USR_LONG_PRESS_MS = 1000;
+
+          // Rising edge: start timing. Take no other action -- a press is
+          // only known to be short once it comes back up.
+          if (btn2 && !prev2) {
+            id(usr_btn2_press_start_ms) = millis();
+            id(usr_btn2_long_fired) = false;
+          }
+
+          // Held: fire the long-press toggle the instant the threshold is
+          // crossed, while the button is still down.
+          if (btn2 && prev2) {
+            if (!id(usr_btn2_long_fired)) {
+              uint32_t elapsed = millis() - id(usr_btn2_press_start_ms);
+              if (elapsed >= USR_LONG_PRESS_MS) {
+                int sel = id(usr_selected_fan);
+                if (sel >= 1 && sel <= 4) {
+                  id(usr_btn2_long_fired) = true;
+
+                  bool *overrides[] = {nullptr, &id(usr_override_fan1), &id(usr_override_fan2), &id(usr_override_fan3), &id(usr_override_fan4)};
+                  *overrides[sel] = !*overrides[sel];
+                  ESP_LOGI("usr_buttons_mode", "USR2 long-press: fan %d mode -> %s", sel, *overrides[sel] ? "manual" : "auto");
+
+                  // Consume the selection: the toggle ends selection mode and
+                  // hands the LEDs back to rpm_status_leds, exactly like
+                  // usr_selection_timeout's own cleanup. Stop the pending
+                  // timeout so it cannot blank the LEDs a second time later.
+                  id(usr_selected_fan) = 0;
+                  id(usr_selection_timeout).stop();
+                  id(auto_led_override) = false;
+                  auto off1 = id(fan1_led).turn_off(); off1.set_transition_length(0); off1.perform();
+                  auto off2 = id(fan2_led).turn_off(); off2.set_transition_length(0); off2.perform();
+                  auto off3 = id(fan3_led).turn_off(); off3.set_transition_length(0); off3.perform();
+                  auto off4 = id(fan4_led).turn_off(); off4.set_transition_length(0); off4.perform();
+                }
+              }
+            }
+          }
+
+          // Falling edge: only a short press if the long-press action never
+          // fired for this press. Clear the latch unconditionally so it can
+          // never leak into the next press.
+          if (!btn2 && prev2) {
+            if (!id(usr_btn2_long_fired)) {
+              int sel = id(usr_selected_fan);
+              sel = (sel <= 0 || sel >= 4) ? 1 : sel + 1;
+              id(usr_selected_fan) = sel;
+              id(auto_led_override) = true;
+              id(usr_update_leds).execute();
+              id(usr_selection_timeout).execute();
+              ESP_LOGI("usr_buttons_mode", "USR2: fan %d selected", sel);
+            }
+            id(usr_btn2_long_fired) = false;
+          }
+
+          // USR3 rising edge: speed down selected fan
+          if (btn3 && !prev3) {
+            int sel = id(usr_selected_fan);
+            if (sel <= 0) return;
+
+            int step = ${speed_step};
+
+            fan::Fan *fans[] = {nullptr, id(fan1), id(fan2), id(fan3), id(fan4)};
+            float floors[] = {0, id(fan1_safety_floor), id(fan2_safety_floor), id(fan3_safety_floor), id(fan4_safety_floor)};
+            bool *overrides[] = {nullptr, &id(usr_override_fan1), &id(usr_override_fan2), &id(usr_override_fan3), &id(usr_override_fan4)};
+
+            fan::Fan *f = fans[sel];
+            float floor_val = floors[sel];
+            int floor_int = (int)ceil(floor_val);
+            int speed = f->state ? (f->speed - step) : 0;
+
+            // If speed would be below safety floor, snap to off
+            if (speed > 0 && floor_val > 0 && speed < floor_int) speed = 0;
+
+            if (speed <= 0) {
+              auto call = f->turn_off();
+              call.perform();
+              speed = 0;
+            } else {
+              auto call = f->turn_on();
+              call.set_speed(speed);
+              call.perform();
+            }
+            *overrides[sel] = true;
+
+            id(usr_update_leds).execute();
+            id(usr_selection_timeout).execute();
+            ESP_LOGI("usr_buttons_mode", "USR3: fan %d speed -> %d%%", sel, speed);
+          }
+
+button:
+  - platform: template
+    name: "${friendly_name} Clear Fan Overrides"
+    id: usr_clear_overrides
+    icon: mdi:fan-off
+    entity_category: config
+    on_press:
+      - lambda: |-
+          id(usr_override_fan1) = false;
+          id(usr_override_fan2) = false;
+          id(usr_override_fan3) = false;
+          id(usr_override_fan4) = false;
+          ESP_LOGI("usr_buttons_mode", "All manual fan overrides cleared");
+
+switch:
+  - platform: template
+    name: "${friendly_name} Fan 1 Manual Override"
+    id: usr_override_sw_fan1
+    icon: mdi:fan-clock
+    entity_category: config
+    lambda: |-
+      return id(usr_override_fan1);
+    turn_on_action:
+      - lambda: |-
+          id(usr_override_fan1) = true;
+    turn_off_action:
+      - lambda: |-
+          id(usr_override_fan1) = false;
+
+  - platform: template
+    name: "${friendly_name} Fan 2 Manual Override"
+    id: usr_override_sw_fan2
+    icon: mdi:fan-clock
+    entity_category: config
+    lambda: |-
+      return id(usr_override_fan2);
+    turn_on_action:
+      - lambda: |-
+          id(usr_override_fan2) = true;
+    turn_off_action:
+      - lambda: |-
+          id(usr_override_fan2) = false;
+
+  - platform: template
+    name: "${friendly_name} Fan 3 Manual Override"
+    id: usr_override_sw_fan3
+    icon: mdi:fan-clock
+    entity_category: config
+    lambda: |-
+      return id(usr_override_fan3);
+    turn_on_action:
+      - lambda: |-
+          id(usr_override_fan3) = true;
+    turn_off_action:
+      - lambda: |-
+          id(usr_override_fan3) = false;
+
+  - platform: template
+    name: "${friendly_name} Fan 4 Manual Override"
+    id: usr_override_sw_fan4
+    icon: mdi:fan-clock
+    entity_category: config
+    lambda: |-
+      return id(usr_override_fan4);
+    turn_on_action:
+      - lambda: |-
+          id(usr_override_fan4) = true;
+    turn_off_action:
+      - lambda: |-
+          id(usr_override_fan4) = false;
