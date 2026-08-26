@@ -33,7 +33,7 @@ See the [modules overview](/reference/modules/) for a comparison of all availabl
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `friendly_name` | `"Fan Controller"` | Device name prefix for HA entities |
-| `speed_step` | `"10"` | Percentage to increase or decrease fan speed per button press |
+| `speed_step` | `"10"` | Speed change per button press, in percent at the hardware default of 100 speed levels |
 | `override_timeout` | `"30s"` | Time after the last button press before selection mode auto-deactivates |
 | `selection_color_r` | `"0"` | Red component (0–255) of the selection indicator LED color |
 | `selection_color_g` | `"0"` | Green component (0–255) of the selection indicator LED color |

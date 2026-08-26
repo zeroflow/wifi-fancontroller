@@ -36,7 +36,7 @@ See the [modules overview](/reference/modules/) for a comparison of all availabl
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `friendly_name` | `"Fan Controller"` | Device name prefix for HA entities |
-| `speed_step` | `"10"` | Percentage to increase or decrease fan speed per button press |
+| `speed_step` | `"10"` | Speed change per button press, in percent at the hardware default of 100 speed levels. See [Speed steps](#speed-steps) |
 | `override_timeout` | `"30s"` | Time after the last button press before selection mode auto-deactivates |
 | `selection_color_r` | `"0"` | Red component (0 to 255) of the LED color shown for a fan under automatic control |
 | `selection_color_g` | `"0"` | Green component (0 to 255) of the LED color shown for a fan under automatic control |
@@ -227,21 +227,15 @@ Write your own entity ids in the `switch.my_fancontroller_...` and `fan.my_fanco
 
 ## Speed steps
 
-Twenty speed steps means five percent per step, everywhere the fan's speed is set: the Home Assistant slider, a scene, an automation, and the USR buttons alike. One percent steps are not available at the same time. It is one or the other.
+:::caution[Leave the speed level count at its default]
+The fan speed level count is a count of discrete LEVELS the fan entity accepts. It is not a percentage and it is not a slider widget setting.
 
-This lives in the example, not in the hardware package, on purpose: making twenty the default would silently re-quantise every board already pulling the hardware package from `@main`, including a board in the middle of a running automation.
+The hardware packages set it to 100. At 100, one level is exactly one percent, which is the coincidence every module in this project is written against.
 
-```yaml
-fan:
-  - id: !extend fan1
-    speed_count: 20
-  - id: !extend fan2
-    speed_count: 20
-  - id: !extend fan3
-    speed_count: 20
-  - id: !extend fan4
-    speed_count: 20
-```
+Lowering it silently redefines the unit for every module that speaks in percentages. A `speed_step` of `"5"` at a level count of 20 moves five levels, which is 25 percent per press, not 5. A temperature module that computes a percentage and then writes it as a level has its output multiplied by five and clamped, so a curve value of 20 or more commands full speed. This module's own selected-fan LED brightness is derived from the speed against a 100 scale too, so it saturates the same way.
+
+Leave the level count at the hardware default. You already get one percent resolution on the Home Assistant slider and whatever `speed_step` you choose meaning exactly that many percent, at the same time. They were never in conflict.
+:::
 
 ## Sensor offset
 
@@ -353,11 +347,11 @@ packages:
 
 ### The complete example
 
-This is the shape [`examples/with-auto-manual-mode-rev-3.3.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-auto-manual-mode-rev-3.3.yaml) uses. That file also adds the `speed_count: 20` and sensor offset `!extend` overrides described above, and is a complete, compiling starting point you can flash directly.
+This is the shape [`examples/with-auto-manual-mode-rev-3.3.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-auto-manual-mode-rev-3.3.yaml) uses. That file also adds the sensor offset `!extend` override described above, and is a complete, compiling starting point you can flash directly.
 
 ## Tips
 
-1. **Match `speed_step` to your speed quantisation.** If you set `speed_count: 20` as shown above, use a `speed_step` of `"5"` so a button press always lands on an exact step and never rounds.
+1. **Leave the speed level count at its default.** It is a count of discrete levels the fan accepts, not a percentage, and lowering it rescales `speed_step` along with every other percentage this project computes. See [Speed steps](#speed-steps).
 2. **Use the Clear Fan Overrides button when a fan stops responding to temperature.** A forgotten manual override, left on from an earlier test or press, is the most common reason a fan appears stuck at one speed.
 3. **Remember that the mode survives a reboot.** A fan you left in manual is still in manual after a power cycle. See Reboot behaviour above.
 4. **Do not load both button modules.** `usr_buttons` and `usr_buttons_mode` define the same component ids; load one or the other, never both.
