@@ -100,15 +100,22 @@ globals:
   # reboot and are re-asserted into the live flags in the on_boot trigger
   # below, before any temperature module's first write.
   #
-  # restore_value: true does not mean the write is immediate. ESPHome's
-  # preferences component batches these globals and commits them to flash
-  # only on its own sync interval (60s by default), not on every change.
-  # A mode change made less than that interval before a power cut is still
-  # only in RAM when power is lost, so the fan comes back in its previous
-  # mode. Deferred fix: have usr_persist_modes call global_preferences->sync()
-  # to force an immediate commit, guarded so it only fires when a mirror
-  # actually changed, since USR1 and USR3 also call this script on every
-  # press and an unguarded sync() would write flash on every one of those.
+  # This only works because the four usr_override_sw_fanN switches below
+  # carry restore_mode: DISABLED. Without it, each switch's own restore
+  # fired turn_off_action during its own setup(), which zeroed both the
+  # live flag and this persisted mirror before on_boot ever ran, and the
+  # mode never survived a reboot at all. See the comment on those switches.
+  #
+  # A narrower limitation remains even with that fixed: restore_value: true
+  # does not mean the write is immediate. ESPHome's preferences component
+  # batches these globals and commits them to flash only on its own sync
+  # interval (60s by default), not on every change. A mode change made less
+  # than that interval before a power cut is still only in RAM when power is
+  # lost, so the fan comes back in its previous mode. Deferred fix: have
+  # usr_persist_modes call global_preferences->sync() to force an immediate
+  # commit, guarded so it only fires when a mirror actually changed, since
+  # USR1 and USR3 also call this script on every press and an unguarded
+  # sync() would write flash on every one of those.
   - id: usr_mode_fan1
     type: bool
     restore_value: true
@@ -256,8 +263,9 @@ script:
           // Note this only updates the in-RAM global; it does not force a
           // flash write. The preferences component commits these globals
           // to flash on its own interval (60s by default), so a power cut
-          // within that window after a call to this script loses the
-          // change. See the comment on the usr_mode_fanN globals above for
+          // within that narrow window after a call to this script still
+          // loses the change, even though the mode otherwise survives a
+          // reboot. See the comment on the usr_mode_fanN globals above for
           // the deferred fix.
           id(usr_mode_fan1) = id(usr_override_fan1);
           id(usr_mode_fan2) = id(usr_override_fan2);
@@ -425,11 +433,25 @@ button:
       - script.execute: usr_persist_modes
 
 switch:
+  # restore_mode: DISABLED on all four switches below is load-bearing, not
+  # cosmetic. The default restore_mode is ALWAYS_OFF, and a template switch's
+  # setup() calls get_initial_state_with_restore_mode(), which returns a
+  # value for every mode except DISABLED. For ALWAYS_OFF that value is
+  # false, so setup() called turn_off(), which fired turn_off_action on
+  # every boot, before the module's own on_boot restore (priority -100, last)
+  # ever ran. turn_off_action sets id(usr_override_fanN) = false and calls
+  # usr_persist_modes, which then mirrors that false into usr_mode_fanN,
+  # wiping the persisted mode too. The mode never survived a reboot as a
+  # result. With DISABLED, get_initial_state_with_restore_mode() returns an
+  # empty optional, setup() takes no action, and the switch simply reflects
+  # whatever id(usr_override_fanN) already holds, which by then is the value
+  # on_boot restored.
   - platform: template
     name: "${friendly_name} Fan 1 Manual Override"
     id: usr_override_sw_fan1
     icon: mdi:fan-clock
     entity_category: config
+    restore_mode: DISABLED
     lambda: |-
       return id(usr_override_fan1);
     turn_on_action:
@@ -446,6 +468,7 @@ switch:
     id: usr_override_sw_fan2
     icon: mdi:fan-clock
     entity_category: config
+    restore_mode: DISABLED
     lambda: |-
       return id(usr_override_fan2);
     turn_on_action:
@@ -462,6 +485,7 @@ switch:
     id: usr_override_sw_fan3
     icon: mdi:fan-clock
     entity_category: config
+    restore_mode: DISABLED
     lambda: |-
       return id(usr_override_fan3);
     turn_on_action:
@@ -478,6 +502,7 @@ switch:
     id: usr_override_sw_fan4
     icon: mdi:fan-clock
     entity_category: config
+    restore_mode: DISABLED
     lambda: |-
       return id(usr_override_fan4);
     turn_on_action:
