@@ -98,6 +98,42 @@ wifi:
 # Enable captive portal for WiFi setup
 captive_portal:
 
+# Quantise every fan to 5% steps (20 discrete levels instead of the hardware
+# package's default 100). This applies everywhere a fan's speed is set: the
+# Home Assistant slider, a scene, an automation, and the USR buttons alike.
+# One percent steps are not available at the same time as this. It is one or
+# the other. This lives here, in the example, and not in the hardware
+# package: making 20 the package default would silently re-quantise every
+# board already pulling the package from @main, including boards in the
+# middle of a running automation.
+fan:
+  - id: !extend fan1
+    speed_count: 20
+  - id: !extend fan2
+    speed_count: 20
+  - id: !extend fan3
+    speed_count: 20
+  - id: !extend fan4
+    speed_count: 20
+
+# Correct the onboard HDC1080 sensor for self-heating from the board itself.
+# The values below are placeholders, not a calibration to copy: the amount of
+# self-heating depends on the board's own enclosure and load, typically 1 to
+# 3 kelvin, and you should measure your own board against a reference
+# instrument rather than reusing these two numbers. temperature_sensor is the
+# HDC1080 platform's own top-level id in the hardware package; !extend only
+# resolves top-level ids, so the target here is temperature_sensor, never the
+# nested fancontroller_temperature or fancontroller_humidity ids two levels
+# further down.
+sensor:
+  - id: !extend temperature_sensor
+    temperature:
+      filters:
+        - offset: -2.0
+    humidity:
+      filters:
+        - offset: 3.0
+
 # How to use:
 # 1. Flash this config to your fan controller
 # 2. Press USR2 to select a fan -- its LED lights up blue while selected
