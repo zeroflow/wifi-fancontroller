@@ -38,9 +38,11 @@ See the [modules overview](/reference/modules/) for a comparison of all availabl
 | `friendly_name` | `"Fan Controller"` | Device name prefix for HA entities |
 | `speed_step` | `"10"` | Percentage to increase or decrease fan speed per button press |
 | `override_timeout` | `"30s"` | Time after the last button press before selection mode auto-deactivates |
-| `selection_color_r` | `"0"` | Red component (0 to 255) of the selection indicator LED color |
-| `selection_color_g` | `"0"` | Green component (0 to 255) of the selection indicator LED color |
-| `selection_color_b` | `"255"` | Blue component (0 to 255) of the selection indicator LED color |
+| `selection_color_r` | `"0"` | Red component (0 to 255) of the LED color shown for a fan under automatic control |
+| `selection_color_g` | `"0"` | Green component (0 to 255) of the LED color shown for a fan under automatic control |
+| `selection_color_b` | `"255"` | Blue component (0 to 255) of the LED color shown for a fan under automatic control |
+
+A fan already in manual shows magenta instead, regardless of these three variables: the magenta is not configurable. See [Selection colours](#selection-colours) below.
 
 The long-press threshold is not one of these variables. It is a fixed one second (1000 milliseconds) in the module's lambda, by design: `speed_step` and `override_timeout` are values a person reasonably wants to tune per installation, while the point at which a press becomes a hold is a gesture-recognition detail rather than a per-installation choice, and keeping it fixed avoids a variable nobody but the module itself needs.
 
@@ -50,11 +52,21 @@ The three USR buttons (labeled top to bottom on the board) each have a function:
 
 - **USR1 (speed up):** Increases the selected fan's speed by `speed_step`%. If the fan is off, it turns on at `speed_step`%. If Stall Guard is active and has set a safety floor for that fan, the speed is clamped to at least that floor value.
 - **USR3 (speed down):** Decreases the selected fan's speed by `speed_step`%. If the speed would drop to 0%, the fan turns off instead.
-- **USR2 (select, then hold to toggle):** A short press cycles the fan selection forward, 1, 2, 3, 4, then back to 1. The short press is recognised on release rather than on press, because a press is only known to be short once the button comes back up; the difference is not perceptible, and nothing repeats while the button is held. Holding USR2 down for about one second toggles the currently selected fan between automatic and manual. The toggle fires the instant the one-second threshold is crossed, while the button is still held, so the confirmation is immediate, and the release that follows does nothing further. With no fan selected, a long press does nothing while held, and the release that follows simply performs an ordinary selection press, choosing fan 1. In practice this means press to select, then hold to toggle: the first touch of USR2 in a session always selects a fan, and only a subsequent hold on an already-selected fan toggles its mode.
+- **USR2 (select, then hold to toggle):** A short press cycles the fan selection forward, 1, 2, 3, 4, then back to 1. The short press is recognised on release rather than on press, because a press is only known to be short once the button comes back up; the difference is not perceptible, and nothing repeats while the button is held. The selected fan's LED shows that fan's current mode while it is selected. Holding USR2 down for about one second toggles the currently selected fan between automatic and manual. The toggle fires the instant the one-second threshold is crossed, while the button is still held, so the confirmation is immediate, and the release that follows does nothing further. With no fan selected, a long press does nothing while held, and the release that follows simply performs an ordinary selection press, choosing fan 1. In practice this means press to select, then hold to toggle: the first touch of USR2 in a session always selects a fan, and only a subsequent hold on an already-selected fan toggles its mode.
+
+### Selection colours
+
+Only the selected fan's LED is lit while a fan is selected: the other three go dark. That is unchanged.
+
+Magenta means the selected fan is in manual. The selection colour, blue by default, means it is under automatic control. So one look at the board tells you both which fan you have selected and what mode it is in, before you decide whether to hold USR2.
+
+Brightness still tracks the fan's commanded speed in either colour: a dim LED is a slow fan, a bright one a fast fan.
+
+Magenta carries one meaning across both indicators: it is the same magenta the toggle confirmation flash uses for a fan going to manual. The flash uses white for a fan going to automatic rather than the selection blue, because the flash is a transient confirmation painted on all four LEDs while the selection colour is a steady state on one. The flash itself is unchanged in this release.
 
 ### LED confirmation
 
-When the toggle fires, all four fan LEDs flash twice: magenta for a fan going to manual, white for a fan going to automatic, roughly 150 milliseconds on and 150 milliseconds off per flash, about 600 milliseconds total. The LEDs then return to showing live RPM. The confirmation is deliberately transient, not persistent: holding the LEDs to display a mode would suppress RPM feedback for exactly as long as someone is standing at the board watching the fans, which is precisely when RPM feedback matters most. The toggle also ends selection mode, which is why the selected fan's blue selection LED does not come back after the flash.
+When the toggle fires, all four fan LEDs flash twice: magenta for a fan going to manual, white for a fan going to automatic, roughly 150 milliseconds on and 150 milliseconds off per flash, about 600 milliseconds total. The LEDs then return to showing live RPM. The confirmation is deliberately transient, not persistent: holding the LEDs to display a mode would suppress RPM feedback for exactly as long as someone is standing at the board watching the fans, which is precisely when RPM feedback matters most. The toggle also ends selection mode, which is why the selected fan's selection LED does not come back after the flash.
 
 ### What manual actually means
 
@@ -90,6 +102,34 @@ The example on this page does not include Stall Guard, but the two work together
 These four switches are the mode. There is no separate mode entity, by design: a global mode plus four per-fan flags could disagree with each other, and keeping the mode entirely inside these four switches makes that contradictory state impossible.
 
 The override switches let you release individual fans from manual control without affecting the others, and you can turn one on from Home Assistant to lock a fan at its current speed without touching any physical button. These four switch ids and display names are byte-identical to the ones [USR Buttons](/reference/modules/usr-buttons/) defines, so a customer migrating from USR Buttons to this module keeps every entity id, every automation, and every dashboard card unchanged.
+
+## One switch per fan, not two
+
+A config loading a temperature module alongside this one gets two switches per fan: the temperature module's own "Auto Control Fan N" and this module's "Fan N Manual Override". They approach the same decision from opposite directions, and having both on a dashboard invites a fan sitting off the curve for a reason that is not obvious.
+
+The fix is to hide the temperature module's switches in your own configuration:
+
+```yaml
+switch:
+  - id: !extend auto_control_fan1
+    internal: true
+  - id: !extend auto_control_fan2
+    internal: true
+  - id: !extend auto_control_fan3
+    internal: true
+  - id: !extend auto_control_fan4
+    internal: true
+```
+
+`internal: true` hides the entity from Home Assistant and from the API without removing it. The switch keeps its `RESTORE_DEFAULT_ON` state and the curve's own lambda keeps reading it, so automatic control keeps running and the Manual Override switch is the only remaining gate.
+
+This belongs in the consuming config, not in this module, because `usr_buttons_mode` deliberately does not know which temperature module is loaded. `temperature_curve` names its switches `auto_control_fanN`, while `temperature_pid` names its own `pid_control_fanN`, so a module that hid another module's entity would have to hard-code that other module's ids. The shared `usr_override_fanN` flag is the module-neutral interface, which is why every temperature module in this project checks it.
+
+Loading `temperature_pid` instead, extend `pid_control_fan1` through `pid_control_fan4` the same way.
+
+`!extend` reaches these four because they are top-level ids in the temperature module's own `switch:` list, the same reason it reaches `temperature_sensor` in [Sensor offset](#sensor-offset) below.
+
+[`examples/with-auto-manual-mode-rev-3.3.yaml`](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/with-auto-manual-mode-rev-3.3.yaml) ships with this block.
 
 ## Going fully manual, and building presets
 
@@ -323,3 +363,4 @@ This is the shape [`examples/with-auto-manual-mode-rev-3.3.yaml`](https://github
 4. **Do not load both button modules.** `usr_buttons` and `usr_buttons_mode` define the same component ids; load one or the other, never both.
 5. **Increase `override_timeout` for slow adjustments.** If selection mode times out before you finish tuning, set `override_timeout: "60s"` or higher.
 6. **Combine with Stall Guard.** When Stall Guard sets a safety floor during recovery, both USR1 and manual mode respect it. You cannot accidentally hold a stalled fan below its recovery floor.
+7. **Read the selection colour before holding USR2.** Magenta means the fan is already in manual, so a hold sends it back to automatic. Blue means it is on the curve.
