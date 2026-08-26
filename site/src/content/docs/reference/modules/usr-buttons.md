@@ -24,6 +24,7 @@ This product contains a radio transmitter and must be installed so that at least
 :::
 
 If you also use RPM Status LEDs, the two modules coordinate automatically: entering button selection mode temporarily takes over the LEDs, then returns control to RPM Status LEDs when the timeout expires.
+If you want an explicit auto/manual mode toggle from the board as well, see [USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/), a superset of this module.
 
 See the [modules overview](/reference/modules/) for a comparison of all available modules.
 

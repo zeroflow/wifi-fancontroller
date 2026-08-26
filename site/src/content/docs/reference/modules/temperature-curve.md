@@ -23,6 +23,10 @@ For simpler threshold-based control, see [Temperature Linear](/reference/modules
 This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a safety floor mechanism. If a fan stalls, Stall Guard sets a minimum speed that Temperature Curve will respect during recovery. No extra configuration needed, just include both modules.
 :::
 
+:::tip[Works with USR Buttons with Auto/Manual Mode]
+A fan put into manual mode, from Home Assistant or from the board, is skipped by this module until it is released. No extra configuration is needed: the manual speed holds instead of being overwritten on the next ten-second tick. See [USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/).
+:::
+
 ## Configuration
 
 | Variable                | Default                       | Description                                        |

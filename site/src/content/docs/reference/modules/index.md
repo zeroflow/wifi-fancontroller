@@ -105,6 +105,7 @@ Substitution names live in one shared namespace across every package. If two mod
 | [Stall Guard](/reference/modules/stall-guard/) | Simple | Fan stall detection and automatic recovery | 9 (binary sensors, text sensors, button) | All |
 | [Fallback Mode](/reference/modules/fallback-mode/) | Simple | Keeps fans running when the Home Assistant control loop dies | 10 (binary sensors, text sensor, sensors, buttons) | All |
 | [USR Buttons](/reference/modules/usr-buttons/) | Simple | Physical button control of individual fan speeds | 5 (button, 4 switches) | Rev 3.1+ |
+| [USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/) | Simple | Physical and Home Assistant control of each fan's auto or manual mode | 5 (button, 4 switches) | Rev 3.1+ |
 
 ## Compatibility
 
@@ -126,23 +127,28 @@ You can only use **one** temperature control module at a time (PID, Linear, Curv
 **Fallback Mode** and **RPM PI Control** cannot be used together. RPM PI Control writes directly to PWM outputs, bypassing the fan entity that Fallback Mode raises its floor through. A fan entity floor cannot reach a control loop that never goes through the fan entity.
 :::
 
+:::caution
+**USR Buttons** and **USR Buttons with Auto/Manual Mode** cannot be used together. USR Buttons with Auto/Manual Mode is a superset of USR Buttons and defines the same component ids, so a configuration that loads both fails to validate with a duplicate entity error rather than misbehaving quietly.
+:::
+
 ### Compatibility matrix
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
 
-| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | Temp Curve Triple Indep. | RPM PI Control | RPM Status LEDs | Stall Guard | Fallback Mode | USR Buttons |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Temperature PID** | -- | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Linear** | ❌ | -- | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve** | ❌ | ❌ | -- | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Dual** | ❌ | ❌ | ❌ | -- | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | -- | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Triple Independent** | ❌ | ❌ | ❌ | ❌ | ❌ | -- | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ❌ | ❌ | ✅ |
-| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- | ✅ | ✅ | ✅ |
-| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | -- | ✅ | ✅ |
-| **[Fallback Mode](/reference/modules/fallback-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | -- | ✅ |
-| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | -- |
+| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | Temp Curve Triple Indep. | RPM PI Control | RPM Status LEDs | Stall Guard | Fallback Mode | USR Buttons | USR Buttons Mode |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Temperature PID** | n/a | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Linear** | ❌ | n/a | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve** | ❌ | ❌ | n/a | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Dual** | ❌ | ❌ | ❌ | n/a | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | n/a | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Temperature Curve Triple Independent** | ❌ | ❌ | ❌ | ❌ | ❌ | n/a | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ✅ | ❌ | ❌ | ✅ | ✅ |
+| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ |
+| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | n/a | ✅ | ✅ | ✅ |
+| **[Fallback Mode](/reference/modules/fallback-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | n/a | ✅ | ✅ |
+| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ❌ |
+| **[USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | n/a |
 
 ## Module List
 
@@ -175,3 +181,5 @@ Most modules can be combined freely. The two exceptions are: temperature modules
 ### Physical Controls
 
 - **[USR Buttons](/reference/modules/usr-buttons/)** -- Direct fan speed control via the three on-board USR buttons with per-fan RGB LED feedback. Manual overrides persist until cleared through Home Assistant. Requires Rev 3.1+ hardware.
+
+- **[USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/)**: everything USR Buttons does, plus an explicit per-fan auto/manual mode toggled by holding USR2. The mode is reachable from the board and from Home Assistant, and survives a reboot. Requires Rev 3.1+ hardware; mutually exclusive with USR Buttons.
