@@ -80,6 +80,13 @@ globals:
     type: bool
     restore_value: no
     initial_value: 'false'
+  # Carries the mode a fan just landed in from the poll lambda to
+  # usr_mode_flash, which needs it after usr_selected_fan has already
+  # been cleared by the toggle.
+  - id: usr_mode_flash_manual
+    type: bool
+    restore_value: no
+    initial_value: 'false'
 
 script:
   - id: usr_selection_timeout
@@ -126,6 +133,49 @@ script:
             call.set_effect("none");
             call.perform();
           }
+
+  - id: usr_mode_flash
+    mode: restart
+    then:
+      - lambda: 'id(auto_led_override) = true;'
+      - lambda: |-
+          // Magenta for manual, white for automatic. Neither colour occurs
+          // in the red-to-green RPM gradient rpm_status_leds paints, and
+          // neither is the blue selection indicator.
+          float g = id(usr_mode_flash_manual) ? 0.0f : 1.0f;
+          auto c1 = id(fan1_led).turn_on(); c1.set_transition_length(0);
+          c1.set_rgb(1.0, g, 1.0); c1.set_brightness(0.6); c1.set_effect("none"); c1.perform();
+          auto c2 = id(fan2_led).turn_on(); c2.set_transition_length(0);
+          c2.set_rgb(1.0, g, 1.0); c2.set_brightness(0.6); c2.set_effect("none"); c2.perform();
+          auto c3 = id(fan3_led).turn_on(); c3.set_transition_length(0);
+          c3.set_rgb(1.0, g, 1.0); c3.set_brightness(0.6); c3.set_effect("none"); c3.perform();
+          auto c4 = id(fan4_led).turn_on(); c4.set_transition_length(0);
+          c4.set_rgb(1.0, g, 1.0); c4.set_brightness(0.6); c4.set_effect("none"); c4.perform();
+      - delay: 150ms
+      - lambda: |-
+          auto o1 = id(fan1_led).turn_off(); o1.set_transition_length(0); o1.perform();
+          auto o2 = id(fan2_led).turn_off(); o2.set_transition_length(0); o2.perform();
+          auto o3 = id(fan3_led).turn_off(); o3.set_transition_length(0); o3.perform();
+          auto o4 = id(fan4_led).turn_off(); o4.set_transition_length(0); o4.perform();
+      - delay: 150ms
+      - lambda: |-
+          float g = id(usr_mode_flash_manual) ? 0.0f : 1.0f;
+          auto c1 = id(fan1_led).turn_on(); c1.set_transition_length(0);
+          c1.set_rgb(1.0, g, 1.0); c1.set_brightness(0.6); c1.set_effect("none"); c1.perform();
+          auto c2 = id(fan2_led).turn_on(); c2.set_transition_length(0);
+          c2.set_rgb(1.0, g, 1.0); c2.set_brightness(0.6); c2.set_effect("none"); c2.perform();
+          auto c3 = id(fan3_led).turn_on(); c3.set_transition_length(0);
+          c3.set_rgb(1.0, g, 1.0); c3.set_brightness(0.6); c3.set_effect("none"); c3.perform();
+          auto c4 = id(fan4_led).turn_on(); c4.set_transition_length(0);
+          c4.set_rgb(1.0, g, 1.0); c4.set_brightness(0.6); c4.set_effect("none"); c4.perform();
+      - delay: 150ms
+      - lambda: |-
+          auto o1 = id(fan1_led).turn_off(); o1.set_transition_length(0); o1.perform();
+          auto o2 = id(fan2_led).turn_off(); o2.set_transition_length(0); o2.perform();
+          auto o3 = id(fan3_led).turn_off(); o3.set_transition_length(0); o3.perform();
+          auto o4 = id(fan4_led).turn_off(); o4.set_transition_length(0); o4.perform();
+      - delay: 150ms
+      - lambda: 'id(auto_led_override) = false;'
 
 # Poll buttons at 50ms for responsive edge detection
 interval:
@@ -203,17 +253,16 @@ interval:
                   *overrides[sel] = !*overrides[sel];
                   ESP_LOGI("usr_buttons_mode", "USR2 long-press: fan %d mode -> %s", sel, *overrides[sel] ? "manual" : "auto");
 
-                  // Consume the selection: the toggle ends selection mode and
-                  // hands the LEDs back to rpm_status_leds, exactly like
-                  // usr_selection_timeout's own cleanup. Stop the pending
-                  // timeout so it cannot blank the LEDs a second time later.
+                  // Consume the selection: the toggle ends selection mode,
+                  // exactly like usr_selection_timeout's own cleanup. Stop
+                  // the pending timeout so it cannot fire a second cleanup
+                  // later. The LEDs are handed back to rpm_status_leds by
+                  // usr_mode_flash, only after the confirmation flash has
+                  // been seen, not immediately here.
                   id(usr_selected_fan) = 0;
                   id(usr_selection_timeout).stop();
-                  id(auto_led_override) = false;
-                  auto off1 = id(fan1_led).turn_off(); off1.set_transition_length(0); off1.perform();
-                  auto off2 = id(fan2_led).turn_off(); off2.set_transition_length(0); off2.perform();
-                  auto off3 = id(fan3_led).turn_off(); off3.set_transition_length(0); off3.perform();
-                  auto off4 = id(fan4_led).turn_off(); off4.set_transition_length(0); off4.perform();
+                  id(usr_mode_flash_manual) = *overrides[sel];
+                  id(usr_mode_flash).execute();
                 }
               }
             }
