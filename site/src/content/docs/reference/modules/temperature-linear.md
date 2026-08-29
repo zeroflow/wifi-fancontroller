@@ -53,6 +53,8 @@ With the defaults (t_off=25, t1=30, t2=50, fanpercent1=30%, fanpercent2=100%):
 - 30-50 C: fans ramp linearly from 30% to 100%
 - Above 50 C: fans at 100%
 
+"Fans off" here means the module drives the PWM output to 0%. Whether the fan actually stops at 0% is a property of the fan, not of the module. Many PWM fans hold a minimum speed instead, see [Fan Compatibility](/reference/fan-compatibility/).
+
 ## Home Assistant Entities
 
 ### Number Entities

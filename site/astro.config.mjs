@@ -43,6 +43,7 @@ export default defineConfig({
             { label: 'Overview', slug: 'reference' },
             { slug: 'reference/datasheet' },
             { slug: 'reference/compliance' },
+            { slug: 'reference/fan-compatibility' },
             {
               label: 'Hardware',
               autogenerate: { directory: 'reference/hardware' },
@@ -62,7 +63,6 @@ export default defineConfig({
                 },
               ],
             },
-            { slug: 'reference/fan-compatibility' },
             { slug: 'reference/web-server' },
             { slug: 'reference/standalone' },
           ],

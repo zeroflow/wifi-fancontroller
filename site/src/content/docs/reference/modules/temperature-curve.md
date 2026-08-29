@@ -55,6 +55,8 @@ The five temperature/speed pairs define a piecewise linear curve:
 
 **Auto-sorting:** Temperature points are automatically sorted at runtime, so they work even if defined out of order. However, the module validates the curve at boot and logs a warning if points are not monotonically increasing.
 
+A curve point of 0% drives the PWM output to 0%. Whether the fan then stops or holds a minimum speed is a property of the fan, not of the module. See [Fan Compatibility](/reference/fan-compatibility/) if you need the fans to come to a complete stop.
+
 ## Home Assistant Entities
 
 ### Number Entities
@@ -303,6 +305,7 @@ All 10 curve parameters can be adjusted live from Home Assistant without reflash
 - **Define temperatures in ascending order** -- while auto-sorting handles out-of-order points, having them in order makes your configuration easier to read and debug.
 - **Start with the Balanced preset** -- the default curve works well for most scenarios. Adjust individual points based on your environment.
 - **Consider your fans' minimum speed** -- if your fans need at least 20% PWM to spin reliably, make sure your lowest non-zero speed point is at or above that threshold.
+- **Check whether your fans stop at 0%** - a 0% curve point does not guarantee a stopped fan. [Fan Compatibility](/reference/fan-compatibility/) lists tested fans and explains how to check yours.
 - **Use the Curve Output sensor for debugging** -- it updates every 10 seconds and shows the current interpolated fan speed, making it easy to verify your curve behaves as expected at different temperatures.
 
 ## Controlling From a Different Sensor

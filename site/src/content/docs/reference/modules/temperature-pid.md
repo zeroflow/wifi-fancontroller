@@ -64,6 +64,8 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 | PID Deadband ki Multiplier  | 0 -- 0.2 | 0.01  | 0.04    | Ki scaling inside deadband (0.04 = 4% of normal Ki)   |
 | Fan Minimum Speed           | 0 -- 30% | 1     | 0       | Minimum fan speed enforced by PID (0 = fans can stop) |
 
+A Fan Minimum Speed of 0 lets the PID drive the output down to 0%. Whether the fan then stops is a property of the fan, not of the module; many PWM fans hold a minimum speed at 0% duty cycle. See [Fan Compatibility](/reference/fan-compatibility/).
+
 ### Sensor Entities
 
 | Entity         | Unit | Description                                      |

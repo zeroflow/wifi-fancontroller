@@ -23,7 +23,7 @@ Every WiFi Fan Controller is flashed with factory firmware before shipping. Firs
 - WiFi Fan Controller board
 - USB-C data cable (not charge-only), used for serial-based WiFi provisioning
 - An external 12V DC SELV power supply, not included. 5.5x2.1mm barrel jack, centre positive, 12V DC ±5%, minimum 2.5A recommended depending on fan load. See [Safety and Compliance](/reference/compliance/) for the full requirement.
-- One or more PWM fans (4-pin)
+- One or more PWM fans (4-pin). If your setup needs the fans to stop completely when idle, check [Fan Compatibility](/reference/fan-compatibility/) before buying. Many PWM fans hold a minimum speed instead of stopping at 0%.
 
 <Aside type="caution" title="Use a regulated power supply">
 The board requires a regulated switch-mode 12V DC supply. Do not use an old, unregulated
@@ -59,6 +59,7 @@ This product contains a radio transmitter. Install the product so that a separat
    - Connect your **external 12V DC power supply** to the board's power input (5.5x2.1mm barrel jack, centre positive)
    - Plug your **PWM fans** (4-pin) into the fan headers (Fan 1 through Fan 4)
    - Check your hardware revision page for the correct pin layout and connector orientation
+   - A fan that keeps spinning when you switch it off later is normal for some models, see [Fan Compatibility](/reference/fan-compatibility/)
 
    <Aside type="caution" title="USB-C does not power fans">
    The USB-C port is for flashing and serial communication only. Fans require 12V DC power through the barrel jack connector. The USB-C port provides only 5V to the ESP32 microcontroller.

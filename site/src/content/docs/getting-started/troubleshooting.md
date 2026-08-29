@@ -23,6 +23,13 @@ Find solutions to common issues below. Each section is organized by symptom so y
 - **Minimum startup speed** -- some fans require a higher PWM percentage to start spinning (typically 20-30%). Try setting the fan to 100% first, then lower gradually to find the minimum speed your fans support.
 - **Check wiring** -- make sure the fan connector is fully seated and oriented correctly. See your [hardware revision page](/reference/hardware/) for pin diagrams.
 
+## Fans keep spinning when set to off
+
+- **This is usually the fan, not the board** - the Intel 4-wire PWM specification leaves behavior at very low duty cycles to the fan manufacturer. Many fans hold a minimum speed instead of stopping when the controller output reaches 0%.
+- **Read the RPM sensor** - if a fan reports a steady non-zero RPM while its fan entity is switched off, that value is the fan's own minimum speed. [Fan Compatibility](/reference/fan-compatibility/) lists the fans that have been tested and explains how to check a fan that is not listed.
+- **The board cannot switch 12V** - the fan headers are always powered while the barrel jack is connected. A fan that does not stop on its own cannot be stopped by the controller. If a hard stop is a firm requirement, pick a fan confirmed to spin down to 0 RPM.
+- **3-pin fans always run at full speed** - a 3-pin DC fan has no PWM input and ignores the speed setting entirely. Check that your fan is a true 4-pin PWM model.
+
 ## Not showing in Home Assistant
 
 - **ESPHome integration required** -- the fan controller uses the ESPHome native API. Make sure the [ESPHome integration](https://www.home-assistant.io/integrations/esphome/) is installed.
