@@ -16,6 +16,10 @@ The controller uses standard 4-pin PWM fan headers. Fan type determines what is 
 
 3-pin fans are physically compatible with 4-pin headers (the PWM pin simply has no contact), but the controller cannot slow them down. All speed control, temperature curves, and RPM-PI modules require a 4-pin PWM fan.
 
+The header itself carries 12V whenever the barrel jack is connected, regardless of the
+speed setting. A fan set to 0%, or switched off in Home Assistant, still has 12V on its
+supply pins. Unplug the barrel jack before swapping or rewiring a fan.
+
 ## PWM Spin-Down Behavior
 
 The Intel 4-Wire PWM Fan Specification defines fan behavior at 100% duty cycle, but leaves the low end of the range to the fan manufacturer. Each fan has its own minimum duty cycle, stated in that fan's datasheet, and behavior below that minimum is undefined. A minimum somewhere around 20% is common in practice, but it is not a value the specification fixes.
