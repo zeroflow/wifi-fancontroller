@@ -49,12 +49,27 @@ Dieses Produkt enthält einen Funksender. Installieren Sie das Produkt so, dass 
 
 2. **Lüfter anschließen**
 
-   - Verbinden Sie Ihr **externes 12 V DC-Netzteil** mit dem Stromeingang der Platine (Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv)
    - Stecken Sie Ihre **PWM-Lüfter** (4-polig) in die Lüfteranschlüsse (Fan 1 bis Fan 4)
+   - Verbinden Sie Ihr **externes 12 V DC-Netzteil** mit dem Stromeingang der Platine (Hohlstecker 5,5 x 2,1 mm, Mittelpin positiv)
    - Prüfen Sie die Seite Ihrer Hardware-Revision für die korrekte Pin-Belegung und Steckerausrichtung
 
    <Aside type="caution" title="USB-C versorgt keine Lüfter mit Strom">
    Der USB-C-Anschluss dient ausschließlich dem Flashen und der seriellen Kommunikation. Lüfter benötigen 12 V DC über den Hohlstecker-Anschluss. Der USB-C-Anschluss liefert nur 5 V an den ESP32-Mikrocontroller.
+   </Aside>
+
+   <Aside type="tip" title="Reihenfolge beim Anschließen und Trennen">
+   Schließen Sie in dieser Reihenfolge an: zuerst die Lüfter an die Lüfteranschlüsse, dann
+   den Hohlstecker an die Platine, dann das Netzteil an die Steckdose. Trennen Sie in
+   umgekehrter Reihenfolge: zuerst die Steckdose, dann den Hohlstecker, dann die Lüfter.
+
+   Wird ein Lüfter an eine bereits spannungsführende 12 V-Schiene gesteckt, entsteht ein
+   kurzer Einschaltstromstoß, der an den Kontakten einen kleinen Lichtbogen erzeugt und sie
+   über viele Steckzyklen hinweg abnutzt. Außerdem bricht die 12 V-Schiene kurz ein, die sich
+   alle vier Anschlüsse teilen, was bereits laufende Lüfter stören kann. Es kostet nichts,
+   das zu vermeiden.
+
+   Den Teil "Hohlstecker vor Steckdose" finden Sie auch unter
+   [Sicherheit und Konformität](/de/reference/compliance/).
    </Aside>
 
 3. **In Home Assistant einbinden**
