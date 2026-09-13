@@ -56,13 +56,27 @@ This product contains a radio transmitter. Install the product so that a separat
 
 2. **Connect your fans**
 
-   - Connect your **external 12V DC power supply** to the board's power input (5.5x2.1mm barrel jack, centre positive)
    - Plug your **PWM fans** (4-pin) into the fan headers (Fan 1 through Fan 4)
+   - Connect your **external 12V DC power supply** to the board's power input (5.5x2.1mm barrel jack, centre positive)
    - Check your hardware revision page for the correct pin layout and connector orientation
    - A fan that keeps spinning when you switch it off later is normal for some models, see [Fan Compatibility](/reference/fan-compatibility/)
 
    <Aside type="caution" title="USB-C does not power fans">
    The USB-C port is for flashing and serial communication only. Fans require 12V DC power through the barrel jack connector. The USB-C port provides only 5V to the ESP32 microcontroller.
+   </Aside>
+
+   <Aside type="tip" title="Connect and disconnect in this order">
+   Connect in this order: the fans into the headers, then the barrel plug into the board,
+   then the power supply into mains. Disconnect in the reverse order: mains first, then the
+   barrel plug, then the fans.
+
+   Plugging a fan into a rail that is already live draws a brief inrush spike that arcs
+   across the mating contacts and pits them over many insertions. It also dips the 12V rail
+   that all four headers share, which can glitch the fans that are already running. Avoiding
+   it costs nothing.
+
+   The barrel plug before mains half of this is also stated under
+   [Safety and Compliance](/reference/compliance/).
    </Aside>
 
 3. **Adopt in Home Assistant**
