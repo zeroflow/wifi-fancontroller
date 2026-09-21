@@ -16,7 +16,7 @@ jobs:
   # `uses:` tag makes GitHub reject the whole file as invalid.
   build-firmware:
     name: Build Firmware
-    uses: esphome/workflows/.github/workflows/build.yml@2026.8.1
+    uses: esphome/workflows/.github/workflows/build.yml@2026.9.0
     with:
       files: |
         fancontroller-rev1.0-esp32.factory.yaml
