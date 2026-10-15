@@ -44,6 +44,22 @@ esphome:
             condition:
               lambda: 'return !id(init_done);'
             then:
+              # First boot: no fan state is stored yet, so RESTORE_DEFAULT_ON
+              # would leave every fan on at 0%. A real turn_on call sets 100%
+              # and stores it. The delay lets the fans finish their own restore.
+              - delay: 5s
+              - fan.turn_on:
+                  id: fan1
+                  speed: 100
+              - fan.turn_on:
+                  id: fan2
+                  speed: 100
+              - fan.turn_on:
+                  id: fan3
+                  speed: 100
+              - fan.turn_on:
+                  id: fan4
+                  speed: 100
               - lambda: 'id(init_done) = true;'
 
 # WiFi status callbacks
