@@ -74,6 +74,23 @@ A curve point of 0% drives the PWM output to 0%. Whether the fan then stops or h
 | Curve Temperature 5 | 0 -- 60  | 0.5  | C    | 50.0    | Temperature point 5  |
 | Curve Speed 5       | 0 -- 100 | 1    | %    | 100     | Fan speed at point 5 |
 
+### Preset Buttons
+
+Apply a complete temperature curve with **Curve Preset Silent**, **Curve Preset Balanced**, **Curve Preset Aggressive**, or **Curve Preset Server** in Home Assistant or the device web UI (when enabled).
+
+| Preset | Temperature / speed points | Speed at 30 C |
+| ------ | -------------------------- | ------------- |
+| Silent | 20 C / 0%, 25 C / 20%, 35 C / 40%, 45 C / 60%, 55 C / 80% | 30% |
+| Balanced | 20 C / 0%, 25 C / 25%, 30 C / 50%, 40 C / 75%, 50 C / 100% | 50% |
+| Aggressive | 20 C / 0%, 22 C / 30%, 28 C / 60%, 35 C / 85%, 40 C / 100% | about 67% |
+| Server | 15 C / 20%, 20 C / 30%, 25 C / 50%, 30 C / 75%, 35 C / 100% | 75% |
+
+For example, press **Curve Preset Server** to make the fans run at 75% at 30 C. To use a different speed, set **Curve Temperature 4** to **30 C** and **Curve Speed 4** to your desired percentage. Keep the other temperature points in ascending order. Intermediate temperatures still use smooth interpolation.
+
+Each button replaces all ten curve values and immediately recalculates the output. You can then fine-tune the number entities; no reflashing is needed. Values are saved using the existing number entities' restore behavior (allow the configured flash write interval before cutting power). Restarting does not reapply a preset over your saved edits.
+
+Presets only affect fans whose **Auto Control Fan** switch is on and which are not in manual override. Safety floors still apply. Preset buttons are included with `modules/temperature_curve.yaml`; the dual and triple curve modules have separate controls.
+
 ### Sensor Entities
 
 | Entity       | Unit | Description                                        |

@@ -107,3 +107,10 @@ substitutions:
 
 # Note: You can also adjust all these values dynamically in Home Assistant!
 # The curve module exposes all 10 values (5 temps + 5 speeds) as number entities.
+
+# Or apply a complete profile at runtime using the Curve Preset Silent,
+# Balanced, Aggressive or Server buttons in Home Assistant.
+# Preset buttons replace all ten values and recalculate the output immediately.
+# Afterwards, fine-tune any point via the Curve Temperature / Curve Speed
+# entities. Example: Server gives 75% at 30 C via point 4, so adjust
+# Curve Speed 4 to change the speed at that temperature.

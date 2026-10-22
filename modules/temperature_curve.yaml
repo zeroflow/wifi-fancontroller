@@ -40,6 +40,7 @@
 #   When a safety module (e.g. stall_guard) sets a floor, this module
 #   will not command a running fan below that floor value.
 #   Commanding a fan OFF (0%) is always honored - the floor only applies to non-zero speeds.
+#   - One-click Silent, Balanced, Aggressive and Server preset buttons
 #   - All values adjustable via Home Assistant UI
 #   - Individual auto-control switches for each of 4 fans
 #   - Output value sensor showing current calculated fan speed
@@ -241,6 +242,165 @@ number:
     unit_of_measurement: "%"
     optimistic: true
     id: curve_speed5
+
+# Presets are explicit actions: boot continues to restore the existing numbers.
+# Update the output only after all ten values have been applied.
+button:
+  - platform: template
+    name: "Curve Preset Silent"
+    id: curve_preset_silent
+    entity_category: config
+    icon: mdi:fan-auto
+    on_press:
+      then:
+        - number.set:
+            id: curve_temp1
+            value: 20
+        - number.set:
+            id: curve_speed1
+            value: 0
+        - number.set:
+            id: curve_temp2
+            value: 25
+        - number.set:
+            id: curve_speed2
+            value: 20
+        - number.set:
+            id: curve_temp3
+            value: 35
+        - number.set:
+            id: curve_speed3
+            value: 40
+        - number.set:
+            id: curve_temp4
+            value: 45
+        - number.set:
+            id: curve_speed4
+            value: 60
+        - number.set:
+            id: curve_temp5
+            value: 55
+        - number.set:
+            id: curve_speed5
+            value: 80
+        - component.update: curve_output_value
+
+  - platform: template
+    name: "Curve Preset Balanced"
+    id: curve_preset_balanced
+    entity_category: config
+    icon: mdi:fan-auto
+    on_press:
+      then:
+        - number.set:
+            id: curve_temp1
+            value: 20
+        - number.set:
+            id: curve_speed1
+            value: 0
+        - number.set:
+            id: curve_temp2
+            value: 25
+        - number.set:
+            id: curve_speed2
+            value: 25
+        - number.set:
+            id: curve_temp3
+            value: 30
+        - number.set:
+            id: curve_speed3
+            value: 50
+        - number.set:
+            id: curve_temp4
+            value: 40
+        - number.set:
+            id: curve_speed4
+            value: 75
+        - number.set:
+            id: curve_temp5
+            value: 50
+        - number.set:
+            id: curve_speed5
+            value: 100
+        - component.update: curve_output_value
+
+  - platform: template
+    name: "Curve Preset Aggressive"
+    id: curve_preset_aggressive
+    entity_category: config
+    icon: mdi:fan-auto
+    on_press:
+      then:
+        - number.set:
+            id: curve_temp1
+            value: 20
+        - number.set:
+            id: curve_speed1
+            value: 0
+        - number.set:
+            id: curve_temp2
+            value: 22
+        - number.set:
+            id: curve_speed2
+            value: 30
+        - number.set:
+            id: curve_temp3
+            value: 28
+        - number.set:
+            id: curve_speed3
+            value: 60
+        - number.set:
+            id: curve_temp4
+            value: 35
+        - number.set:
+            id: curve_speed4
+            value: 85
+        - number.set:
+            id: curve_temp5
+            value: 40
+        - number.set:
+            id: curve_speed5
+            value: 100
+        - component.update: curve_output_value
+
+  - platform: template
+    name: "Curve Preset Server"
+    id: curve_preset_server
+    entity_category: config
+    icon: mdi:fan-auto
+    on_press:
+      then:
+        - number.set:
+            id: curve_temp1
+            value: 15
+        - number.set:
+            id: curve_speed1
+            value: 20
+        - number.set:
+            id: curve_temp2
+            value: 20
+        - number.set:
+            id: curve_speed2
+            value: 30
+        - number.set:
+            id: curve_temp3
+            value: 25
+        - number.set:
+            id: curve_speed3
+            value: 50
+        - number.set:
+            id: curve_temp4
+            value: 30
+        - number.set:
+            id: curve_speed4
+            value: 75
+        - number.set:
+            id: curve_temp5
+            value: 35
+        - number.set:
+            id: curve_speed5
+            value: 100
+        - component.update: curve_output_value
 
 sensor:
   - platform: template
