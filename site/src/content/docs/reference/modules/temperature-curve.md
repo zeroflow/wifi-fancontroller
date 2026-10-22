@@ -43,6 +43,10 @@ A fan put into manual mode, from Home Assistant or from the board, is skipped by
 | `curve_temp5`           | `"50.0"`                      | Temperature point 5 (C)                            |
 | `curve_speed5`          | `"100.0"`                     | Fan speed at point 5 (%)                           |
 | `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
+| `curve_input_min`       | `"0"`                         | Lowest value the Curve Temperature sliders accept  |
+| `curve_input_max`       | `"60"`                        | Highest value the sliders accept                   |
+| `curve_input_step`      | `"0.5"`                       | Slider step                                        |
+| `curve_input_unit`      | `"°C"`                        | Unit shown on the sliders                          |
 
 ## How It Works
 
@@ -73,6 +77,8 @@ A curve point of 0% drives the PWM output to 0%. Whether the fan then stops or h
 | Curve Speed 4       | 0 -- 100 | 1    | %    | 75      | Fan speed at point 4 |
 | Curve Temperature 5 | 0 -- 60  | 0.5  | C    | 50.0    | Temperature point 5  |
 | Curve Speed 5       | 0 -- 100 | 1    | %    | 100     | Fan speed at point 5 |
+
+The range, step and unit shown for the five Curve Temperature rows are the defaults. The four `curve_input` variables change them, which is how the module is used for humidity. See [Controlling From Humidity](#controlling-from-humidity).
 
 ### Preset Buttons
 
@@ -361,3 +367,58 @@ The module names the sensor it is reading in its boot log, so you can confirm fr
 :::caution[External sensors and startup]
 A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. During that window this module commands the fans **off**. Keep the sensor's `update_interval` short if that matters to you, and expect the fans not to spin until the first reading lands. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
 :::
+
+## Controlling From Humidity
+
+The onboard HDC1080 also measures relative humidity. It is declared as `fancontroller_humidity` in every hardware package, so humidity control needs no extra hardware. The module does not care what its input measures.
+
+```yaml
+# Your hardware package stays in the config as usual.
+packages:
+  temperature_curve:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_curve.yaml
+        vars:
+          friendly_name: "Humidity"
+          temperature_sensor_id: "fancontroller_humidity"
+          curve_input_min: "0"
+          curve_input_max: "100"
+          curve_input_step: "1"
+          curve_input_unit: "%"
+          curve_temp1: "50.0"
+          curve_speed1: "0.0"
+          curve_temp2: "60.0"
+          curve_speed2: "25.0"
+          curve_temp3: "70.0"
+          curve_speed3: "50.0"
+          curve_temp4: "75.0"
+          curve_speed4: "75.0"
+          curve_temp5: "80.0"
+          curve_speed5: "100.0"
+```
+
+The four `curve_input` variables set the range, step and unit of the five Curve Temperature sliders. Their defaults (0, 60, 0.5, °C) are the previous fixed values, so configurations that do not set them behave exactly as before. Keep every curve point inside the chosen range.
+
+:::note[The names still say temperature]
+The sliders keep the names Curve Temperature 1 to 5, and the boot log still says "Temperature point". This is on purpose: renaming them would change the Home Assistant entities and break existing dashboards and automations. In a humidity config, read them as humidity points. Setting `friendly_name` to "Humidity" makes the output sensor read "Humidity Curve Output".
+:::
+
+The sliders keep their values across reboots and reflashes, so a board that ran the temperature curve before keeps the old temperature points. Set the five sliders once after switching.
+
+The [preset buttons](#preset-buttons) are temperature presets. They load fixed temperature points between 15 and 55, so in a humidity config one press would replace your humidity curve with temperature values. Remove them in your own config:
+
+```yaml
+button:
+  - id: !remove curve_preset_silent
+  - id: !remove curve_preset_balanced
+  - id: !remove curve_preset_aggressive
+  - id: !remove curve_preset_server
+```
+
+The example below already does this.
+
+The board's own warmth makes the onboard sensor read humidity a few percent low. Shift the curve points down a little, or add a humidity offset as shown in [Sensor offset](/reference/modules/usr-buttons-mode/#sensor-offset). The board is rated for 5 to 85 % relative humidity, non-condensing (see the [datasheet](/reference/datasheet/)), which is why the example reaches full speed at 80 %.
+
+A complete config is in [examples/standalone-humidity-curve-rev-3.3.yaml](https://github.com/zeroflow/wifi-fancontroller/blob/main/examples/standalone-humidity-curve-rev-3.3.yaml). It runs without Home Assistant and groups the curve in the built-in web UI. For the walkthrough behind that setup, see [Standalone usage](/reference/standalone/).
