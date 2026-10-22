@@ -31,6 +31,13 @@
 #   - curve_speed[1-5]: Fan speed % at each temperature point
 #   - temperature_sensor_id: Id of the sensor supplying the control temperature
 #       (default: fancontroller_temperature, the onboard sensor).
+#   - curve_input_min: Lowest value the Curve Temperature sliders accept (default: "0")
+#   - curve_input_max: Highest value the sliders accept (default: "60")
+#   - curve_input_step: Slider step (default: "0.5")
+#   - curve_input_unit: Unit shown on the sliders (default: "°C")
+#   For humidity control point temperature_sensor_id at fancontroller_humidity and
+#   set curve_input_min/max/step/unit to "0" / "100" / "1" / "%". See
+#   examples/standalone-humidity-curve-rev-3.3.yaml for a complete config.
 #
 # Features:
 #   - 5 configurable curve points for precise control
@@ -56,6 +63,16 @@ substitutions:
   friendly_name: "Fancontroller" # default
   # Sensor supplying the control temperature. Defaults to the onboard sensor
   temperature_sensor_id: fancontroller_temperature
+  # Range, step and unit of the five Curve Temperature sliders. The defaults
+  # suit temperatures in °C. For humidity control use "0", "100", "1" and "%".
+  # The preset buttons below write fixed temperature points (15 to 55) and only
+  # make sense for temperature control, so a config that drives the curve from
+  # another kind of input should remove them with !remove, as
+  # examples/standalone-humidity-curve-rev-3.3.yaml does.
+  curve_input_min: "0"
+  curve_input_max: "60"
+  curve_input_step: "0.5"
+  curve_input_unit: "°C"
   # Default: Balanced curve
   curve_temp1: "20.0"
   curve_speed1: "0.0"
@@ -83,6 +100,9 @@ esphome:
         - lambda: |-
             ESP_LOGI("temperature_curve", "Control sensor: ${temperature_sensor_id}");
 
+            // Unit text for the log lines below, passed as a string argument and never placed inside a format string
+            const char *curve_unit = "${curve_input_unit}";
+
             // Check if temperature points are monotonically increasing
             float temps[5] = {
               ${curve_temp1}, ${curve_temp2}, ${curve_temp3},
@@ -93,9 +113,9 @@ esphome:
             for (int i = 0; i < 4; i++) {
               if (temps[i] >= temps[i+1]) {
                 ESP_LOGW("temperature_curve",
-                  "WARNING: Temperature point %d (%.1f°C) >= point %d (%.1f°C)! "
+                  "WARNING: Temperature point %d (%.1f%s) >= point %d (%.1f%s)! "
                   "Curve will be auto-sorted at runtime, but consider fixing your configuration.",
-                  i+1, temps[i], i+2, temps[i+1]);
+                  i+1, temps[i], curve_unit, i+2, temps[i+1], curve_unit);
                 is_monotonic = false;
                 id(curve_config_warning) = true;
               }
@@ -103,8 +123,9 @@ esphome:
 
             if (is_monotonic) {
               ESP_LOGI("temperature_curve",
-                "Temperature curve validated: %.1f°C → %.1f°C → %.1f°C → %.1f°C → %.1f°C",
-                temps[0], temps[1], temps[2], temps[3], temps[4]);
+                "Temperature curve validated: %.1f%s → %.1f%s → %.1f%s → %.1f%s → %.1f%s",
+                temps[0], curve_unit, temps[1], curve_unit, temps[2], curve_unit,
+                temps[3], curve_unit, temps[4], curve_unit);
             }
 
 number:
@@ -115,10 +136,10 @@ number:
     entity_category: config
     restore_value: true
     initial_value: ${curve_temp1}
-    min_value: 0
-    max_value: 60
-    step: 0.5
-    unit_of_measurement: "°C"
+    min_value: ${curve_input_min}
+    max_value: ${curve_input_max}
+    step: ${curve_input_step}
+    unit_of_measurement: "${curve_input_unit}"
     optimistic: true
     id: curve_temp1
 
@@ -142,10 +163,10 @@ number:
     entity_category: config
     restore_value: true
     initial_value: ${curve_temp2}
-    min_value: 0
-    max_value: 60
-    step: 0.5
-    unit_of_measurement: "°C"
+    min_value: ${curve_input_min}
+    max_value: ${curve_input_max}
+    step: ${curve_input_step}
+    unit_of_measurement: "${curve_input_unit}"
     optimistic: true
     id: curve_temp2
 
@@ -169,10 +190,10 @@ number:
     entity_category: config
     restore_value: true
     initial_value: ${curve_temp3}
-    min_value: 0
-    max_value: 60
-    step: 0.5
-    unit_of_measurement: "°C"
+    min_value: ${curve_input_min}
+    max_value: ${curve_input_max}
+    step: ${curve_input_step}
+    unit_of_measurement: "${curve_input_unit}"
     optimistic: true
     id: curve_temp3
 
@@ -196,10 +217,10 @@ number:
     entity_category: config
     restore_value: true
     initial_value: ${curve_temp4}
-    min_value: 0
-    max_value: 60
-    step: 0.5
-    unit_of_measurement: "°C"
+    min_value: ${curve_input_min}
+    max_value: ${curve_input_max}
+    step: ${curve_input_step}
+    unit_of_measurement: "${curve_input_unit}"
     optimistic: true
     id: curve_temp4
 
@@ -223,10 +244,10 @@ number:
     entity_category: config
     restore_value: true
     initial_value: ${curve_temp5}
-    min_value: 0
-    max_value: 60
-    step: 0.5
-    unit_of_measurement: "°C"
+    min_value: ${curve_input_min}
+    max_value: ${curve_input_max}
+    step: ${curve_input_step}
+    unit_of_measurement: "${curve_input_unit}"
     optimistic: true
     id: curve_temp5
 
