@@ -1,0 +1,349 @@
+# Example: Rev 4.0 network mode Zigbee router (ESP32-C6) - EXPERIMENTAL
+#
+# Developer test config for the Rev 4.0 boards, not a customer feature. It is
+# never part of the factory image or CI and references the dev branch.
+#
+# Zigbee only, no WiFi, no api, no OTA: the C6 has one 2.4 GHz radio, and per
+# the Espressif coexistence matrix a Zigbee router next to WiFi is unstable.
+#
+# FLASH OVER USB ONLY. The component appends a zb_fct partition, so this image
+# has its own partition table (the app slots shrink) that differs from the
+# standard Rev 4.0 image. It cannot be installed or left by OTA. Going back to
+# WiFi or Thread firmware means a USB flash, ideally with a full erase so stale
+# Zigbee network data in nvs is gone.
+#
+# Pairing: allow joining in Zigbee2MQTT, power the board, it joins on its own.
+# Zigbee2MQTT builds a generated definition with four light endpoints (fan 1-4,
+# brightness = speed) and a temperature/humidity endpoint. To re-pair, erase the
+# flash over USB.
+#
+# Status LED: blue pulse until joined, green on join and dim after 60 s. There
+# is no red state because the component exposes no leave event (connected stays
+# true, and a leave with reset factory-resets and reboots, which shows blue
+# again).
+#
+# Component: luar123/zigbee_esphome, pinned to the commit b6caf39 (2026-10-17,
+# zigbee sdk 2.0.5) because the repo has no tags. Needs ESPHome >= 2026.6 and
+# ESP-IDF >= 5.5.4 (ESPHome 2026.7.4 ships 5.5.5).
+#
+# Board variants:
+# - Default: C-sample with the 8MB H8 module.
+# - C-sample with the 4MB N4 module: uncomment the esp32 block below.
+#   The generated table plus zb_fct fits 4MB: the app slot shrinks to 0x1B0000
+#   (1.69 MB) and the image uses about 41% of it (725452 of 1769472 bytes,
+#   ESPHome 2026.7.4). On 8MB it is about 19% of the 3.69 MB slot.
+# - A/B samples are not covered: their package has a different pinout and
+#   carries WiFi callbacks.
+
+packages:
+  # Everything of Rev 4.0 that is not network-specific, no WiFi callbacks
+  hardware: github://zeroflow/wifi-fancontroller/hardware-rev-4.0-base.yaml@dev
+
+# 4MB N4 module: overrides only flash_size, board and framework stay from the base
+# esp32:
+#   flash_size: 4MB
+
+esphome:
+  name: fancontroller-zigbee
+  friendly_name: "Fancontroller Zigbee"
+
+# Enable logging (USB serial)
+logger:
+
+# The repo has no tags, so a full commit is pinned
+external_components:
+  - source: github://luar123/zigbee_esphome@b6caf39e9485d2d14bcdcfbafe5cf8e58d74fbff
+    components: [zigbee]
+
+zigbee:
+  id: zb
+  # Mains powered, so a router that extends the mesh
+  router: true
+  # Basic cluster power source: 1 = mains
+  power_supply: 1
+  endpoints:
+    # Fan 1: dimmable light, brightness = speed in percent (level 0-254 = 0-100 %)
+    - num: 1
+      device_type: DIMMABLE_LIGHT
+      clusters:
+        - id: ON_OFF
+          attributes:
+            - attribute_id: 0
+              type: BOOL
+              id: fan1_on_off_attr
+              report: true
+              on_value:
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return x && !id(fan1).state;'
+                      then:
+                        - fan.turn_on: fan1
+                  - if:
+                      condition:
+                        lambda: 'return !x && id(fan1).state;'
+                      then:
+                        - fan.turn_off: fan1
+        - id: LEVEL
+          attributes:
+            - attribute_id: 0
+              type: UINT8
+              id: fan1_level_attr
+              report: true
+              on_value:
+                then:
+                  # Setting only the speed stores it without switching the fan on,
+                  # the equality check stops feedback from the fan on_state below
+                  - lambda: |-
+                      int speed = lroundf(x * 100.0f / 254.0f);
+                      if (speed < 1) speed = 1;
+                      if (speed > 100) speed = 100;
+                      if (speed != id(fan1).speed) {
+                        auto call = id(fan1).make_call();
+                        call.set_speed(speed);
+                        call.perform();
+                      }
+
+    # Fan 2: dimmable light, brightness = speed in percent (level 0-254 = 0-100 %)
+    - num: 2
+      device_type: DIMMABLE_LIGHT
+      clusters:
+        - id: ON_OFF
+          attributes:
+            - attribute_id: 0
+              type: BOOL
+              id: fan2_on_off_attr
+              report: true
+              on_value:
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return x && !id(fan2).state;'
+                      then:
+                        - fan.turn_on: fan2
+                  - if:
+                      condition:
+                        lambda: 'return !x && id(fan2).state;'
+                      then:
+                        - fan.turn_off: fan2
+        - id: LEVEL
+          attributes:
+            - attribute_id: 0
+              type: UINT8
+              id: fan2_level_attr
+              report: true
+              on_value:
+                then:
+                  # Setting only the speed stores it without switching the fan on,
+                  # the equality check stops feedback from the fan on_state below
+                  - lambda: |-
+                      int speed = lroundf(x * 100.0f / 254.0f);
+                      if (speed < 1) speed = 1;
+                      if (speed > 100) speed = 100;
+                      if (speed != id(fan2).speed) {
+                        auto call = id(fan2).make_call();
+                        call.set_speed(speed);
+                        call.perform();
+                      }
+
+    # Fan 3: dimmable light, brightness = speed in percent (level 0-254 = 0-100 %)
+    - num: 3
+      device_type: DIMMABLE_LIGHT
+      clusters:
+        - id: ON_OFF
+          attributes:
+            - attribute_id: 0
+              type: BOOL
+              id: fan3_on_off_attr
+              report: true
+              on_value:
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return x && !id(fan3).state;'
+                      then:
+                        - fan.turn_on: fan3
+                  - if:
+                      condition:
+                        lambda: 'return !x && id(fan3).state;'
+                      then:
+                        - fan.turn_off: fan3
+        - id: LEVEL
+          attributes:
+            - attribute_id: 0
+              type: UINT8
+              id: fan3_level_attr
+              report: true
+              on_value:
+                then:
+                  # Setting only the speed stores it without switching the fan on,
+                  # the equality check stops feedback from the fan on_state below
+                  - lambda: |-
+                      int speed = lroundf(x * 100.0f / 254.0f);
+                      if (speed < 1) speed = 1;
+                      if (speed > 100) speed = 100;
+                      if (speed != id(fan3).speed) {
+                        auto call = id(fan3).make_call();
+                        call.set_speed(speed);
+                        call.perform();
+                      }
+
+    # Fan 4: dimmable light, brightness = speed in percent (level 0-254 = 0-100 %)
+    - num: 4
+      device_type: DIMMABLE_LIGHT
+      clusters:
+        - id: ON_OFF
+          attributes:
+            - attribute_id: 0
+              type: BOOL
+              id: fan4_on_off_attr
+              report: true
+              on_value:
+                then:
+                  - if:
+                      condition:
+                        lambda: 'return x && !id(fan4).state;'
+                      then:
+                        - fan.turn_on: fan4
+                  - if:
+                      condition:
+                        lambda: 'return !x && id(fan4).state;'
+                      then:
+                        - fan.turn_off: fan4
+        - id: LEVEL
+          attributes:
+            - attribute_id: 0
+              type: UINT8
+              id: fan4_level_attr
+              report: true
+              on_value:
+                then:
+                  # Setting only the speed stores it without switching the fan on,
+                  # the equality check stops feedback from the fan on_state below
+                  - lambda: |-
+                      int speed = lroundf(x * 100.0f / 254.0f);
+                      if (speed < 1) speed = 1;
+                      if (speed > 100) speed = 100;
+                      if (speed != id(fan4).speed) {
+                        auto call = id(fan4).make_call();
+                        call.set_speed(speed);
+                        call.perform();
+                      }
+    # Temperature and humidity of the onboard HDC1080
+    - num: 5
+      device_type: TEMPERATURE_SENSOR
+      clusters:
+        - id: TEMPERATURE_MEASUREMENT
+          attributes:
+            - attribute_id: 0
+              type: INT16
+              report: true
+              device: fancontroller_temperature
+              scale: 100
+        - id: REL_HUMIDITY_MEASUREMENT
+          attributes:
+            - attribute_id: 0
+              type: UINT16
+              report: true
+              device: fancontroller_humidity
+              scale: 100
+  # Fires on join and on rejoin after a reboot
+  on_join:
+    then:
+      - script.execute: zigbee_led_joined
+      # Push the current fan state so Zigbee2MQTT sees the restored state
+      - zigbee.setAttr:
+          id: fan1_on_off_attr
+          value: !lambda 'return id(fan1).state;'
+      - zigbee.setAttr:
+          id: fan1_level_attr
+          value: !lambda 'return lroundf(id(fan1).speed * 254.0f / 100.0f);'
+      - zigbee.setAttr:
+          id: fan2_on_off_attr
+          value: !lambda 'return id(fan2).state;'
+      - zigbee.setAttr:
+          id: fan2_level_attr
+          value: !lambda 'return lroundf(id(fan2).speed * 254.0f / 100.0f);'
+      - zigbee.setAttr:
+          id: fan3_on_off_attr
+          value: !lambda 'return id(fan3).state;'
+      - zigbee.setAttr:
+          id: fan3_level_attr
+          value: !lambda 'return lroundf(id(fan3).speed * 254.0f / 100.0f);'
+      - zigbee.setAttr:
+          id: fan4_on_off_attr
+          value: !lambda 'return id(fan4).state;'
+      - zigbee.setAttr:
+          id: fan4_level_attr
+          value: !lambda 'return lroundf(id(fan4).speed * 254.0f / 100.0f);'
+
+# Keeps Zigbee2MQTT in sync with local changes such as the boot restore and the
+# first-boot 100%. The is_started() guard skips calls before the stack runs.
+fan:
+  - id: !extend fan1
+    on_state:
+      - if:
+          condition:
+            lambda: 'return id(zb).is_started();'
+          then:
+            - zigbee.setAttr:
+                id: fan1_on_off_attr
+                value: !lambda 'return id(fan1).state;'
+            - zigbee.setAttr:
+                id: fan1_level_attr
+                value: !lambda 'return lroundf(id(fan1).speed * 254.0f / 100.0f);'
+  - id: !extend fan2
+    on_state:
+      - if:
+          condition:
+            lambda: 'return id(zb).is_started();'
+          then:
+            - zigbee.setAttr:
+                id: fan2_on_off_attr
+                value: !lambda 'return id(fan2).state;'
+            - zigbee.setAttr:
+                id: fan2_level_attr
+                value: !lambda 'return lroundf(id(fan2).speed * 254.0f / 100.0f);'
+  - id: !extend fan3
+    on_state:
+      - if:
+          condition:
+            lambda: 'return id(zb).is_started();'
+          then:
+            - zigbee.setAttr:
+                id: fan3_on_off_attr
+                value: !lambda 'return id(fan3).state;'
+            - zigbee.setAttr:
+                id: fan3_level_attr
+                value: !lambda 'return lroundf(id(fan3).speed * 254.0f / 100.0f);'
+  - id: !extend fan4
+    on_state:
+      - if:
+          condition:
+            lambda: 'return id(zb).is_started();'
+          then:
+            - zigbee.setAttr:
+                id: fan4_on_off_attr
+                value: !lambda 'return id(fan4).state;'
+            - zigbee.setAttr:
+                id: fan4_level_attr
+                value: !lambda 'return lroundf(id(fan4).speed * 254.0f / 100.0f);'
+
+script:
+  # Green on join, dim after 60 s, same as the WiFi on_connect callback
+  - id: zigbee_led_joined
+    mode: restart
+    then:
+      - lambda: |-
+          auto call = id(status_led).turn_on();
+          call.set_rgb(0.0, 1.0, 0.0); // green
+          call.set_brightness(0.5);
+          call.set_effect("none");
+          call.perform();
+      - delay: 60s
+      - lambda: |-
+          auto call = id(status_led).turn_on();
+          call.set_rgb(0.0, 1.0, 0.0); // green
+          call.set_brightness(0.1);
+          call.set_effect("none");
+          call.perform();
