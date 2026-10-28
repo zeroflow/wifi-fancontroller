@@ -26,6 +26,7 @@ Examples showing additional features and modules:
 These configs try the alternative network modes of the ESP32-C6 on Rev 4.0 developer boards. They reference the dev branch, are not validated by `test-examples.sh` or CI, and are not customer features.
 
 - **`network-wifi-ble-rev-4.0.yaml`** - WiFi with Improv BLE and Improv Serial provisioning, Home Assistant API and OTA, no credentials compiled in
+- **`network-thread-rev-4.0.yaml`** - Thread only (openthread FTD, no WiFi), Home Assistant API and OTA over Thread, status LED follows the Thread attach state; needs a `thread_tlv` secret with the active dataset of your border router
 
 ## Usage
 
