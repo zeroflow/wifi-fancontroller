@@ -32,8 +32,10 @@
 #   The generated table plus zb_fct fits 4MB: the app slot shrinks to 0x1B0000
 #   (1.69 MB) and the image uses about 41% of it (725452 of 1769472 bytes,
 #   ESPHome 2026.7.4). On 8MB it is about 19% of the 3.69 MB slot.
-# - A/B samples are not covered: their package has a different pinout and
-#   carries WiFi callbacks.
+# - A/B samples (4MB N4): swap the package below to hardware-rev-4.0a.yaml@dev
+#   and uncomment the `wifi: !remove` line below it. That package already sets
+#   4MB and carries its own pinout; the !remove drops its WiFi block (status
+#   LED callbacks). Same size as the 4MB C-sample build (ESPHome 2026.7.4).
 
 packages:
   # Everything of Rev 4.0 that is not network-specific, no WiFi callbacks
@@ -42,6 +44,9 @@ packages:
 # 4MB N4 module: overrides only flash_size, board and framework stay from the base
 # esp32:
 #   flash_size: 4MB
+
+# A/B samples only: remove the WiFi block of hardware-rev-4.0a.yaml
+# wifi: !remove
 
 esphome:
   name: fancontroller-zigbee
