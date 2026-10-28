@@ -15,6 +15,8 @@ export default defineConfig({
     '/rev-3-3': '/reference/hardware/rev-3-x/',
     '/rev-3-x': '/reference/hardware/rev-3-x/',
     '/rev-4-0': '/reference/hardware/rev-4-0/',
+    // Rev 4.0 A/B-sample label, no docs page of its own yet
+    '/rev-4-0b': 'https://github.com/zeroflow/wifi-fancontroller/blob/dev/fancontroller-rev4.0b-esp32c6.yaml',
   },
   integrations: [
     starlight({
