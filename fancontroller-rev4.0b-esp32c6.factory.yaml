@@ -1,0 +1,25 @@
+# WiFi Fan Controller - Revision 4.0 (ESP32-C6), A- and B-Sample - Factory Configuration
+# This configuration is used for initial device provisioning and flashing.
+#
+# It includes additional features for first-time setup:
+# - Bluetooth LE provisioning
+# - Serial provisioning
+# - Dashboard import capabilities
+#
+# After adoption, the device will use fancontroller-rev4.0b-esp32c6.yaml
+# without these extras.
+
+packages:
+  # Include all of the core configuration
+  core: !include fancontroller-rev4.0b-esp32c6.yaml
+
+# This should point to the public location of the yaml file that will be adopted
+# After adoption, the device uses the core yaml without the factory-specific features
+dashboard_import:
+  package_import_url: github://zeroflow/wifi-fancontroller/fancontroller-rev4.0b-esp32c6.yaml@dev
+  import_full_config: true
+
+# Sets up Bluetooth LE to allow the user
+# to provision wifi credentials to the device.
+esp32_improv:
+  authorizer: none
