@@ -91,6 +91,17 @@ globals:
     type: bool
     restore_value: no
     initial_value: "false"
+  # Selecting Custom keeps the existing points, even if they match a preset.
+  - id: curve_profile_custom
+    type: bool
+    restore_value: true
+    initial_value: "false"
+
+  # Fan on/off callbacks must distinguish curve writes from user commands.
+  - id: curve_applying_output
+    type: bool
+    restore_value: no
+    initial_value: "false"
 
 # Validate configuration at boot
 esphome:
@@ -141,6 +152,7 @@ number:
     step: ${curve_input_step}
     unit_of_measurement: "${curve_input_unit}"
     optimistic: true
+    mode: box
     id: curve_temp1
 
   - platform: template
@@ -154,6 +166,7 @@ number:
     step: 1
     unit_of_measurement: "%"
     optimistic: true
+    mode: box
     id: curve_speed1
 
   # Temperature Point 2
@@ -168,6 +181,7 @@ number:
     step: ${curve_input_step}
     unit_of_measurement: "${curve_input_unit}"
     optimistic: true
+    mode: box
     id: curve_temp2
 
   - platform: template
@@ -181,6 +195,7 @@ number:
     step: 1
     unit_of_measurement: "%"
     optimistic: true
+    mode: box
     id: curve_speed2
 
   # Temperature Point 3
@@ -195,6 +210,7 @@ number:
     step: ${curve_input_step}
     unit_of_measurement: "${curve_input_unit}"
     optimistic: true
+    mode: box
     id: curve_temp3
 
   - platform: template
@@ -208,6 +224,7 @@ number:
     step: 1
     unit_of_measurement: "%"
     optimistic: true
+    mode: box
     id: curve_speed3
 
   # Temperature Point 4
@@ -222,6 +239,7 @@ number:
     step: ${curve_input_step}
     unit_of_measurement: "${curve_input_unit}"
     optimistic: true
+    mode: box
     id: curve_temp4
 
   - platform: template
@@ -235,6 +253,7 @@ number:
     step: 1
     unit_of_measurement: "%"
     optimistic: true
+    mode: box
     id: curve_speed4
 
   # Temperature Point 5
@@ -249,6 +268,7 @@ number:
     step: ${curve_input_step}
     unit_of_measurement: "${curve_input_unit}"
     optimistic: true
+    mode: box
     id: curve_temp5
 
   - platform: template
@@ -262,10 +282,68 @@ number:
     step: 1
     unit_of_measurement: "%"
     optimistic: true
+    mode: box
     id: curve_speed5
 
 # Presets are explicit actions: boot continues to restore the existing numbers.
 # Update the output only after all ten values have been applied.
+select:
+  - platform: template
+    name: "Fan Profile"
+    id: fan_profile
+    icon: mdi:fan-auto
+    options:
+      - Silent
+      - Balanced
+      - Aggressive
+      - Server
+      - Custom
+    update_interval: 1s
+    # Derive the label from restored numbers; never reapply a preset at boot.
+    lambda: |-
+      auto label = [&](const char *name) -> optional<std::string> {
+        if (id(fan_profile).has_state() && id(fan_profile).current_option() == name)
+          return {};
+        return std::string(name);
+      };
+      if (id(curve_profile_custom)) return label("Custom");
+      const float values[10] = {
+        id(curve_temp1).state, id(curve_speed1).state,
+        id(curve_temp2).state, id(curve_speed2).state,
+        id(curve_temp3).state, id(curve_speed3).state,
+        id(curve_temp4).state, id(curve_speed4).state,
+        id(curve_temp5).state, id(curve_speed5).state
+      };
+      const float presets[4][10] = {
+        {20, 0, 25, 20, 35, 40, 45, 60, 55, 80},
+        {20, 0, 25, 25, 30, 50, 40, 75, 50, 100},
+        {20, 0, 22, 30, 28, 60, 35, 85, 40, 100},
+        {15, 20, 20, 30, 25, 50, 30, 75, 35, 100}
+      };
+      const char *names[4] = {"Silent", "Balanced", "Aggressive", "Server"};
+      for (int profile = 0; profile < 4; profile++) {
+        bool matches = true;
+        for (int point = 0; point < 10; point++) {
+          if (!std::isfinite(values[point]) ||
+              std::fabs(values[point] - presets[profile][point]) > 0.01f) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) return label(names[profile]);
+      }
+      return label("Custom");
+    set_action:
+      - lambda: |-
+          if (x == "Silent") id(curve_preset_silent).press();
+          else if (x == "Balanced") id(curve_preset_balanced).press();
+          else if (x == "Aggressive") id(curve_preset_aggressive).press();
+          else if (x == "Server") id(curve_preset_server).press();
+          else {
+            id(curve_profile_custom) = true;
+            id(fan_profile).update();
+          }
+
 button:
   - platform: template
     name: "Curve Preset Silent"
@@ -304,7 +382,9 @@ button:
         - number.set:
             id: curve_speed5
             value: 80
+        - lambda: id(curve_profile_custom) = false;
         - component.update: curve_output_value
+        - component.update: fan_profile
 
   - platform: template
     name: "Curve Preset Balanced"
@@ -343,7 +423,9 @@ button:
         - number.set:
             id: curve_speed5
             value: 100
+        - lambda: id(curve_profile_custom) = false;
         - component.update: curve_output_value
+        - component.update: fan_profile
 
   - platform: template
     name: "Curve Preset Aggressive"
@@ -382,7 +464,9 @@ button:
         - number.set:
             id: curve_speed5
             value: 100
+        - lambda: id(curve_profile_custom) = false;
         - component.update: curve_output_value
+        - component.update: fan_profile
 
   - platform: template
     name: "Curve Preset Server"
@@ -421,7 +505,9 @@ button:
         - number.set:
             id: curve_speed5
             value: 100
+        - lambda: id(curve_profile_custom) = false;
         - component.update: curve_output_value
+        - component.update: fan_profile
 
 sensor:
   - platform: template
@@ -486,9 +572,11 @@ sensor:
       return 0.0;
     on_value:
       then:
+        - lambda: id(curve_applying_output) = true;
         - output.set_level:
             id: curve_proxy_output
             level: !lambda "return x / 100.0;"
+        - lambda: id(curve_applying_output) = false;
 
 output:
   - platform: template

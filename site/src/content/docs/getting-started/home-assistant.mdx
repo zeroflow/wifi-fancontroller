@@ -17,6 +17,8 @@ After adoption, the following entities appear in Home Assistant:
 | Entity | HA Domain | Description |
 |--------|-----------|-------------|
 | Fan 1--4 | `fan` | PWM speed control (0--100%) |
+| Fan 1--4 profile | `select` | Independent Manual, preset, or Custom curve selection |
+| Fan 1--4 curve rules | `number` | Five temperature/speed pairs per fan under Configuration |
 | Temperature | `sensor` | Ambient temperature from HDC1080 sensor |
 | Humidity | `sensor` | Ambient humidity from HDC1080 sensor |
 | Fan 1--4 RPM | `sensor` | Tachometer readings (RPM) |
@@ -34,7 +36,44 @@ light:
 ```
 </Aside>
 
-## Dashboard Setup
+## Use the Device Page
+
+No separate dashboard is required. Open **Settings → Devices & services → ESPHome → your controller**. **Controls** contains the four fans and their profile selectors; **Configuration** contains their editable curve rules.
+
+### Everyday Control
+
+| What you want | What to do | Result |
+|---------------|------------|--------|
+| A fixed percentage | Tap the fan name and adjust its percentage slider | That fan selects **Manual** and holds its speed |
+| Temperature-based cooling | Choose Silent, Balanced, Aggressive, or Server in that fan's profile | The fan follows its own five-rule curve |
+| Your own temperature response | Choose **Custom**, then edit that fan's rules under Configuration | Only that fan uses the edited curve |
+| Stop a fan | Switch that fan off | Its profile is retained; it stays off until switched on |
+
+Manual speed changes and curve edits affect only the selected fan. Automatic curve updates do not select Manual. A fan paused at 0% by its curve can resume as temperature rises; a fan you switch off stays off. Switching a fan on rejoins its selected automatic profile.
+
+### Edit a Custom Curve
+
+Each fan has five pairs labeled **Fan 2: 1. At temperature** / **Fan 2: 1. Run at**, for example. There are 40 numeric settings across the four fans. **Run at** is a percentage speed command; the RPM sensors report measured rotation speed separately.
+
+For example, to make Fan 2 run at 60% when the temperature reaches 30 °C:
+
+1. Select **Balanced** in **Fan 2 profile** to start from its standard rules.
+2. Select **Custom** in that same selector to keep those rules for editing.
+3. Under **Configuration**, set **Fan 2: 3. At temperature** to **30 °C** and **Fan 2: 3. Run at** to **60%**.
+4. If Fan 2 is off, switch it on to start automatic cooling.
+5. Keep the temperatures increasing from rule 1 to rule 5. Fan 1, Fan 3, and Fan 4 retain their own settings.
+
+Read each pair as “at this temperature, run this fan at this percentage.” Between two pairs, speed changes smoothly: **22 °C → 30%** and **28 °C → 60%** give **45% at 25 °C**. Below the first temperature, the first speed applies; above the last temperature, the last speed applies.
+
+Custom uses the five rules currently displayed. Selecting a preset replaces that fan's ten values. Editing active rules makes the profile show Custom when the values no longer match a preset. Editing rules in Manual keeps the fixed speed until you choose an automatic profile.
+
+### Upgrading Existing Configurations
+
+The first upgrade copies the saved shared curve into each fan's settings once. Previously automatic fans retain automatic control; manual fans remain Manual. Later boots restore each fan's own saved mode and rules without copying over them or reapplying a preset. Allow the configured flash write interval before cutting power after an edit.
+
+The old shared profile, automatic switches, curve numbers, and output sensor are internal in standard firmware. Update automations that target those shared entities to use the appropriate per-fan selectors or curve settings. Native fan entity IDs are unchanged. If a full board configuration also imports `modules/temperature_curve.yaml` separately, remove that duplicate import. Hardware-only configurations keep their explicit control module.
+
+## Optional Dashboard Cards
 
 ### Fan Control Card
 
@@ -79,7 +118,44 @@ entities:
 
 ## Automation Examples
 
-### Temperature-Based Fan Speed
+Replace the example entity IDs with those from your controller. A `fan.set_percentage` automation selects Manual for that fan just like a speed-slider edit. To retain temperature control, automate the profile selector instead.
+
+### Schedule Temperature Profiles
+
+This example selects Silent at night and returns Fans 1 and 2 to Balanced in the morning:
+
+```yaml
+automation:
+  - alias: "Fan profiles - quiet nights"
+    trigger:
+      - platform: time
+        at: "22:00:00"
+    action:
+      - service: select.select_option
+        target:
+          entity_id:
+            - select.fan_controller_fan_1_profile
+            - select.fan_controller_fan_2_profile
+        data:
+          option: "Silent"
+
+  - alias: "Fan profiles - daytime cooling"
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    action:
+      - service: select.select_option
+        target:
+          entity_id:
+            - select.fan_controller_fan_1_profile
+            - select.fan_controller_fan_2_profile
+        data:
+          option: "Balanced"
+```
+
+Profile selection keeps explicitly stopped fans off. Switch a fan on when you want it to participate in automatic cooling.
+
+### Temperature-Based Fixed Percentages
 
 Increase fan speed when temperature rises above 30 C, reduce it when the temperature drops below 25 C:
 
@@ -110,9 +186,9 @@ automation:
           percentage: 30
 ```
 
-### Night Mode Schedule
+### Fixed-Speed Night Schedule
 
-Lower fan speeds during nighttime hours to reduce noise:
+This alternative uses fixed percentages, selecting Manual for the affected fans:
 
 ```yaml
 automation:

@@ -13,6 +13,14 @@ Works with all hardware revisions (Rev 1.0 through Rev 3.3).
 
 The Temperature Curve module lets you define a custom 5-point temperature-to-speed curve for granular control over fan behavior. Values between points are linearly interpolated, giving you a smooth speed transition across the entire temperature range.
 
+:::tip[Included in standard firmware]
+Standard firmware includes independent profiles and curves through `modules/default_fan_profiles.yaml` and the internal `modules/fan_profile.yaml` package. Each fan has Manual, Silent, Balanced, Aggressive, Server, and Custom options under Controls, with its own five temperature/speed pairs under Configuration. The shared module documented below remains available for direct imports with its original per-fan automatic switches.
+:::
+
+:::note[Updating an existing custom configuration]
+If your YAML imports a full `fancontroller-rev*.yaml` configuration and also imports `modules/temperature_curve.yaml` separately, remove the separate curve import when updating: the full configuration now includes it. Saved shared values and existing curve substitutions seed the first per-fan migration. After migration, standard-firmware overrides target `fan1_curve_temp1` / `fan1_curve_speed1` through fan 4 and rule 5; legacy `curve_temp*` / `curve_speed*` overrides no longer adjust the independent curves. Configurations that import only `hardware-rev-*.yaml` should keep their explicit curve import.
+:::
+
 ## When to Use
 
 Choose Curve when you need more control points than the linear module's three zones but don't need PID's automatic target-chasing behavior. It's ideal when you know exactly how you want fans to respond at specific temperatures.
@@ -27,7 +35,9 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 A fan put into manual mode, from Home Assistant or from the board, is skipped by this module until it is released. No extra configuration is needed: the manual speed holds instead of being overwritten on the next ten-second tick. See [USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/).
 :::
 
-## Configuration
+## Configuration for Direct Module Imports
+
+The variables below configure the shared module when imported directly. Standard firmware exposes its independent curve settings through Home Assistant.
 
 | Variable                | Default                       | Description                                        |
 | ----------------------- | ----------------------------- | -------------------------------------------------- |
@@ -57,11 +67,25 @@ The five temperature/speed pairs define a piecewise linear curve:
 3. Below the lowest temperature point, fans run at that point's speed
 4. Above the highest temperature point, fans run at that point's speed
 
-**Auto-sorting:** Temperature points are automatically sorted at runtime, so they work even if defined out of order. However, the module validates the curve at boot and logs a warning if points are not monotonically increasing.
+**Auto-sorting:** Temperature points are sorted at runtime. Keep each curve in ascending order for clarity. Standard firmware raises **Curve Configuration Warning** when an active fan's curve has unordered or invalid points. Direct module imports validate the configured default temperatures at boot and log a warning when they are unordered.
 
 A curve point of 0% drives the PWM output to 0%. Whether the fan then stops or holds a minimum speed is a property of the fan, not of the module. See [Fan Compatibility](/reference/fan-compatibility/) if you need the fans to come to a complete stop.
 
 ## Home Assistant Entities
+
+### Per-Fan Profiles in Standard Firmware
+
+Standard firmware exposes **Fan 1 profile** through **Fan 4 profile**, each with **Manual**, **Silent**, **Balanced**, **Aggressive**, **Server**, and **Custom**:
+
+- Manual holds that fan's current speed. Adjusting its native running-speed percentage selects Manual for that fan alone.
+- A preset replaces only that fan's ten curve values and enables temperature control for a running/curve-paused fan. A fan explicitly switched off remains off until switched on.
+- Custom uses that fan's currently displayed rules for editing. Choosing a preset replaces them. Its own five temperature/speed pairs are labeled **Fan 1: 1. At temperature**, **Fan 1: 1. Run at**, and so on, under Configuration (40 settings total).
+- Editing active rules changes the displayed label to Custom when they no longer match a preset. Explicitly choosing Custom keeps that label even if its rules match a preset. Edits in Manual do not change fixed fan speed.
+- New installs start in Manual. On the first upgrade, existing automatic fans copy the saved shared curve; other fans remain Manual. Each fan's mode, curve, and participation restore independently on subsequent reboots.
+
+The old shared profile, curve numbers/output sensor, automatic switches, and preset buttons are internal in standard firmware. Native fan IDs remain unchanged; automations using the old shared selector should target a per-fan profile instead. No separate dashboard is required.
+
+When importing `modules/temperature_curve.yaml` directly, **Fan Profile** retains its original shared **Silent**, **Balanced**, **Aggressive**, **Server**, and **Custom** selector. It never changes the public **Auto Control Fan** switches. The following entity tables describe that direct-module setup. Its selector reflects saved curve points, and explicit Custom keeps the current points for editing. Values restore without reapplying a preset at boot.
 
 ### Number Entities
 
@@ -82,7 +106,7 @@ The range, step and unit shown for the five Curve Temperature rows are the defau
 
 ### Preset Buttons
 
-Apply a complete temperature curve with **Curve Preset Silent**, **Curve Preset Balanced**, **Curve Preset Aggressive**, or **Curve Preset Server** in Home Assistant or the device web UI (when enabled).
+In standard firmware, select a preset from **Fan 1 profile** through **Fan 4 profile**. When importing this module directly, you can also apply a complete temperature curve with **Curve Preset Silent**, **Curve Preset Balanced**, **Curve Preset Aggressive**, or **Curve Preset Server** in Home Assistant or the device web UI (when enabled).
 
 | Preset | Temperature / speed points | Speed at 30 C |
 | ------ | -------------------------- | ------------- |
@@ -91,9 +115,11 @@ Apply a complete temperature curve with **Curve Preset Silent**, **Curve Preset 
 | Aggressive | 20 C / 0%, 22 C / 30%, 28 C / 60%, 35 C / 85%, 40 C / 100% | about 67% |
 | Server | 15 C / 20%, 20 C / 30%, 25 C / 50%, 30 C / 75%, 35 C / 100% | 75% |
 
-For example, press **Curve Preset Server** to make the fans run at 75% at 30 C. To use a different speed, set **Curve Temperature 4** to **30 C** and **Curve Speed 4** to your desired percentage. Keep the other temperature points in ascending order. Intermediate temperatures still use smooth interpolation.
+For example, selecting **Server** in **Fan 2 profile** makes a running Fan 2 use 75% at 30 C while the other fans retain their profiles. Set **Fan 2: 4. At temperature** to **30 C** and **Fan 2: 4. Run at** to your desired percentage to customize that rule.
 
-Each button replaces all ten curve values and immediately recalculates the output. You can then fine-tune the number entities; no reflashing is needed. Values are saved using the existing number entities' restore behavior (allow the configured flash write interval before cutting power). Restarting does not reapply a preset over your saved edits.
+With a direct shared-module import, press **Curve Preset Server** and edit **Curve Temperature 4** / **Curve Speed 4** instead; all automatically controlled fans share those values. Keep the other temperature points in ascending order. Intermediate temperatures use smooth interpolation.
+
+For a direct shared-module import, each button replaces all ten curve values and immediately recalculates the output. You can then fine-tune the number entities; no reflashing is needed. Values are saved using the existing number entities' restore behavior (allow the configured flash write interval before cutting power). Restarting does not reapply a preset over your saved edits.
 
 Presets only affect fans whose **Auto Control Fan** switch is on and which are not in manual override. Safety floors still apply. Preset buttons are included with `modules/temperature_curve.yaml`; the dual and triple curve modules have separate controls.
 
@@ -111,6 +137,8 @@ Presets only affect fans whose **Auto Control Fan** switch is on and which are n
 | Auto Control Fan 2 | ON      | Enable curve control for fan 2 |
 | Auto Control Fan 3 | ON      | Enable curve control for fan 3 |
 | Auto Control Fan 4 | ON      | Enable curve control for fan 4 |
+
+These defaults apply when importing `modules/temperature_curve.yaml` directly. Standard firmware keeps these switches internal and defaults them OFF. Each per-fan selector controls its own automatic participation, preserving explicit Off commands and allowing curve-paused fans to restart.
 
 ### Binary Sensor
 

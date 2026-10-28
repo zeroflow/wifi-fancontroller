@@ -90,6 +90,16 @@ This product contains a radio transmitter. Install the product so that a separat
 
    See [Home Assistant Integration](/getting-started/home-assistant/) for dashboard setup and automation examples.
 
+4. **Choose a fan profile (optional)**
+
+   Standard firmware for all board revisions includes **Silent**, **Balanced**, **Aggressive**, and **Server**, plus five editable temperature/speed pairs for each fan. No module needs to be added manually.
+
+   Under **Controls**, each fan has its own **Fan 1 profile** through **Fan 4 profile**. Choose **Manual**, **Silent**, **Balanced**, **Aggressive**, **Server**, or **Custom** independently. Tap a fan name to open its percentage slider; adjusting its running speed selects Manual for that fan alone. The others continue their selected profiles.
+
+   **Configuration** contains five temperature/speed pairs per fan (40 settings total). Custom uses that fan's currently displayed rules for editing; selecting a preset replaces only that fan's ten values. Rules, profiles, and fan state restore after reboot. On upgrade, existing automatic fans inherit the previous saved curve; manual fans remain Manual. No dashboard or separate automatic switches are needed.
+
+   If the presets are missing on an existing board, [update its firmware](/getting-started/firmware-updates/) to a version containing this feature. See [Temperature Curve](/reference/modules/temperature-curve/) for the preset values and fine-tuning instructions.
+
 </Steps>
 
 ## Re-flash firmware (optional)
