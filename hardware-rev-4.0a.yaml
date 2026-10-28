@@ -1,6 +1,10 @@
-# WiFi Fan Controller Hardware Package - Revision 4.0, A-Sample
-# Hardware: ESP32-C6, esp32-c6-devkitc-1 board
+# WiFi Fan Controller Hardware Package - Revision 4.0, A- and B-Sample
+# Hardware: ESP32-C6-MINI-1-N4 (4MB flash), esp32-c6-devkitm-1 board
 # This package contains all hardware-specific configuration
+#
+# The B-sample differs from the A-sample only in details that do not touch
+# pins or parts, so both use this file. The C-sample has its own pinout in
+# hardware-rev-4.0-base.yaml.
 #
 # Usage (local):
 #   packages:
@@ -12,6 +16,14 @@
 
 packages:
   globals: !include modules/globals.yaml
+
+# Board, flash and framework are part of the hardware definition, as in
+# hardware-rev-4.0-base.yaml. ESP32-C6-MINI-1-N4 module: 4MB flash.
+esp32:
+  board: esp32-c6-devkitm-1
+  flash_size: 4MB
+  framework:
+    type: esp-idf
 
 # Globals
 globals:
