@@ -1,5 +1,5 @@
 # WiFi Fan Controller Hardware Package - Revision 4.0 (base)
-# Hardware: ESP32-C6-MINI-1-N4 (4MB flash), esp32-c6-devkitm-1 board
+# Hardware: ESP32-C6-MINI-1-H8 (8MB flash), esp32-c6-devkitm-1 board
 # This package contains all hardware-specific configuration
 #
 # This file holds everything of Rev 4.0 that is not network-specific.
@@ -23,11 +23,12 @@ packages:
 
 # Board, flash and framework are part of the hardware definition here
 # (unlike Rev 1.0-3.3, where the firmware configs set them).
-# ESP32-C6-MINI-1-N4 module: 4MB flash.
+# ESP32-C6-MINI-1-H8 module: 8MB flash. C-sample boards that still carry
+# the 4MB N4 module use hardware-rev-4.0-c-4m.yaml, which overrides flash_size.
 # Never change the framework once this revision has shipped.
 esp32:
   board: esp32-c6-devkitm-1
-  flash_size: 4MB
+  flash_size: 8MB
   framework:
     type: esp-idf
 

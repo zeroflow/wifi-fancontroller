@@ -1,0 +1,30 @@
+# WiFi Fan Controller Hardware Package - Revision 4.0, C-Sample with 4MB flash
+# Hardware: ESP32-C6-MINI-1-N4 (4MB flash), esp32-c6-devkitm-1 board
+# Developer variant, not a product.
+#
+# Some early and reworked C-sample boards still carry the ESP32-C6-MINI-1-N4
+# module (4MB) instead of the H8 (8MB). This file is only for those boards.
+# It includes hardware-rev-4.0.yaml unchanged and only sets flash_size back
+# to 4MB, so partition table and image header match the chip.
+#
+# Never flash an 8MB image onto these boards: neither
+# fancontroller-rev4.0-esp32c6.yaml, its factory image, nor anything from the
+# fancontroller-r4-0 update manifest. An app built for 8MB flash does not boot
+# from 4MB. Use fancontroller-rev4.0-c-4m-esp32c6.yaml, which has no update
+# source.
+#
+# Usage (local):
+#   packages:
+#     fancontroller: !include hardware-rev-4.0-c-4m.yaml
+#
+# Usage (GitHub):
+#   packages:
+#     fancontroller: github://zeroflow/wifi-fancontroller/hardware-rev-4.0-c-4m.yaml@main
+
+packages:
+  rev_4_0: !include hardware-rev-4.0.yaml
+
+# Overrides flash_size from hardware-rev-4.0-base.yaml. A plain top-level key
+# in the including file wins over the package value.
+esp32:
+  flash_size: 4MB

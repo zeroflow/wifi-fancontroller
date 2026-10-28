@@ -1,11 +1,15 @@
 # WiFi Fan Controller Hardware Package - Revision 4.0
-# Hardware: ESP32-C6-MINI-1-N4 (4MB flash), esp32-c6-devkitm-1 board
+# Hardware: ESP32-C6-MINI-1-H8 (8MB flash), esp32-c6-devkitm-1 board
 # This package contains all hardware-specific configuration
 #
 # This is the default hardware package for WiFi configs. It includes
 # hardware-rev-4.0-base.yaml for everything else and only adds the WiFi
 # status LED callbacks. Configs without WiFi import hardware-rev-4.0-base.yaml
 # instead.
+#
+# C-sample boards that still carry the N4 module with 4MB flash use
+# hardware-rev-4.0-c-4m.yaml, which includes this file and sets flash_size
+# to 4MB.
 #
 # Usage (local):
 #   packages:

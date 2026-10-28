@@ -1,0 +1,51 @@
+# WiFi Fan Controller - Revision 4.0 (ESP32-C6), C-Sample with 4MB flash
+# Developer configuration, not a product firmware
+#
+# For C-sample boards that still carry the ESP32-C6-MINI-1-N4 module. It
+# imports hardware-rev-4.0-c-4m.yaml, which sets flash_size to 4MB.
+#
+# Unlike fancontroller-rev4.0-esp32c6.yaml this config has no update entity,
+# no HTTP OTA and no dashboard import, because the production manifest ships
+# 8MB images that do not boot on a 4MB board. Updates go over local ESPHome
+# OTA only.
+
+packages:
+  # Include hardware-specific configuration
+  hardware: github://zeroflow/wifi-fancontroller/hardware-rev-4.0-c-4m.yaml@dev
+
+esphome:
+  name: fancontroller-r4-0-4m
+  friendly_name: fancontroller
+  # Automatically add the mac address to the name
+  # so you can use a single firmware for all devices
+  name_add_mac_suffix: true
+  project:
+    name: zeroflow.fancontroller-rev4-0-4m
+    version: "4.0"
+
+# Enable logging
+logger:
+  id: logger_component
+  level: INFO
+
+# Native API for Home Assistant
+api:
+  id: api_component
+
+# Local OTA only, no update source for this board
+ota:
+  - platform: esphome
+    id: ota_esphome
+
+wifi:
+  id: wifi_component
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+
+# In combination with the `ap` this allows the user
+# to provision wifi credentials to the device
+captive_portal:
+  id: captive_portal_component
+
+# Sets up the improv via serial client for Wi-Fi provisioning.
+improv_serial:
