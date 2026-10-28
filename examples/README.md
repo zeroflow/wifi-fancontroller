@@ -21,6 +21,12 @@ Examples showing additional features and modules:
 - **`with-temperature-control-rev-3.1.yaml`** - Shows how to use temperature control modules (linear/PID) for automatic fan speed adjustment
 - **`with-temperature-curve-external-sensor-rev-3.1.yaml`** - Shows how to drive the temperature curve from an external Qwiic BME680 instead of the onboard sensor, via `temperature_sensor_id`
 
+## Rev 4.0 Network Mode Examples (experimental, dev only)
+
+These configs try the alternative network modes of the ESP32-C6 on Rev 4.0 developer boards. They reference the dev branch, are not validated by `test-examples.sh` or CI, and are not customer features.
+
+- **`network-wifi-ble-rev-4.0.yaml`** - WiFi with Improv BLE and Improv Serial provisioning, Home Assistant API and OTA, no credentials compiled in
+
 ## Usage
 
 1. Copy one of the example files to your ESPHome configuration directory

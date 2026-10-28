@@ -1,0 +1,48 @@
+# Example: Rev 4.0 network mode WiFi + BLE (ESP32-C6)
+#
+# Developer test config for the Rev 4.0 boards, not a customer feature. It is
+# not validated by test-examples.sh or CI and references the dev branch.
+#
+# No WiFi credentials are compiled in. The board starts unprovisioned and is
+# provisioned over Improv BLE (for example with improv-wifi.com or the Home
+# Assistant companion app) or over Improv Serial via USB. Provisioned
+# credentials are stored in flash and survive OTA updates. To test provisioning
+# again, erase the flash over USB.
+#
+# Board variants:
+# - Default: C-sample with the 8MB H8 module (hardware-rev-4.0.yaml).
+# - C-sample with the 4MB N4 module: swap the package below to
+#   hardware-rev-4.0-c-4m.yaml@dev. It fits on 4MB, about 79%
+#   of the 1.75 MB app slot (1445870 of 1835008 bytes, ESPHome 2026.7.4).
+# - A/B samples: swap the package below to hardware-rev-4.0a.yaml@dev.
+
+packages:
+  # WiFi wrapper around hardware-rev-4.0-base.yaml, adds the WiFi status LED callbacks
+  hardware: github://zeroflow/wifi-fancontroller/hardware-rev-4.0.yaml@dev
+
+esphome:
+  name: fancontroller-wifi-ble
+  friendly_name: "Fancontroller WiFi BLE"
+  # Several test boards on one network must not collide on the hostname
+  name_add_mac_suffix: true
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi without credentials. The status LED callbacks come from
+# hardware-rev-4.0.yaml, the credentials come from Improv at runtime.
+wifi:
+
+# Sets up Bluetooth LE to allow the user to provision wifi credentials to the device.
+esp32_improv:
+  authorizer: none
+
+# Sets up the improv via serial client for Wi-Fi provisioning over USB.
+improv_serial:
