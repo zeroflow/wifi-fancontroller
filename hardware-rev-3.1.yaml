@@ -22,6 +22,10 @@ globals:
 
 # Boot sequence: Status LED blue blinking
 esphome:
+  # The LED strip config in this file uses channel_colors, which needs ESPHome
+  # 2026.8.0 or newer. min_version makes an older ESPHome stop with a clear
+  # "please update" message instead of an unknown-key error.
+  min_version: 2026.8.0
   on_boot:
     - then:
         - lambda: |-
