@@ -14,6 +14,10 @@ esphome:
   # Automatically add the mac address to the name
   # so you can use a single firmware for all devices
   name_add_mac_suffix: true
+  # The LED strip config in this file uses channel_colors, which needs ESPHome
+  # 2026.8.0 or newer. min_version makes an older ESPHome stop with a clear
+  # "please update" message instead of an unknown-key error.
+  min_version: 2026.8.0
   project:
     name: zeroflow.fancontroller-rev3-3
     version: "3.3"
