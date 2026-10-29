@@ -41,6 +41,10 @@ globals:
 
 # Boot sequence: Status LED blue blinking
 esphome:
+  # The LED strip config in this file uses channel_colors, which needs ESPHome
+  # 2026.8.0 or newer. min_version makes an older ESPHome stop with a clear
+  # "please update" message instead of an unknown-key error.
+  min_version: 2026.8.0
   on_boot:
     - then:
         - lambda: |-
@@ -225,7 +229,7 @@ binary_sensor:
 light:
   # Status LED Bus (internal, not directly controlled)
   - platform: esp32_rmt_led_strip
-    rgb_order: GRB
+    channel_colors: GRB
     name: "Status LEDs"
     chipset: WS2812
     pin: GPIO03
@@ -298,7 +302,7 @@ light:
 
   # External Neopixel Port, use !extend to change number if desired
   - platform: esp32_rmt_led_strip
-    rgb_order: GRB
+    channel_colors: GRB
     name: "Neopixel Port"
     chipset: WS2812
     pin: GPIO02

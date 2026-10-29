@@ -19,7 +19,8 @@ dashboard_import:
   package_import_url: github://zeroflow/wifi-fancontroller/fancontroller-rev4.0b-esp32c6.yaml@dev
   import_full_config: true
 
-# Sets up Bluetooth LE to allow the user
-# to provision wifi credentials to the device.
-esp32_improv:
+# Sets up Bluetooth LE provisioning so the user can send wifi credentials
+# to the device. improv_ble is the ESPHome 2026.10.0 name of esp32_improv;
+# factory images are only built at the release pin, so they use it already.
+improv_ble:
   authorizer: none

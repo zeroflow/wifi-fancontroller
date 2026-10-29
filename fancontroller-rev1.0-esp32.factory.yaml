@@ -26,6 +26,12 @@ dashboard_import:
 
 # Sets up Bluetooth LE (Only on ESP32) to allow the user
 # to provision wifi credentials to the device.
+# Stays on esp32_improv, unlike the other factory configs. The core config
+# included above (fancontroller-rev1.0-esp32.yaml) still uses esp32_improv
+# because users adopt it and improv_ble only exists since ESPHome 2026.10.0.
+# ESPHome rejects a config holding both keys, even with esp32_improv: !remove,
+# so rename both files together before 2027.4.0, when the esp32_improv alias
+# is removed.
 esp32_improv:
   authorizer: none
 
