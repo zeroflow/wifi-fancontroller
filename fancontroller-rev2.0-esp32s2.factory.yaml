@@ -24,5 +24,5 @@ dashboard_import:
   import_full_config: true
 
 # Sets up the improv via serial client for Wi-Fi provisioning
-# Note: ESP32-S2 does not support Bluetooth LE provisioning (esp32_improv)
+# Note: ESP32-S2 does not support Bluetooth LE provisioning (improv_ble)
 improv_serial:
