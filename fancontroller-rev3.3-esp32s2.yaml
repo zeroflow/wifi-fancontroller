@@ -68,7 +68,7 @@ improv_serial:
 # Optional: NeoPixel LED strip support
 light:
   - platform: esp32_rmt_led_strip
-    rgb_order: GRB
+    channel_colors: GRB
     chipset: WS2812
     pin: GPIO42
     num_leds: 5 # default, increase if needed
