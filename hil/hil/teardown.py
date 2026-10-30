@@ -1,9 +1,11 @@
 """Idempotent teardown: every line released, DUT A on an image it has just confirmed (HARN-09).
 
 Order: release every supervisor switch, decide green or not, then
-  green      -> the commit image stays; confirm it over the API with the HIL key
-  not green  -> the known-good image: v1.6.0 factory plus NVS replay (D-15);
-                if DUT A does not answer within its deadline the verdict becomes
+  green      -> the commit image stays; confirm it over the API with the HIL key and its
+                build ID; a green run on refs/heads/main then updates the last-green store
+  not green  -> the known-good image (D-15): the last green main image when the store
+                checks out completely, else v1.6.0 factory plus NVS replay; one attempt
+                only: if DUT A does not answer within its deadline the verdict becomes
                 RIG ERROR and the commit image is flashed instead (D-09)
 Only regions are written; nothing in this module erases flash. Safe to run twice.
 
@@ -17,7 +19,7 @@ import os
 import time
 from pathlib import Path
 
-from . import RigError, config, manifest
+from . import RigError, config, last_green, manifest
 
 FINAL_IMAGE = "final-image.json"
 TEARDOWN_FLASH_REPORT = "teardown-flash-dut-a.json"
@@ -154,10 +156,16 @@ def flash_commit_image(dut, fw_dir, dutcfg, dut_key, state):
     state["steps"].append("commit image: %s" % ("confirmed" if state["confirmed"] else "not confirmed"))
 
 
+def warn(text):
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("::warning title=HIL teardown::%s" % text)
+    else:
+        print("WARNING: %s" % text)
+
+
 def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_key):
     reports_dir = Path(reports_dir)
     reports_dir.mkdir(parents=True, exist_ok=True)
-    dutcfg = cfg.duts["A"]
     state = new_state()
     try:
         supervisor.release_all()
@@ -172,13 +180,9 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
     verdict = read_verdict(reports_dir)
     green = is_green(verdict, job_status)
     state["steps"].append("run verdict: %s" % ("green" if green else "not green"))
-    exit_code = 0
     try:
         if green:
-            version = confirm(dut, dut_key)
-            state.update(image="commit", version=version, confirmed=version is not None)
-            state["steps"].append("commit image: %s" % ("confirmed" if state["confirmed"] else "no answer"))
-            exit_code = 0 if state["confirmed"] else 3
+            exit_code = keep_commit_image(cfg, fw_dir, dut, dut_key, state)
         else:
             exit_code = known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state)
     except RigError:
@@ -189,11 +193,79 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
     return exit_code
 
 
-def known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state):
-    """Not green: v1.6.0 factory plus NVS replay. Returns the exit code."""
+def keep_commit_image(cfg, fw_dir, dut, dut_key, state):
+    """Green: the commit image stays. Confirm its build ID, then maybe update the last-green store."""
     dutcfg = cfg.duts["A"]
-    say("Known-good source: v1.6.0 (no last-green store)")
+    verified = load_commit_manifest(fw_dir, dutcfg)
+    version = confirm(dut, dut_key)
+    matched = verified is not None and version is not None and version == verified.build_id
+    state.update(image="commit", version=version, confirmed=matched)
+    state["steps"].append("commit image: %s" % ("confirmed" if matched else "not confirmed"))
+    update_store(dutcfg, verified, matched, state)
+    return 0 if matched else 3
+
+
+def update_store(dutcfg, verified, matched, state):
+    """D-15: only a confirmed green run on refs/heads/main becomes the last-green image."""
+    ref = os.environ.get("GITHUB_REF", "")
+    run_id = os.environ.get("GITHUB_RUN_ID", "")
+    if not matched:
+        stored, detail = False, "build ID not confirmed"
+    else:
+        try:
+            net_sha = last_green.network_sha256(config.NETWORK_FILE)
+            stored, detail = last_green.promote(dutcfg, verified, ref, run_id, net_sha)
+        except Exception as exc:  # noqa: BLE001 - a store fault must never change the verdict or the exit code
+            stored, detail = False, type(exc).__name__
+    if stored:
+        say("Last-green store: updated (%s)" % detail)
+        state["last_green"] = {"action": "updated", "detail": detail}
+        return
+    say("Last-green store: unchanged (%s)" % detail)
+    state["last_green"] = {"action": "unchanged", "detail": detail}
+    if ref == last_green.STORE_REF and not detail.startswith("already"):
+        warn("last-green store was not updated after a green main run (%s)" % detail)
+
+
+def known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state):
+    """Not green: the last green main image when the store checks out, else v1.6.0 plus NVS. Returns the exit code."""
+    dutcfg = cfg.duts["A"]
+    try:
+        stored, reason = last_green.load(dutcfg, last_green.network_sha256(config.NETWORK_FILE))
+    except RigError:
+        stored, reason = None, "store invalid: hil-network.yaml cannot be read"
+    if stored is not None:
+        return restore_last_green(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, stored)
+    return restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, reason)
+
+
+def restore_last_green(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, stored):
+    dutcfg = cfg.duts["A"]
+    say("Known-good source: last-green (%s)" % stored.build_id)
+    state["known_good_source"] = "last-green"
+    state["last_green"] = {"action": "used", "detail": stored.build_id}
+    wait_bridge_free(supervisor)
+    version = None
+    try:
+        # A commit image carries the HIL WiFi and key in firmware: no NVS region.
+        dut.flash_regions([(dutcfg.flash_offset, stored.path)], report_name=TEARDOWN_FLASH_REPORT)
+    except RigError:
+        state["steps"].append("last-green flash failed")
+    else:
+        version = confirm(dut, dut_key)
+    if version is not None and version == stored.build_id:
+        state.update(image="last-green", version=version, confirmed=True)
+        state["steps"].append("last-green image: confirmed")
+        return 0
+    state["steps"].append("last-green image: not confirmed")
+    return fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state)
+
+
+def restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, reason):
+    dutcfg = cfg.duts["A"]
+    say("Known-good source: v1.6.0 (%s)" % reason)
     state["known_good_source"] = "v1.6.0"
+    state["last_green"] = {"action": "rejected", "detail": reason}
     verify_known_good(dutcfg)
     wait_bridge_free(supervisor)
     version = None
@@ -208,7 +280,12 @@ def known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, stat
         state["steps"].append("known-good image: confirmed")
         return 0
     state["steps"].append("known-good image: no answer within the deadline")
-    say("RIG ERROR: DUT A did not answer on the known-good image; flashing the commit image (D-09)")
+    return fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state)
+
+
+def fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
+    """D-09: the one known-good attempt failed. RIG ERROR, then the commit image over UART."""
+    say("RIG ERROR: DUT A did not come back on the known-good image; flashing the commit image (D-09)")
     rewrite_verdict(reports_dir, verdict)
-    flash_commit_image(dut, fw_dir, dutcfg, dut_key, state)
+    flash_commit_image(dut, fw_dir, cfg.duts["A"], dut_key, state)
     return 3
