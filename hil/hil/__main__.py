@@ -6,6 +6,7 @@ Exit codes: 0 PASS, 1 FAIL, 2 INTERRUPTED, 3 RIG ERROR (rig or tooling fault).
 import argparse
 import json
 import os
+import shutil
 import signal
 import sys
 import time
@@ -13,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from . import RigError, config, contract, manifest, nvs, teardown
+from . import RigError, config, contract, manifest, nvs, redact, teardown
 from .dut import Dut
 from .flasher import Flasher
 from .supervisor import Supervisor
@@ -60,7 +61,37 @@ def write_verdict(verdict, commit, build_id):
     return EXIT[verdict]
 
 
+def load_rig():
+    """config.load, then the GitHub log masks before anything else is printed."""
+    rig = config.load()
+    config.emit_masks(rig)
+    return rig
+
+
+def redact_reports(rig):
+    """reports/raw + reports/*.json -> reports/redacted, the only thing a job may upload.
+
+    Fails closed: if redaction breaks, the redacted directory is removed, not left half done.
+    Without a loaded config only the JSON reports are copied (nothing ran, so raw is empty).
+    """
+    reports = config.reports_dir()
+    try:
+        literals = config.mask_literals(rig) if rig is not None else []
+        redact.redact_tree(reports / "raw", reports / "redacted", literals, include_raw=rig is not None)
+    except Exception as exc:  # noqa: BLE001 - never let a redaction fault leave unredacted files behind
+        shutil.rmtree(reports / "redacted", ignore_errors=True)
+        print("RIG ERROR: redaction failed (%s); nothing will be uploaded" % type(exc).__name__)
+
+
 def run():
+    holder = {}
+    try:
+        return _run(holder)
+    finally:
+        redact_reports(holder.get("rig"))
+
+
+def _run(holder):
     commit = config.expected_commit()
     build_id = None
     reports = config.reports_dir()
@@ -69,7 +100,8 @@ def run():
     if stale.exists():
         stale.unlink()
     try:
-        rig = config.load()
+        rig = load_rig()
+        holder["rig"] = rig
         verified = manifest.load_verified(config.firmware_dir(), commit, rig.duts["A"])
         build_id = verified.build_id
     except RigError as exc:
@@ -119,8 +151,9 @@ def cmd_teardown():
     reports = config.reports_dir()
     state = teardown.new_state()
     supervisor = None
+    rig = None
     try:
-        rig = config.load()
+        rig = load_rig()
         supervisor, dut = _rig_dut(rig)
         return teardown.run_teardown(
             rig,
@@ -139,11 +172,12 @@ def cmd_teardown():
     finally:
         if supervisor is not None:
             supervisor.close()
+        redact_reports(rig)
 
 
 def cmd_known_good(args):
     """The v1.6.0 factory image alone (with the NVS backup unless --no-nvs). Used for on-site provisioning."""
-    rig = config.load()
+    rig = load_rig()
     cfg = rig.duts["A"]
     teardown.verify_known_good(cfg, with_nvs=not args.no_nvs)
     supervisor, dut = _rig_dut(rig)
@@ -166,7 +200,7 @@ def cmd_known_good(args):
 
 def cmd_status(args):
     """Project name, version and compile time. Never the device name: it carries the MAC suffix."""
-    rig = config.load()
+    rig = load_rig()
     supervisor, dut = _rig_dut(rig)
     try:
         info = None
@@ -191,7 +225,7 @@ def cmd_status(args):
 
 
 def cmd_nvs(args):
-    rig = config.load()
+    rig = load_rig()
     supervisor, dut = _rig_dut(rig)
     try:
         supervisor.release_all()

@@ -131,9 +131,10 @@ def _dut(dut_id, table, required):
     return DutConfig(id=dut_id, rev=table["rev"], chip=table["chip"], host=host, mac=mac, **extra)
 
 
-def load_dut_api_key(env=None, network_file=NETWORK_FILE):
+def load_dut_api_key(env=None, network_file=None):
     """DUT API key: the private local key on the developer host, else the published one."""
     env = os.environ if env is None else env
+    network_file = network_file or NETWORK_FILE
     local = env.get("HIL_LOCAL_DUT_API_KEY")
     if local:
         if env.get("GITHUB_ACTIONS") == "true":
@@ -149,7 +150,7 @@ def load_dut_api_key(env=None, network_file=NETWORK_FILE):
     return key
 
 
-def load(env=None, network_file=NETWORK_FILE):
+def load(env=None, network_file=None):
     env = os.environ if env is None else env
     path = env.get("HIL_RIG_CONFIG")
     if not path:
@@ -210,3 +211,60 @@ def firmware_dir(env=None):
     if not value:
         raise RigError("HIL_FW_DIR is not set")
     return Path(value)
+
+
+MIN_MASK_LEN = 6
+
+
+def _mac_forms(mac):
+    """Colon form, 12-hex form and last-6-hex form, each in lower and upper case (ESPHome prints upper, esptool lower)."""
+    compact = mac.replace(":", "")
+    forms = []
+    for label, value in (("colon form", mac), ("12-hex form", compact), ("last-6-hex form", compact[-6:])):
+        forms.append((label, value))
+        forms.append((label + ", upper case", value.upper()))
+    return forms
+
+
+def _named_literals(cfg, env, network_file):
+    network_file = network_file or NETWORK_FILE
+    named = [("rig.toml supervisor.host", cfg.supervisor_host)]
+    for dut_id, dut in cfg.duts.items():
+        name = "dut." + dut_id.lower()
+        named.append(("rig.toml %s.host" % name, dut.host))
+        named.extend(("rig.toml %s.mac (%s)" % (name, label), value) for label, value in _mac_forms(dut.mac))
+    named.append(("HIL_SUPERVISOR_KEY", cfg.supervisor_key))
+    named.append(("DUT API key in use", cfg.dut_api_key))
+    try:
+        network = parse_network(Path(network_file).read_text(encoding="utf-8"), Path(network_file))
+    except OSError:
+        network = {}
+    named.append((DUT_KEY_NAME, network.get(DUT_KEY_NAME, "")))
+    named.append(("hil_wifi_ssid", network.get("hil_wifi_ssid", "")))
+    named.append(("hil_wifi_password", network.get("hil_wifi_password", "")))
+    for name in ("HIL_LOCAL_DUT_API_KEY", "HIL_LOCAL_WIFI_SSID", "HIL_LOCAL_WIFI_PASSWORD", "HIL_NET_SSID", "HIL_NET_PSK"):
+        named.append((name, env.get(name, "")))
+    return named
+
+
+def mask_literals(cfg, env=None, network_file=None):
+    """Every literal that must never appear in a log or upload. Short ones stop the run (RESEARCH P4)."""
+    env = os.environ if env is None else env
+    literals = []
+    for name, value in _named_literals(cfg, env, network_file):
+        if not value:
+            continue
+        if len(value) < MIN_MASK_LEN:
+            raise RigError("mask literal for %s is shorter than %d characters" % (name, MIN_MASK_LEN))
+        if value not in literals:
+            literals.append(value)
+    return literals
+
+
+def emit_masks(cfg, env=None, network_file=None):
+    """Under GitHub Actions print ::add-mask:: for every literal, before any other output."""
+    env = os.environ if env is None else env
+    literals = mask_literals(cfg, env, network_file)
+    if env.get("GITHUB_ACTIONS") == "true":
+        for literal in literals:
+            print("::add-mask::%s" % literal)
