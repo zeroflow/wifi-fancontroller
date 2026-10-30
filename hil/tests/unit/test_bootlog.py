@@ -55,3 +55,15 @@ def test_unknown_chip_is_a_rig_error():
 
     with pytest.raises(RigError):
         bootlog.has_boot_banner("boot:0x8", "esp32")
+
+
+def test_idf_error_forwarded_through_esphome_debug_log_is_found():
+    text = (
+        "%s[0;36m[D][esp-idf:000]: E (641) rmt: synthetic: no free tx channels%s[0m\r\n"
+        "%s[0;36m[D][esp-idf:000]: I (642) rmt: synthetic info%s[0m\r\n" % (ESC, ESC, ESC, ESC)
+    )
+    assert bootlog.error_lines(text) == ["[D][esp-idf:000]: E (641) rmt: synthetic: no free tx channels"]
+
+
+def test_debug_line_that_merely_mentions_an_error_is_not_an_error_line():
+    assert bootlog.error_lines("[D][app:1]: the E (1) marker appears mid-line only\r\n") == []
