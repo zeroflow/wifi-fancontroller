@@ -12,7 +12,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from hil import RigError, dut, flasher, serial_tap, supervisor
+from hil import RigError, contract, dut, flasher, serial_tap, supervisor
+
+LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
 PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
@@ -134,7 +136,7 @@ def test_silent_dut_api_ends_the_wait_at_its_deadline_with_a_named_error(monkeyp
     device = dut.Dut("A", cfg, _InlineSupervisor(), flasher=None)
     started = time.monotonic()
     try:
-        with pytest.raises(RigError, match="DUT A API did not answer within 2s"):
+        with pytest.raises(RigError, match="%s API did not answer within 2s" % LABEL):
             device.wait_api(noise_psk=None, deadline_s=2)
         assert time.monotonic() - started < 6
     finally:
