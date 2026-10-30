@@ -1,5 +1,6 @@
 """Redaction of everything that may be uploaded (HARN-13, D-16), on a synthetic capture."""
 
+import json
 import re
 from pathlib import Path
 
@@ -174,3 +175,21 @@ def test_a_redaction_fault_removes_the_redacted_directory(main_env, tmp_path, mo
     main_env.redact_reports(None)
     assert not (tmp_path / "reports" / "redacted").exists()
     assert "redaction failed (OSError)" in capsys.readouterr().out
+
+
+def test_literals_are_masked_in_their_json_escaped_form():
+    literal = 'Net "Lab" \\ \u00e9'
+    text = json.dumps({"ssid": literal}) + "\n" + json.dumps({"ssid": literal}, ensure_ascii=False)
+    out = redact.redact(text, [literal])
+    assert "Lab" not in out and out.count(redact.MASK) == 2
+
+
+def test_without_a_config_only_tool_written_reports_are_added_and_a_redacted_tree_is_kept(main_env, tmp_path):
+    reports = tmp_path / "reports"
+    (reports / "redacted").mkdir(parents=True)
+    (reports / "redacted" / "uart-dut-a.log").write_text("already redacted ***", encoding="utf-8")
+    (reports / "verdict.json").write_text('{"verdict": "RIG ERROR"}', encoding="utf-8")
+    (reports / "dut-a.json").write_text('{"ssid": "Unmaskable-Net"}', encoding="utf-8")
+    main_env.redact_reports(None)
+    names = sorted(p.name for p in (reports / "redacted").rglob("*") if p.is_file())
+    assert names == ["uart-dut-a.log", "verdict.json"]
