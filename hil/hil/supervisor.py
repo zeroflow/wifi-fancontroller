@@ -21,8 +21,8 @@ from aioesphomeapi import (
 
 from . import RigError, contract
 
-CONNECT_TIMEOUT = 10
-CALL_TIMEOUT = 10
+SUPERVISOR_CONNECT_S = 10
+PRESS_S = 5
 STATE_WAIT = 5
 
 
@@ -58,7 +58,7 @@ class Supervisor:
     async def _connect(self):
         client = APIClient(self._host, contract.API_PORT, None, noise_psk=self._key)
         try:
-            async with asyncio.timeout(CONNECT_TIMEOUT):
+            async with asyncio.timeout(SUPERVISOR_CONNECT_S):
                 await client.connect(login=True)
                 entities, _services = await client.list_entities_services()
         except (APIConnectionError, OSError, TimeoutError) as exc:
@@ -90,18 +90,18 @@ class Supervisor:
     # -------------------------------------------------------------- public
 
     def connect(self):
-        self.run(self._connect(), CONNECT_TIMEOUT + STATE_WAIT + 5)
+        self.run(self._connect(), SUPERVISOR_CONNECT_S + STATE_WAIT + 5)
 
     def entity_names(self):
         return set(self._entities)
 
     def press(self, name):
         key = self._lookup(name, ButtonInfo)
-        self.run(self._command(self._client.button_command, key), CALL_TIMEOUT)
+        self.run(self._command(self._client.button_command, key), PRESS_S)
 
     def set_switch(self, name, on):
         key = self._lookup(name, SwitchInfo)
-        self.run(self._command(self._client.switch_command, key, bool(on)), CALL_TIMEOUT)
+        self.run(self._command(self._client.switch_command, key, bool(on)), PRESS_S)
 
     def release_all(self):
         """Every contract switch OFF, then every one reported OFF within 5 s."""
@@ -128,7 +128,7 @@ class Supervisor:
         self._closed = True
         try:
             if self._client is not None:
-                self.run(self._client.disconnect(), CALL_TIMEOUT)
+                self.run(self._client.disconnect(), PRESS_S)
         except Exception:  # noqa: BLE001 - closing must never mask the real failure
             pass
         finally:

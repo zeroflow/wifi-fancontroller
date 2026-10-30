@@ -15,7 +15,7 @@ from . import RigError, config, manifest
 
 EXIT = {"PASS": 0, "FAIL": 1, "INTERRUPTED": 2, "RIG ERROR": 3}
 TEST_DIR = Path(__file__).resolve().parent.parent / "tests" / "rig"
-TEST_TIMEOUT_S = 300
+PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 
 class Collector:
@@ -74,7 +74,8 @@ def run():
     signal.signal(signal.SIGTERM, _terminate)
     collector = Collector()
     code = pytest.main(
-        [str(TEST_DIR), "-s", "-o", "timeout=%d" % TEST_TIMEOUT_S, "-o", "timeout_method=signal"],
+        # Timeouts come from pyproject.toml (timeout, timeout_method = signal, session_timeout).
+        ["-c", str(PYPROJECT), str(TEST_DIR), "-s"],
         plugins=[collector],
     )
     code = int(code)

@@ -1,12 +1,18 @@
 """Deadlines nest, and a pytest-timeout in signal mode still runs finalizers."""
 
+import asyncio
+import socket
 import subprocess
 import sys
 import textwrap
+import time
 import tomllib
 from pathlib import Path
+from types import SimpleNamespace
 
-from hil import dut, flasher, serial_tap, supervisor
+import pytest
+
+from hil import RigError, dut, flasher, serial_tap, supervisor
 
 PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
 
@@ -80,3 +86,56 @@ def test_timeout_in_signal_mode_still_runs_finalizers(tmp_path):
     assert proc.returncode != 0
     assert "Timeout" in proc.stdout
     assert marker.read_text(encoding="utf-8") == "done"
+
+
+def _silent_server():
+    """A TCP listener that accepts connections and never sends a byte."""
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(5)
+    return server
+
+
+def test_silent_serial_bridge_ends_at_its_deadline_with_a_named_error(tmp_path):
+    server = _silent_server()
+    tap = serial_tap.SerialTap("127.0.0.1", server.getsockname()[1], tmp_path / "raw" / "uart.log")
+    tap.start()
+    try:
+        tap.mark("reset_pressed")
+        started = time.monotonic()
+        with pytest.raises(RigError, match="no match"):
+            tap.wait_for("boot:0x8", "reset_pressed", deadline_s=1)
+        assert time.monotonic() - started < 3
+    finally:
+        tap.stop()
+        server.close()
+
+
+def test_unreachable_serial_bridge_is_a_named_rig_error(tmp_path):
+    server = _silent_server()
+    port = server.getsockname()[1]
+    server.close()
+    with pytest.raises(RigError, match="serial bridge %d unreachable" % port):
+        serial_tap.SerialTap("127.0.0.1", port, tmp_path / "uart.log").start()
+
+
+class _InlineSupervisor:
+    """Runs the DUT's coroutine directly, as Supervisor.run would on its loop."""
+
+    def run(self, coro, timeout):
+        return asyncio.run(asyncio.wait_for(coro, timeout))
+
+
+def test_silent_dut_api_ends_the_wait_at_its_deadline_with_a_named_error(monkeypatch):
+    server = _silent_server()
+    monkeypatch.setattr(dut, "API_CONNECT_S", 0.5)
+    cfg = SimpleNamespace(host="127.0.0.1")
+    monkeypatch.setattr(dut.contract, "API_PORT", server.getsockname()[1])
+    device = dut.Dut("A", cfg, _InlineSupervisor(), flasher=None)
+    started = time.monotonic()
+    try:
+        with pytest.raises(RigError, match="DUT A API did not answer within 2s"):
+            device.wait_api(noise_psk=None, deadline_s=2)
+        assert time.monotonic() - started < 6
+    finally:
+        server.close()

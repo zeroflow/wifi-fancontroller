@@ -2,7 +2,8 @@
 
 Rules (hil-rig README): always --chip, never a baud option, ESPTOOL_BAUD unset,
 --before/--after no-reset, hyphenated subcommands. The command line is never
-printed. A write counts only when esptool exits 0 and prints the hash line.
+printed. A write counts only when esptool exits 0 and prints the hash line. One attempt
+only: the single visible retry belongs to Dut.flash.
 """
 
 import os
@@ -12,7 +13,7 @@ import sys
 import time
 from dataclasses import dataclass
 
-DEADLINE_S = 120
+FLASH_ATTEMPT_S = 120
 TAIL_LINES = 12
 NOISE = "Failed to get VID/PID"
 VERIFIED = "Hash of data verified."
@@ -24,6 +25,7 @@ class FlashResult:
     duration_s: float
     verified: bool
     output_tail: str
+    reason: str = ""  # "" when ok, else "exit <n>", "not verified" or "deadline"
 
 
 class Flasher:
@@ -42,7 +44,7 @@ class Flasher:
             "write-flash", offset, str(path),
         ]
 
-    def write(self, offset, path, deadline_s=DEADLINE_S):
+    def write(self, offset, path, deadline_s=FLASH_ATTEMPT_S):
         env = {k: v for k, v in os.environ.items() if k != "ESPTOOL_BAUD"}
         started = time.monotonic()
         proc = subprocess.Popen(
@@ -77,9 +79,19 @@ class Flasher:
         tail = lines[-TAIL_LINES:]
         if timed_out:
             tail.append("flash deadline of %ss exceeded; process group killed" % deadline_s)
+        ok = proc.returncode == 0 and verified and not timed_out
+        if ok:
+            reason = ""
+        elif timed_out:
+            reason = "deadline"
+        elif proc.returncode != 0:
+            reason = "exit %d" % proc.returncode
+        else:
+            reason = "not verified"
         return FlashResult(
-            ok=(proc.returncode == 0 and verified and not timed_out),
+            ok=ok,
             duration_s=time.monotonic() - started,
             verified=verified,
             output_tail="\n".join(tail),
+            reason=reason,
         )
