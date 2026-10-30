@@ -12,7 +12,9 @@
 # The HIL SSID and PSK keys (hil_wifi_ssid, hil_wifi_password) are added once
 # the isolated HIL network exists (hil-rig plan 01-07, D-02/D-03). Until then
 # local builds take the WiFi values from the developer's environment
-# (HIL_LOCAL_WIFI_SSID / HIL_LOCAL_WIFI_PASSWORD); CI refuses that override.
+# (HIL_LOCAL_WIFI_SSID / HIL_LOCAL_WIFI_PASSWORD) together with a private
+# HIL_LOCAL_DUT_API_KEY: the key below is published, so it must never protect a
+# board on the developer's own WiFi. CI refuses all HIL_LOCAL_* overrides.
 #
 # Format, enforced by hil/tools/build_image.py: one "key: \"value\"" per line,
 # comments and blank lines only. No YAML tags, no unquoted values.
