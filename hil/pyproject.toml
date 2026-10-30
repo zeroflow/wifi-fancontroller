@@ -1,0 +1,22 @@
+[project]
+name = "hil"
+version = "0.1.0"
+description = "Hardware-in-the-loop harness for the WiFi Fan Controller firmware"
+requires-python = ">=3.12"
+dependencies = [
+    "aioesphomeapi==46.12.0",
+    "esptool==5.4.0",
+    "pytest==9.2.0",
+    "pytest-timeout==2.4.0",
+]
+
+[tool.uv]
+package = false
+# The runner and the dev host are Linux; restricting the lock keeps platform-only
+# transitive packages (colorama, and similar) out of the reviewed set.
+environments = ["sys_platform == 'linux'"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:cacheprovider"
