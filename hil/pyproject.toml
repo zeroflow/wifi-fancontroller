@@ -20,3 +20,9 @@ environments = ["sys_platform == 'linux'"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-p no:cacheprovider"
+# Deadlines nest: operation (flash 120 s, API 90 s, ...) < per-test < session < job (25 min).
+# 420 s covers 2 x 120 s flash + 5 s tap + 90 s API + 15 s settle plus presses and slack.
+# Signal mode raises inside the test so fixture finalizers (switches off) still run.
+timeout = 420
+timeout_method = "signal"
+session_timeout = 900

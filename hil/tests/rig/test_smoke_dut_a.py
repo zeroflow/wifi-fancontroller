@@ -11,9 +11,12 @@ from hil.dut import BOOT_SETTLE_S
 
 def test_commit_image_boots_and_reports_build_id(dut_a, tap_a, fw_manifest, rig_config):
     image = fw_manifest.image("commit")
-    result = dut_a.flash(image)
-    print("flash: ok=%s verified=%s duration=%.1fs" % (result.ok, result.verified, result.duration_s))
-    assert result.ok and result.verified, "flash failed:\n" + result.output_tail
+    report = dut_a.flash(image)  # one visible retry, RigError after two failed attempts
+    print(
+        "flash: ok=%s verified=%s attempts=%d durations=%s"
+        % (report.ok, report.verified, report.attempts, ["%.1fs" % d for d in report.durations_s])
+    )
+    assert report.ok and report.verified
 
     info = dut_a.wait_api(noise_psk=rig_config.dut_api_key)
 
