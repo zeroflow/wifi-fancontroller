@@ -7,7 +7,7 @@ import ipaddress
 import os
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import RigError
@@ -56,10 +56,12 @@ class DutConfig:
 
 @dataclass(frozen=True)
 class RigConfig:
+    # The keys stay out of repr: a RigConfig in a traceback or log line would
+    # otherwise print them into public CI logs.
     supervisor_host: str
-    supervisor_key: str
+    supervisor_key: str = field(repr=False)
     duts: dict
-    dut_api_key: str
+    dut_api_key: str = field(repr=False)
 
 
 def parse_network(text, path=NETWORK_FILE):
