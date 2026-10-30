@@ -1,0 +1,14 @@
+ets Jun  8 2016 00:22:57
+rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)
+[0;32m[I][app:029]: Hostname: fancontroller-r3-2-00000a[0m
+[0;32m[I][wifi:310]: WiFi MAC: 02:00:00:00:00:0a[0m
+[I][wifi:312]: Same MAC in upper case: 02:00:00:00:00:0A
+[I][app:101]: Compact MAC form: 02000000000A
+[I][wifi:360]: Connecting to HIL-Example-Net (BSSID 02:00:00:00:00:fe)
+[I][wifi:612]: IP Address: 192.0.2.20
+[I][wifi:613]: Gateway: 198.51.100.7
+[I][api:030]: Supervisor at 192.0.2.10
+[D][bridge:001]: opening socket://192.0.2.10:6638
+[I][api:140]: Client connected from 198.51.100.7
+[1;31m[E][rmt:105]: Channel creation failed for 192.0.2.20[0m
+[I][ota:101]: Boot seems successful; resetting boot loop counter
