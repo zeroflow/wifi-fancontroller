@@ -60,7 +60,7 @@ REV = "3.2"
 FRAMEWORK = "arduino"
 
 NETWORK_KEYS = ("hil_wifi_ssid", "hil_wifi_password", "hil_dut_api_key")
-LOCAL_OVERRIDE_ENV = ("HIL_LOCAL_WIFI_SSID", "HIL_LOCAL_WIFI_PASSWORD")
+LOCAL_OVERRIDE_ENV = ("HIL_LOCAL_WIFI_SSID", "HIL_LOCAL_WIFI_PASSWORD", "HIL_LOCAL_DUT_API_KEY")
 MIN_VALUE_LENGTH = 8
 FAILURE_TAIL_LINES = 80
 
@@ -83,6 +83,8 @@ def load_localizer(repo_root):
     sys.dont_write_bytecode = True
     path = os.path.join(repo_root, "tools", "localize-examples.py")
     spec = importlib.util.spec_from_file_location("localize_examples", path)
+    if spec is None or spec.loader is None:
+        raise BuildError("cannot load %s" % path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -172,7 +174,7 @@ def refuse_local_overrides(args, env):
     if any(key in env for key in LOCAL_OVERRIDE_ENV) or args.config is not None:
         raise BuildError(
             "local override refused in GitHub Actions "
-            "(HIL_LOCAL_WIFI_* and --config are for local builds only)"
+            "(HIL_LOCAL_* and --config are for local builds only)"
         )
 
 
@@ -180,7 +182,9 @@ def resolve_network(file_values, env, ci):
     """Return the three network values.
 
     CI: all three from the file, a missing key is an error naming the key.
-    Local: WiFi from the HIL_LOCAL_WIFI_* pair when set, else the file.
+    Local: WiFi from the HIL_LOCAL_WIFI_* pair when set, else the file. A local
+    WiFi override also needs HIL_LOCAL_DUT_API_KEY: the published DUT key is only
+    acceptable on the isolated HIL network, never on the developer's own WiFi.
     """
     values = {}
     if not ci:
@@ -191,8 +195,19 @@ def resolve_network(file_values, env, ci):
                 "set both HIL_LOCAL_WIFI_SSID and HIL_LOCAL_WIFI_PASSWORD, or neither"
             )
         if ssid_env:
+            key_env = env.get("HIL_LOCAL_DUT_API_KEY")
+            if not key_env:
+                raise BuildError(
+                    "HIL_LOCAL_WIFI_* needs HIL_LOCAL_DUT_API_KEY: the published "
+                    "hil_dut_api_key is for the isolated HIL network only"
+                )
+            if key_env == file_values.get("hil_dut_api_key"):
+                raise BuildError(
+                    "HIL_LOCAL_DUT_API_KEY must differ from the published hil_dut_api_key"
+                )
             values["hil_wifi_ssid"] = ssid_env
             values["hil_wifi_password"] = pass_env
+            values["hil_dut_api_key"] = key_env
     for key in NETWORK_KEYS:
         if key not in values and key in file_values:
             values[key] = file_values[key]
@@ -313,7 +328,7 @@ def write_outputs(image_path, out_dir, commit, hil_commit, version):
 
 
 def parse_args(argv):
-    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser = argparse.ArgumentParser(description=(__doc__ or "").split("\n")[0])
     parser.add_argument("--commit", help="40 lowercase hex; falls back to env HIL_COMMIT")
     parser.add_argument("--out", default="hil-out", help="output directory (default hil-out)")
     parser.add_argument("--config", help="local mode only: a config inside .hil-build/")
@@ -480,6 +495,7 @@ def self_test():
     for env_extra, argv_extra, label in (
         ({"HIL_LOCAL_WIFI_SSID": "refused-ssid-0001"}, [], "HIL_LOCAL_WIFI_SSID"),
         ({"HIL_LOCAL_WIFI_PASSWORD": "refused-pass-0001"}, [], "HIL_LOCAL_WIFI_PASSWORD"),
+        ({"HIL_LOCAL_DUT_API_KEY": "refused-key-0001"}, [], "HIL_LOCAL_DUT_API_KEY"),
         ({}, ["--config", ".hil-build/x.yaml"], "--config"),
     ):
         env = {"GITHUB_ACTIONS": "true"}
@@ -530,9 +546,21 @@ def self_test():
     # 6. Local mode: the env pair, and --config confined to .hil-build/.
     values = resolve_network({"hil_dut_api_key": "selftest-dut-key-0123456789"},
                              {"HIL_LOCAL_WIFI_SSID": "local-ssid-0001",
-                              "HIL_LOCAL_WIFI_PASSWORD": "local-pass-0001"}, False)
+                              "HIL_LOCAL_WIFI_PASSWORD": "local-pass-0001",
+                              "HIL_LOCAL_DUT_API_KEY": "local-dut-key-0123456789"}, False)
     check("local mode takes WiFi from the env pair",
           values["hil_wifi_ssid"] == "local-ssid-0001")
+    check("local WiFi takes the local DUT key, never the published one",
+          values["hil_dut_api_key"] == "local-dut-key-0123456789")
+    check("local WiFi without HIL_LOCAL_DUT_API_KEY is refused",
+          raises(resolve_network, {"hil_dut_api_key": "selftest-dut-key-0123456789"},
+                 {"HIL_LOCAL_WIFI_SSID": "local-ssid-0001",
+                  "HIL_LOCAL_WIFI_PASSWORD": "local-pass-0001"}, False) is not None)
+    check("a local DUT key equal to the published key is refused",
+          raises(resolve_network, {"hil_dut_api_key": "selftest-dut-key-0123456789"},
+                 {"HIL_LOCAL_WIFI_SSID": "local-ssid-0001",
+                  "HIL_LOCAL_WIFI_PASSWORD": "local-pass-0001",
+                  "HIL_LOCAL_DUT_API_KEY": "selftest-dut-key-0123456789"}, False) is not None)
     check("local mode wants both env values",
           raises(resolve_network, {"hil_dut_api_key": "selftest-dut-key-0123456789"},
                  {"HIL_LOCAL_WIFI_SSID": "local-ssid-0001"}, False) is not None)
