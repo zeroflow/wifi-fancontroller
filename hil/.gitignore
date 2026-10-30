@@ -2,3 +2,4 @@
 # Committing this one keeps the work tree clean after a HIL build.
 /.esphome/
 /secrets.yaml
+__pycache__/
