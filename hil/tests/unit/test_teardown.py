@@ -13,7 +13,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hil import RigError, contract, dut as dut_module, teardown
+from hil import RigError, config, contract, dut as dut_module, manifest as manifest_module, teardown
 from hil.__main__ import build_parser
 from hil.dut import Dut
 from hil.flasher import Flasher
@@ -122,6 +122,10 @@ def rig(tmp_path, monkeypatch):
         nvs_offset="0x3A0000",
         nvs_size="0x60000",
     )
+    net = tmp_path / "hil-network.yaml"
+    net.write_text('hil_dut_api_key: "dut-key-0123456789"\n', encoding="utf-8")
+    monkeypatch.setattr(config, "NETWORK_FILE", net)
+    dutcfg.last_green_dir = str(tmp_path / "store")
     cfg = SimpleNamespace(duts={"A": dutcfg}, supervisor_host="192.0.2.10", dut_api_key="hil-key", supervisor_key="sv-key")
     return SimpleNamespace(tmp=tmp_path, cfg=cfg, dutcfg=dutcfg, fw=fw, kg=kg, nvs=nvs_file, script=script, monkeypatch=monkeypatch)
 
@@ -349,3 +353,172 @@ def test_sigterm_handler_turns_into_keyboard_interrupt_and_runs_finally(tmp_path
     out, _ = proc.communicate(timeout=10)
     assert proc.returncode == 2 and "interrupted" in out
     assert marker.read_text() == "finalized"
+
+
+# ---- last-green store (D-15) ------------------------------------------------------------------
+
+MAIN = "refs/heads/main"
+CLAUDE_MAIN = "refs/heads/claude/main"
+
+
+def seed_store(rig, ref=MAIN):
+    """A valid store holding the fw/ commit image, made with the real promote()."""
+    from hil import last_green
+
+    verified = manifest_module.load_verified(rig.fw, COMMIT, rig.dutcfg)
+    ok, detail = last_green.promote(rig.dutcfg, verified, ref, "7", last_green.network_sha256(config.NETWORK_FILE))
+    assert ok, detail
+    return Path(rig.dutcfg.last_green_dir)
+
+
+def stored_image(store):
+    return sorted(store.glob("*.bin"))[0]
+
+
+def test_not_green_with_a_valid_store_restores_the_stored_image_without_nvs(rig, capsys):
+    store = seed_store(rig)
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert out.code == 0
+    assert [regions(c) for c in out.calls] == [[("0x0", str(stored_image(store)))]]
+    assert out.dut.api_calls == ["hil-key"]
+    assert (out.final["image"], out.final["version"], out.final["confirmed"]) == ("last-green", BUILD_ID, True)
+    assert out.final["known_good_source"] == "last-green" and out.final["last_green"]["action"] == "used"
+    assert "Known-good source: last-green (%s)" % BUILD_ID in capsys.readouterr().out
+
+
+def test_corrupted_store_falls_back_to_v160_plus_nvs(rig, capsys):
+    store = seed_store(rig)
+    image = stored_image(store)
+    data = bytearray(image.read_bytes())
+    data[3] ^= 0xFF
+    image.write_bytes(data)
+    out = go(rig, ["3.2"], job_status="failure")
+    assert [regions(c) for c in out.calls] == [[("0x0", str(rig.kg)), ("0x3A0000", str(rig.nvs))]]
+    assert "Known-good source: v1.6.0 (store invalid: sha256 mismatch)" in capsys.readouterr().out
+    assert (out.final["image"], out.final["known_good_source"]) == ("known-good", "v1.6.0")
+    assert out.final["last_green"]["action"] == "rejected"
+
+
+def test_missing_store_uses_v160_and_says_why(rig, capsys):
+    out = go(rig, ["3.2"], job_status="failure")
+    assert "Known-good source: v1.6.0 (store missing)" in capsys.readouterr().out
+    assert out.final["image"] == "known-good"
+
+
+def test_last_green_confirmation_timeout_goes_to_the_commit_image_never_to_v160(rig):
+    store = seed_store(rig)
+    verdict(rig, "FAIL")
+    out = go(rig, [None, BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert [regions(c) for c in out.calls] == [
+        [("0x0", str(stored_image(store)))],
+        [("0x0", str(rig.fw / "firmware.factory.bin"))],
+    ]
+    assert str(rig.kg) not in json.dumps(out.calls)
+    assert json.loads((rig.tmp / "reports" / "verdict.json").read_text())["verdict"] == "RIG ERROR"
+    assert (out.final["image"], out.final["confirmed"]) == ("commit", True)
+
+
+def test_last_green_that_reports_another_build_is_not_confirmed(rig):
+    seed_store(rig)
+    out = go(rig, ["3.2", BUILD_ID], job_status="failure")
+    assert out.code == 3 and len(out.calls) == 2
+    assert out.final["image"] == "commit"
+
+
+def test_two_non_green_teardowns_restore_the_same_stored_image(rig):
+    seed_store(rig)
+    a = go(rig, [BUILD_ID], job_status="failure")
+    b = go(rig, [BUILD_ID], job_status="failure")
+    assert a.final["image"] == b.final["image"] == "last-green"
+    assert regions(b.calls[-1]) == regions(a.calls[0])
+
+
+def count_promotes(rig, results=None):
+    from hil import last_green
+
+    calls = []
+    real = last_green.promote
+
+    def wrapper(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs) if results is None else results
+
+    rig.monkeypatch.setattr(teardown.last_green, "promote", wrapper)
+    return calls
+
+
+def test_green_main_promotes_once_after_a_matching_confirmation(rig, capsys):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", MAIN)
+    rig.monkeypatch.setenv("GITHUB_RUN_ID", "99")
+    calls = count_promotes(rig)
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 0 and len(calls) == 1
+    assert out.dut.api_calls == ["hil-key"]
+    assert "Last-green store: updated (%s)" % BUILD_ID in capsys.readouterr().out
+    assert out.final["last_green"] == {"action": "updated", "detail": BUILD_ID}
+    stored = json.loads((Path(rig.dutcfg.last_green_dir) / "manifest.json").read_text())
+    assert (stored["ref"], stored["run_id"], stored["build_id"]) == (MAIN, "99", BUILD_ID)
+
+
+def test_second_green_main_teardown_reports_already(rig, capsys):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", MAIN)
+    go(rig, [BUILD_ID], job_status="success")
+    capsys.readouterr()
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert "Last-green store: unchanged (already %s)" % BUILD_ID in capsys.readouterr().out
+    assert out.final["last_green"]["action"] == "unchanged"
+
+
+def test_green_on_claude_main_never_stores(rig, capsys):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", CLAUDE_MAIN)
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert "Last-green store: unchanged (ref is not refs/heads/main)" in capsys.readouterr().out
+    assert not Path(rig.dutcfg.last_green_dir).exists()
+    assert out.code == 0
+
+
+def test_green_without_a_ref_never_stores(rig, capsys):
+    verdict(rig, "PASS")
+    go(rig, [BUILD_ID], job_status="success")
+    assert "Last-green store: unchanged (ref is not refs/heads/main)" in capsys.readouterr().out
+    assert not Path(rig.dutcfg.last_green_dir).exists()
+
+
+def test_green_with_a_build_id_mismatch_never_stores(rig, capsys):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", MAIN)
+    calls = count_promotes(rig)
+    out = go(rig, ["3.2+hil." + "f" * 12], job_status="success")
+    assert calls == []
+    assert "Last-green store: unchanged (build ID not confirmed)" in capsys.readouterr().out
+    assert not Path(rig.dutcfg.last_green_dir).exists()
+    assert out.code == 3 and out.final["confirmed"] is False
+
+
+def test_failed_promotion_warns_in_actions_and_changes_no_verdict_or_exit_code(rig, capsys):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", MAIN)
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    count_promotes(rig, results=(False, "PermissionError"))
+    out = go(rig, [BUILD_ID], job_status="success")
+    text = capsys.readouterr().out
+    assert "::warning" in text and "Last-green store: unchanged (PermissionError)" in text
+    assert out.code == 0
+    assert json.loads((rig.tmp / "reports" / "verdict.json").read_text())["verdict"] == "PASS"
+
+
+def test_a_promote_that_raises_is_contained(rig, capsys):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", MAIN)
+
+    def boom(*_a, **_k):
+        raise ValueError("unexpected")
+
+    rig.monkeypatch.setattr(teardown.last_green, "promote", boom)
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 0
+    assert "Last-green store: unchanged (ValueError)" in capsys.readouterr().out
