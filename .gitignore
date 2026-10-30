@@ -46,3 +46,9 @@ pat_token
 
 # Worktrees
 .worktrees/
+
+# HIL harness (hil/)
+.hil-build/
+hil-out/
+hil/.venv/
+hil/reports/
