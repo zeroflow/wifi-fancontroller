@@ -13,6 +13,9 @@ from hil import RigError, contract, dut as dut_module
 from hil.dut import Dut
 from hil.flasher import FLASH_ATTEMPT_S, Flasher
 
+# "DUT A" label, taken from the contract so no supervisor name literal sits in a test.
+LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
+
 FAKE = r'''
 import json, os, subprocess, sys, time
 state = os.environ["FAKE_STATE"]
@@ -165,8 +168,8 @@ def test_github_actions_retry_prints_warning_and_summary_line(env, capsys):
     d, _sv, image = make_dut(env)
     d.flash(image)
     out = capsys.readouterr().out
-    assert "::warning title=HIL flash retry::DUT A flash needed a retry (exit 2)" in out
-    assert summary.read_text(encoding="utf-8").count("DUT A flash: ok after 2 attempts (exit 2)") == 1
+    assert "::warning title=HIL flash retry::%s flash needed a retry (exit 2)" % LABEL in out
+    assert summary.read_text(encoding="utf-8").count("%s flash: ok after 2 attempts (exit 2)" % LABEL) == 1
 
 
 def test_outside_github_actions_retry_prints_plain_warning(env, capsys):
@@ -174,7 +177,7 @@ def test_outside_github_actions_retry_prints_plain_warning(env, capsys):
     d, _sv, image = make_dut(env)
     d.flash(image)
     out = capsys.readouterr().out
-    assert "WARNING: DUT A flash needed a retry (exit 2)" in out and "::warning" not in out
+    assert "WARNING: %s flash needed a retry (exit 2)" % LABEL in out and "::warning" not in out
 
 
 def test_default_attempt_deadline_is_named_constant():

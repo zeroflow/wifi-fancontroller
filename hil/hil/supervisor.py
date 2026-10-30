@@ -32,6 +32,7 @@ class Supervisor:
         self._key = key
         self._client = None
         self._entities = {}  # name -> (info class, key)
+        self._name_list = []  # every entity name as reported, in order, duplicates kept
         self._names = {}  # key -> name
         self._states = {}  # name -> bool
         self._closed = False
@@ -67,6 +68,7 @@ class Supervisor:
             except Exception:  # noqa: BLE001 - best effort while failing anyway
                 pass
             raise RigError("supervisor connection failed (%s)" % type(exc).__name__) from None
+        self._name_list = [entity.name for entity in entities]
         for entity in entities:
             if isinstance(entity, (ButtonInfo, SwitchInfo, BinarySensorInfo)):
                 self._entities[entity.name] = (type(entity), entity.key)
@@ -94,6 +96,27 @@ class Supervisor:
 
     def entity_names(self):
         return set(self._entities)
+
+    def entity_name_list(self):
+        """Every entity name from the one list_entities_services() call, as reported."""
+        return list(self._name_list)
+
+    @staticmethod
+    def contract_problems(names):
+        """Contract violations in a reported name list; empty when conformant (RIG-03).
+
+        Names compare with exact str equality: case, whitespace and prefixes all count.
+        """
+        problems = ["entity '%s' missing on supervisor" % n for n in sorted(contract.REQUIRED_ENTITIES - set(names))]
+        for name in sorted(contract.REQUIRED_ENTITIES):
+            count = list(names).count(name)
+            if count > 1:
+                problems.append("entity '%s' reported %d times" % (name, count))
+        return problems
+
+    def switch_is_on(self, name):
+        """Last reported state of a contract switch: True, False, or None when never reported."""
+        return self._states.get(name)
 
     def press(self, name):
         key = self._lookup(name, ButtonInfo)
