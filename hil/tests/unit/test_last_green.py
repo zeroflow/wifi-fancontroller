@@ -63,7 +63,7 @@ def test_promote_on_main_writes_image_and_manifest_and_load_returns_it(tmp_path,
     ok, detail = last_green.promote(dut, m, MAIN, "4242", NET_SHA)
     assert (ok, detail) == (True, BUILD_ID)
     sha = m.image("commit").sha256
-    assert sorted(p.name for p in store.iterdir()) == ["manifest.json", sha + ".bin"]
+    assert sorted(p.name for p in store.iterdir()) == sorted(["manifest.json", sha + ".bin"])
     for p in store.iterdir():
         assert stat.S_IMODE(p.stat().st_mode) == 0o600
     data = json.loads((store / "manifest.json").read_text())
@@ -162,7 +162,7 @@ def test_malformed_json_is_invalid(promoted, dut, store):
         ({"build_id": "3.2"}, "build ID"),
         ({"network_sha256": "f" * 64}, "network hash"),
         ({"sha256": "../etc/passwd"}, "sha256"),
-        ({"sha256": "a" * 64}, "image file is missing"),
+        ({"sha256": "a" * 64, "file": "a" * 64 + ".bin"}, "image file is missing"),
         ({"file": "other.bin"}, "file name"),
         ({"file": "../x.bin"}, "file name"),
         ({"file": ".."}, "file name"),
