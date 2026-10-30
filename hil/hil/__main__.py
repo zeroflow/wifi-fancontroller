@@ -68,16 +68,24 @@ def load_rig():
     return rig
 
 
+NO_CONFIG_REPORTS = ("verdict.json", "final-image.json")
+
+
 def redact_reports(rig):
     """reports/raw + reports/*.json -> reports/redacted, the only thing a job may upload.
 
     Fails closed: if redaction breaks, the redacted directory is removed, not left half done.
-    Without a loaded config only the JSON reports are copied (nothing ran, so raw is empty).
+    Without a loaded config there are no literals to mask, so only the reports this tool
+    writes without rig values (verdict, final image) are added; a tree an earlier step
+    redacted with the full literal set is kept, and nothing else is copied.
     """
     reports = config.reports_dir()
     try:
-        literals = config.mask_literals(rig) if rig is not None else []
-        redact.redact_tree(reports / "raw", reports / "redacted", literals, include_raw=rig is not None)
+        if rig is not None:
+            redact.redact_tree(reports / "raw", reports / "redacted", config.mask_literals(rig))
+        else:
+            redact.redact_tree(reports / "raw", reports / "redacted", [], include_raw=False,
+                               json_names=NO_CONFIG_REPORTS, keep_existing=True)
     except Exception as exc:  # noqa: BLE001 - never let a redaction fault leave unredacted files behind
         shutil.rmtree(reports / "redacted", ignore_errors=True)
         print("RIG ERROR: redaction failed (%s); nothing will be uploaded" % type(exc).__name__)

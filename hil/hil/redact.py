@@ -7,6 +7,7 @@ a MAC or a socket:// URL, and stripping ANSI escapes. Literals go first, longest
 first, so a literal that contains a shorter one is masked as a whole.
 """
 
+import json
 import re
 import shutil
 from pathlib import Path
@@ -18,9 +19,19 @@ MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
 SOCKET_URL = re.compile(r"socket://\S+")
 
 
+def _forms(literal):
+    """The literal plus the forms a JSON report stores it in (escaped quotes,
+    backslashes, control and non-ASCII characters)."""
+    return {literal, json.dumps(literal)[1:-1], json.dumps(literal, ensure_ascii=False)[1:-1]}
+
+
 def redact(text, literals):
     text = ANSI.sub("", text)
-    for literal in sorted({lit for lit in literals if lit}, key=len, reverse=True):
+    forms = set()
+    for literal in literals:
+        if literal:
+            forms |= _forms(literal)
+    for literal in sorted(forms, key=len, reverse=True):
         text = text.replace(literal, MASK)
     text = SOCKET_URL.sub("socket://" + MASK, text)
     text = IPV4.sub(MASK, text)
@@ -35,24 +46,26 @@ def _write(src, dest, literals):
     return dest
 
 
-def redact_tree(raw_dir, out_dir, literals, include_raw=True):
+def redact_tree(raw_dir, out_dir, literals, include_raw=True, json_names=None, keep_existing=False):
     """Write redacted copies of raw_dir's files and the reports root's *.json files into out_dir.
 
-    out_dir is emptied first, so nothing from an earlier run survives. Returns the written paths.
+    out_dir is emptied first, so nothing from an earlier run survives, unless keep_existing
+    is set. json_names limits the root JSON reports to those file names. Returns the
+    written paths.
     """
     raw_dir = Path(raw_dir)
     out_dir = Path(out_dir)
     if out_dir.resolve() in (raw_dir.resolve(), raw_dir.resolve().parent):
         raise ValueError("refusing to clear a directory that holds the raw reports")
-    if out_dir.exists():
+    if out_dir.exists() and not keep_existing:
         shutil.rmtree(out_dir)
-    out_dir.mkdir(parents=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
     written = []
     if include_raw and raw_dir.is_dir():
         for src in sorted(raw_dir.rglob("*")):
             if src.is_file():
                 written.append(_write(src, out_dir / src.relative_to(raw_dir), literals))
     for src in sorted(raw_dir.parent.glob("*.json")):
-        if src.is_file():
+        if src.is_file() and (json_names is None or src.name in json_names):
             written.append(_write(src, out_dir / src.name, literals))
     return written
