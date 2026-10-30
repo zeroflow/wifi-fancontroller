@@ -64,16 +64,20 @@ class Dut:
             with open(summary, "a", encoding="utf-8") as handle:
                 handle.write("%s flash: ok after 2 attempts (%s)\n" % (label, reason))
 
-    def _write_report(self, report):
+    def _write_report(self, report, report_name=None):
         reports = config.reports_dir()
         reports.mkdir(parents=True, exist_ok=True)
         data = asdict(report)
         data["durations_s"] = [round(d, 1) for d in report.durations_s]
-        path = reports / ("flash-dut-%s.json" % self.id.lower())
+        path = reports / (report_name or "flash-dut-%s.json" % self.id.lower())
         path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     def flash(self, image):
-        """Bootloader, write at the image offset, reset. One visible retry, then RigError.
+        """Flash one manifest image at its offset (see flash_regions)."""
+        return self.flash_regions([(image.offset, image.path)])
+
+    def flash_regions(self, regions, report_name=None):
+        """Bootloader, write the (offset, path) regions in one call, reset. One visible retry, then RigError.
 
         Every attempt re-presses the bootloader button, so flashing the same image
         again ends in the same verified state. The board is always reset at the end,
@@ -86,7 +90,7 @@ class Dut:
         try:
             for _attempt in range(FLASH_ATTEMPTS):
                 self.enter_bootloader()
-                result = self._flasher.write(image.offset, image.path, deadline_s=self.flash_attempt_s)
+                result = self._flasher.write(regions, deadline_s=self.flash_attempt_s)
                 durations.append(result.duration_s)
                 if result.ok:
                     break
@@ -102,7 +106,7 @@ class Dut:
             ok=bool(result and result.ok),
             verified=bool(result and result.verified),
         )
-        self._write_report(report)
+        self._write_report(report, report_name)
         if not report.ok:
             raise RigError(
                 "flash failed after %d attempts (%s); last output:\n%s"
@@ -111,6 +115,17 @@ class Dut:
         if retry_reason is not None:
             self._announce_retry(retry_reason)
         return report
+
+    def read_flash(self, offset, size, out_path, deadline_s=None):
+        """Bootloader, then read a flash region into out_path (one attempt, no reset).
+
+        The caller resets the board when it is done with the bootloader (see nvs.capture).
+        """
+        self.enter_bootloader()
+        result = self._flasher.read(offset, size, out_path, deadline_s=deadline_s or self.flash_attempt_s)
+        if not result.ok:
+            raise RigError("flash read failed (%s); last output:\n%s" % (result.reason, result.output_tail))
+        return result
 
     async def _attempt(self, noise_psk):
         client = APIClient(self.cfg.host, contract.API_PORT, None, noise_psk=noise_psk)
@@ -124,13 +139,17 @@ class Dut:
             except Exception:  # noqa: BLE001 - a failed attempt must not leak the slot, nor mask its cause
                 pass
 
+    def probe(self, noise_psk):
+        """One API attempt: device_info, or an exception (APIConnectionError, OSError, RigError)."""
+        return self._supervisor.run(self._attempt(noise_psk), API_CONNECT_S + 5)
+
     def wait_api(self, noise_psk, deadline_s=API_WAIT_S):
         """Poll a fresh client until the DUT answers; no ReconnectLogic (mDNS-driven)."""
         end = time.monotonic() + deadline_s
         last = "no attempt finished"
         while time.monotonic() < end:
             try:
-                info = self._supervisor.run(self._attempt(noise_psk), API_CONNECT_S + 5)
+                info = self.probe(noise_psk)
                 self._mark("api_ready")
                 return info
             except RigError:

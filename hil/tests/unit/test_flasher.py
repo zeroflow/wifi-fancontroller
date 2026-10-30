@@ -101,7 +101,7 @@ def test_exit_zero_without_verified_line_counts_as_failed_attempt(env):
 def test_attempt_over_its_deadline_is_killed_as_process_group(env):
     flasher = Flasher("127.0.0.1", 1, "esp32s2", esptool_cmd=[sys.executable, str(env.script)])
     plan(env, "hang")
-    result = flasher.write("0x0", env.image, deadline_s=1)
+    result = flasher.write([("0x0", env.image)], deadline_s=1)
     assert result.ok is False and result.reason == "deadline"
     child = int((env.tmp / "state.child").read_text())
     end = time.monotonic() + 3
