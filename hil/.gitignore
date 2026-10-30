@@ -1,0 +1,4 @@
+# ESPHome writes a .gitignore next to a config the first time it compiles it.
+# Committing this one keeps the work tree clean after a HIL build.
+/.esphome/
+/secrets.yaml
