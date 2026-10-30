@@ -9,11 +9,13 @@ from . import RigError, contract
 
 ATTEMPT_TIMEOUT = 10
 BOOTLOADER_SETTLE_S = 0.5
+BOOT_SETTLE_S = 15
 
 
 class Dut:
-    def __init__(self, dut_id, cfg, supervisor, flasher):
+    def __init__(self, dut_id, cfg, supervisor, flasher, tap=None):
         self.id = dut_id
+        self.tap = tap
         self.cfg = cfg
         self._supervisor = supervisor
         self._flasher = flasher
@@ -22,14 +24,21 @@ class Dut:
         self._supervisor.press(contract.BUTTON[self.id]["bootloader"])
         time.sleep(BOOTLOADER_SETTLE_S)
 
+    def _mark(self, name):
+        if self.tap is not None:
+            self.tap.mark(name)
+
     def reset(self):
+        self._mark("reset_pressed")
         self._supervisor.press(contract.BUTTON[self.id]["reset"])
 
     def flash(self, image):
         """Bootloader, write at the image offset, reset. Returns the FlashResult."""
+        self._mark("flash_start")
         self.enter_bootloader()
         try:
             result = self._flasher.write(image.offset, image.path)
+            self._mark("flash_end")
         finally:
             self.reset()
         return result
@@ -52,7 +61,9 @@ class Dut:
         last = "no attempt finished"
         while time.monotonic() < end:
             try:
-                return self._supervisor.run(self._attempt(noise_psk), ATTEMPT_TIMEOUT + 5)
+                info = self._supervisor.run(self._attempt(noise_psk), ATTEMPT_TIMEOUT + 5)
+                self._mark("api_ready")
+                return info
             except RigError:
                 last = "attempt timed out"
             except (APIConnectionError, OSError, TimeoutError) as exc:
