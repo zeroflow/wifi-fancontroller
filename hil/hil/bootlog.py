@@ -11,6 +11,9 @@ from . import RigError
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 ESPHOME_ERROR_RE = re.compile(r"^\[E\]\[[^\]]+:\d+\]")
 BOOTLOADER_ERROR_RE = re.compile(r"^E \(\d+\) ")
+# ESP-IDF errors reach UART0 wrapped by ESPHome's logger, at its own level (D on Rev 3.2):
+# `[D][esp-idf:000]: E (641) rmt: ...`. The wrapper level hides the severity, so look inside.
+IDF_FORWARDED_ERROR_RE = re.compile(r"^\[[A-Z]\]\[esp-idf:\d+\]: E \(\d+\) ")
 # ROM normal-boot codes from the hil-rig README table.
 NORMAL_BOOT = {"esp32s2": "boot:0x8", "esp32c6": "boot:0x6f"}
 
@@ -25,11 +28,16 @@ def lines(text):
 
 
 def error_lines(text):
-    """ESPHome `[E][component:line]` lines and bootloader `E (n) ` lines, ANSI stripped, verbatim."""
+    """ESPHome `[E][component:line]` lines, bootloader `E (n) ` lines and ESP-IDF `E (n)` lines
+    forwarded through ESPHome's logger, ANSI stripped, verbatim."""
     found = []
     for line in lines(text):
         stripped = line.lstrip()
-        if ESPHOME_ERROR_RE.match(stripped) or BOOTLOADER_ERROR_RE.match(stripped):
+        if (
+            ESPHOME_ERROR_RE.match(stripped)
+            or BOOTLOADER_ERROR_RE.match(stripped)
+            or IDF_FORWARDED_ERROR_RE.match(stripped)
+        ):
             found.append(stripped.rstrip())
     return found
 
