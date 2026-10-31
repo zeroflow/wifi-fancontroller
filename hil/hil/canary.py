@@ -271,8 +271,13 @@ def run(env=None, scan_root="/", proc_dir="/proc", skip_prefixes=SKIP_PREFIXES, 
         mountinfo=MOUNTINFO, run_dir=RUN_DIR, etc_hil=ETC_HIL, max_bytes=MAX_FILE_BYTES,
         owner_uid=0, access=os.access):
     env = os.environ if env is None else env
-    if env.get("RUNNER_ENVIRONMENT") != "self-hosted":
-        say("canary skipped: not on the self-hosted runner")
+    if env.get("HIL_CANARY_SKIP") == "1":
+        # Local development only. Never environmental: whether the runner exports
+        # RUNNER_ENVIRONMENT must not decide whether the credential gate runs.
+        if env.get("GITHUB_ACTIONS") == "true":
+            say("FAIL: HIL_CANARY_SKIP is set under GitHub Actions; the canary cannot be skipped there")
+            return 1
+        say("canary skipped: HIL_CANARY_SKIP=1 (local development)")
         return 0
 
     started = time.monotonic()

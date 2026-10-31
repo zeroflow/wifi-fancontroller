@@ -291,12 +291,35 @@ def test_writable_etc_hil_directory_or_file_fails(rig_dirs, capsys):
 # ---- off the runner, and the canary does not trip on its own source ----------------------
 
 
-def test_off_the_runner_it_is_skipped(rig_dirs, capsys):
-    code, out = go(rig_dirs, capsys, env={"PATH": "/usr/bin"})
+def test_the_skip_is_an_explicit_opt_in_for_local_development(rig_dirs, capsys):
+    code, out = go(rig_dirs, capsys, env={"PATH": "/usr/bin", "HIL_CANARY_SKIP": "1"})
     assert code == 0
-    assert out.strip() == "canary: canary skipped: not on the self-hosted runner"
-    code, out = go(rig_dirs, capsys, env={"RUNNER_ENVIRONMENT": "github-hosted"})
-    assert code == 0 and "skipped" in out
+    assert out.strip() == "canary: canary skipped: HIL_CANARY_SKIP=1 (local development)"
+
+
+def test_the_skip_is_refused_under_github_actions(rig_dirs, capsys):
+    env = dict(rig_dirs.env, HIL_CANARY_SKIP="1", GITHUB_ACTIONS="true")
+    code, out = go(rig_dirs, capsys, env=env)
+    assert code == 1 and "cannot be skipped" in out and "files scanned" not in out
+
+
+@pytest.mark.parametrize("runner_environment", ["github-hosted", "", None, "Self-Hosted"])
+def test_an_unexpected_runner_environment_no_longer_skips_the_scan(rig_dirs, capsys, runner_environment):
+    env = dict(rig_dirs.env, GITHUB_ACTIONS="true")
+    if runner_environment is None:
+        del env["RUNNER_ENVIRONMENT"]
+    else:
+        env["RUNNER_ENVIRONMENT"] = runner_environment
+    code, out = go(rig_dirs, capsys, env=env)
+    assert "canary skipped" not in out and "control hits: file 1" in out
+    assert code == 0
+
+
+def test_a_hit_is_still_a_failure_when_runner_environment_is_missing(rig_dirs, capsys):
+    (rig_dirs.tree / "leak.txt").write_text("token=%s\n" % fake_pat("L"), encoding="utf-8")
+    env = {"GITHUB_ACTIONS": "true", "RUNNER_TEMP": str(rig_dirs.runner_temp), "PATH": os.environ.get("PATH", "")}
+    code, out = go(rig_dirs, capsys, env=env)
+    assert code == 1 and "token in file" in out
 
 
 def test_no_source_file_of_the_canary_or_its_tests_matches_the_pattern():
@@ -306,8 +329,9 @@ def test_no_source_file_of_the_canary_or_its_tests_matches_the_pattern():
         assert (findings, controls) == (0, 0), path
 
 
-def test_script_mode_with_python_dash_i_runs_off_the_runner(tmp_path):
+def test_script_mode_with_python_dash_i_runs_with_the_local_opt_in(tmp_path):
     script = Path(canary.__file__)
-    proc = subprocess.run([sys.executable, "-I", str(script)], env={"PATH": os.environ.get("PATH", "")},
+    proc = subprocess.run([sys.executable, "-I", str(script)],
+                          env={"PATH": os.environ.get("PATH", ""), "HIL_CANARY_SKIP": "1"},
                           cwd=tmp_path, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
-    assert proc.returncode == 0 and "canary skipped: not on the self-hosted runner" in proc.stdout
+    assert proc.returncode == 0 and "canary skipped: HIL_CANARY_SKIP=1" in proc.stdout
