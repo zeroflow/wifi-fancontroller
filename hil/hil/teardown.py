@@ -174,6 +174,11 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
         state["steps"].append("lines not released")
         write_final(reports_dir, state)
         return 3
+    except Exception as exc:  # noqa: BLE001 - any API fault still ends in the final-image bookkeeping
+        say("RIG ERROR: switch release failed (%s)" % type(exc).__name__)
+        state["steps"].append("lines not released")
+        write_final(reports_dir, state)
+        return 3
     say("DUT A lines released")
     state["steps"].append("lines released")
 
@@ -185,7 +190,7 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
             exit_code = keep_commit_image(cfg, fw_dir, dut, dut_key, state)
         else:
             exit_code = known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state)
-    except RigError:
+    except Exception:  # noqa: BLE001 - keep the steps recorded so far, then let the caller report it
         write_final(reports_dir, state)
         raise
     write_final(reports_dir, state)
