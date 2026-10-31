@@ -26,7 +26,12 @@ What it does:
     .hil-build/esphome-compile.log and is never printed raw, because ESPHome
     echoes substitution values (conceal sequences) into its own output.
 
-Exit codes: 0 built, 1 compile or output failure, 2 refused or invalid input.
+--check-pins compares the aioesphomeapi and esptool versions installed in the
+ESPHome image with the pins in hil/pyproject.toml and builds nothing (a Dependabot
+bump of the ESPHome pin then forces a pin update in hil/).
+
+Exit codes: 0 built, 1 compile or output failure, 2 refused or invalid input
+(--check-pins: 2 on any pin mismatch).
 
 Local builds carry the maintainer's WiFi credentials (HIL_LOCAL_WIFI_SSID and
 HIL_LOCAL_WIFI_PASSWORD) and must stay in the gitignored .hil-build/ and
@@ -35,12 +40,14 @@ hil-out/ paths. They are never uploaded or committed.
 
 import argparse
 import hashlib
+import importlib.metadata
 import importlib.util
 import json
 import os
 import re
 import subprocess
 import sys
+import tomllib
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -63,6 +70,10 @@ NETWORK_KEYS = ("hil_wifi_ssid", "hil_wifi_password", "hil_dut_api_key")
 LOCAL_OVERRIDE_ENV = ("HIL_LOCAL_WIFI_SSID", "HIL_LOCAL_WIFI_PASSWORD", "HIL_LOCAL_DUT_API_KEY")
 MIN_VALUE_LENGTH = 8
 FAILURE_TAIL_LINES = 80
+
+PYPROJECT = os.path.join("hil", "pyproject.toml")
+PINNED_PACKAGES = ("aioesphomeapi", "esptool")
+PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+!-]+)$")
 
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
 NETWORK_LINE_RE = re.compile(r'^(hil_[a-z_]+):[ \t]*"([^"]*)"[ \t]*(#.*)?$')
@@ -324,6 +335,47 @@ def write_outputs(image_path, out_dir, commit, hil_commit, version):
     return manifest
 
 
+# ----------------------------------------------------------------- pin guard
+
+
+def pinned_versions(pyproject_text, packages=PINNED_PACKAGES):
+    """The `name==version` pins of `packages` in a pyproject.toml, as {name: version}."""
+    data = tomllib.loads(pyproject_text)
+    pins = {}
+    for entry in data.get("project", {}).get("dependencies", []):
+        match = PIN_RE.match(entry.strip())
+        if match and match.group(1).lower() in packages:
+            pins[match.group(1).lower()] = match.group(2)
+    missing = [name for name in packages if name not in pins]
+    if missing:
+        raise BuildError("%s has no exact pin for: %s" % (PYPROJECT, ", ".join(missing)))
+    return pins
+
+
+def installed_version(name):
+    try:
+        return importlib.metadata.version(name)
+    except importlib.metadata.PackageNotFoundError:
+        return None
+
+
+def check_pins(pyproject_text, installed=installed_version):
+    """Print pinned and installed versions; return 0 when equal, 2 on any difference."""
+    pins = pinned_versions(pyproject_text)
+    code = 0
+    for name in PINNED_PACKAGES:
+        have = installed(name)
+        state = "ok" if have == pins[name] else "MISMATCH"
+        print("%s: hil/pyproject.toml pins %s, ESPHome image has %s (%s)"
+              % (name, pins[name], have or "not installed", state))
+        if have != pins[name]:
+            code = 2
+    if code:
+        print("error: update the pins in hil/pyproject.toml (and hil/uv.lock) to the versions "
+              "the ESPHome image ships", file=sys.stderr)
+    return code
+
+
 # ---------------------------------------------------------------------- main
 
 
@@ -333,6 +385,8 @@ def parse_args(argv):
     parser.add_argument("--out", default="hil-out", help="output directory (default hil-out)")
     parser.add_argument("--config", help="local mode only: a config inside .hil-build/")
     parser.add_argument("--self-test", action="store_true", help="run the built-in fixtures")
+    parser.add_argument("--check-pins", action="store_true",
+                        help="compare the installed aioesphomeapi and esptool with hil/pyproject.toml")
     return parser.parse_args(argv)
 
 
@@ -588,6 +642,23 @@ def self_test():
     check("failure tail replaces every network value",
           not any(v in tail for v in SELF_TEST_VALUES) and "***" in tail)
 
+    # 8. The pin guard: equal versions pass, any difference or absence exits 2.
+    toml_text = ('[project]\nname = "x"\ndependencies = [\n    "aioesphomeapi==46.12.0",\n'
+                 '    "esptool==5.4.0",\n    "pytest==9.2.0",\n]\n')
+    check("pin reader finds both pins",
+          pinned_versions(toml_text) == {"aioesphomeapi": "46.12.0", "esptool": "5.4.0"})
+    check("pin reader refuses a missing pin",
+          raises(pinned_versions, '[project]\ndependencies = ["esptool==5.4.0"]\n') is not None)
+    import contextlib
+    import io
+    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        same = check_pins(toml_text, lambda n: {"aioesphomeapi": "46.12.0", "esptool": "5.4.0"}[n])
+        drift = check_pins(toml_text, lambda n: {"aioesphomeapi": "46.23.0", "esptool": "5.4.0"}[n])
+        absent = check_pins(toml_text, lambda n: None)
+    check("equal versions pass", same == 0, str(same))
+    check("a version difference exits 2", drift == 2, str(drift))
+    check("a missing package exits 2", absent == 2, str(absent))
+
     if failures:
         for failure in failures:
             print("FAIL: %s" % failure, file=sys.stderr)
@@ -600,6 +671,12 @@ def main(argv):
     args = parse_args(argv[1:])
     if args.self_test:
         return self_test()
+    if args.check_pins:
+        try:
+            return check_pins(read_text(os.path.join(REPO_ROOT, PYPROJECT)))
+        except BuildError as err:
+            print("error: %s" % err, file=sys.stderr)
+            return 2
     return run(argv[1:], os.environ)
 
 
