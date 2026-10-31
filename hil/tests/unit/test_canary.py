@@ -222,7 +222,41 @@ def test_mountinfo_naming_hil_runner_fails(rig_dirs, capsys):
         encoding="utf-8",
     )
     code, out = go(rig_dirs, capsys)
-    assert code == 1 and "line 2 names hil-runner" in out
+    assert code == 1 and "line 2 names a hil-runner path" in out
+
+
+# Lines as the live runner printed them for its own service namespace (PrivateTmp), which
+# made the first public canary run fail on a false positive.
+PRIVATE_TMP_LINES = (
+    "47 25 0:57 /systemd/propagate/hil-runner.service /run/systemd/incoming ro,nosuid,nodev master:1086 - tmpfs tmpfs rw\n"
+    "48 25 8:1 /tmp/systemd-private-3a6bf50c0e3a44a8bfeba490d06f93a6-hil-runner.service-v3KiqN/tmp /tmp rw,relatime shared:1987 - ext4 /dev/mapper/pve-vm--108--disk--0 rw\n"
+    "49 25 8:1 /var/tmp/systemd-private-3a6bf50c0e3a44a8bfeba490d06f93a6-hil-runner.service-ffhnCP/tmp /var/tmp rw,relatime shared:1988 - ext4 /dev/sda1 rw\n"
+)
+
+
+def test_systemd_private_tmp_mounts_of_the_runner_unit_are_not_a_finding(rig_dirs, capsys):
+    rig_dirs.mountinfo.write_text("25 1 0:21 / / rw - overlay overlay rw\n" + PRIVATE_TMP_LINES, encoding="utf-8")
+    code, out = go(rig_dirs, capsys)
+    assert code == 0, out
+    assert "minter path and host mount: 0 problem(s)" in out
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "99 25 8:1 /etc/hil-runner /etc/hil-runner ro - ext4 /dev/sda1 rw",
+        "99 25 8:1 /etc/hil-runner /mnt/x ro,nosuid - ext4 /dev/sda1 rw",
+        "99 25 8:1 / /srv/pat ro - ext4 /etc/hil-runner/pat rw",
+        "99 25 8:1 /etc/hil-runner/pat /etc/hil-runner/pat ro - ext4 /dev/sda1 rw",
+    ],
+)
+def test_bind_mount_forms_of_the_minter_directory_are_findings(line):
+    assert canary.names_hil_runner_mount(line)
+
+
+def test_unrelated_mount_lines_are_not_findings():
+    assert not canary.names_hil_runner_mount("25 1 0:21 / / rw - overlay overlay rw")
+    assert not canary.names_hil_runner_mount("30 25 8:1 /var/lib/hil-runnerx /x rw - ext4 /dev/sda1 rw")
 
 
 def info(mode, uid=0, kind=stat.S_IFDIR):

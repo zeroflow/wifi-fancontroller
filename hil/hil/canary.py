@@ -147,6 +147,23 @@ def scan_files(root, sentinel, skip_prefixes=SKIP_PREFIXES, max_bytes=MAX_FILE_B
     return result
 
 
+def names_hil_runner_mount(line):
+    """True when a mountinfo line has a path with a component named exactly hil-runner.
+
+    The paths are the mount root (field 4), the mount point (field 5) and the mount
+    source (the field after the `-` separator). A host bind mount of the minter's
+    /etc/hil-runner shows up there. The runner service's own systemd PrivateTmp mounts
+    (.../systemd-private-<id>-hil-runner.service-<x>/tmp) merely contain the unit's name
+    inside a longer component and are not a finding.
+    """
+    fields = line.split()
+    paths = fields[3:5]
+    if "-" in fields[6:]:
+        separator = fields.index("-", 6)
+        paths += fields[separator + 2:separator + 3]
+    return any("hil-runner" in path.split("/") for path in paths)
+
+
 def check_minter(paths=MINTER_PATHS, mountinfo=MOUNTINFO):
     """Problems with the minter's PAT path being visible in this container."""
     problems = []
@@ -162,8 +179,8 @@ def check_minter(paths=MINTER_PATHS, mountinfo=MOUNTINFO):
     try:
         with open(mountinfo, "r", encoding="utf-8", errors="replace") as handle:
             for number, line in enumerate(handle, 1):
-                if "hil-runner" in line:
-                    problems.append("%s line %d names hil-runner (host bind mount?)" % (mountinfo, number))
+                if names_hil_runner_mount(line):
+                    problems.append("%s line %d names a hil-runner path (host bind mount?)" % (mountinfo, number))
     except OSError as exc:
         problems.append("%s unreadable (%s)" % (mountinfo, type(exc).__name__))
     return problems
