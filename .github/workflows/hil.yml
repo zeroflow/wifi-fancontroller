@@ -1,0 +1,156 @@
+name: HIL
+
+# Hardware-in-the-loop check: every push to main or claude/main builds the Rev 3.2
+# HIL image on a GitHub-hosted runner and flashes it onto a real board (DUT A) on
+# the self-hosted runner in the rig. The red or green result is a real hardware
+# verdict. The harness lives in hil/; the rig itself lives in the hil-rig repository.
+#
+# Deliberately no pull_request or pull_request_target trigger: fork code must never
+# reach a runner inside the LAN. workflow_dispatch takes no inputs, so nothing the
+# caller types can name a binary or a URL. Environment "hil" is restricted to the
+# same two branches and holds the supervisor key.
+#
+# Deliberately no concurrency key: there is one runner and it serializes the jobs.
+# A concurrency group would replace pending runs with newer ones, and the pushes
+# in between would lose their verdict. Runs queue and each one gets its own result.
+#
+# Deliberately no paths or paths-ignore filter: every push gets a check, including
+# a documentation-only one, so the check list never has a hole.
+#
+# The release-version job is duplicated from validate.yml on purpose (repetition over
+# indirection, see the comment there); it is the one job whose run script
+# interpolates an expression, copied verbatim.
+#
+# Only two files go into the hil-firmware artifact: the build directory holds
+# generated sources and caches that have no business in a public artifact.
+on:
+  push:
+    branches:
+      - main
+      - claude/main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  release-version:
+    name: Read the pinned release version
+    runs-on: ubuntu-latest
+    # This job is written out in full here and again in compile-matrix.yml.
+    # That duplication is intentional (D-06) - repetition over indirection is
+    # a standing project convention - do not factor it into a composite
+    # action or a reusable workflow.
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      versions: ${{ steps.read.outputs.versions }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Read esphome-version from publish-firmware.yml
+        id: read
+        # publish-firmware.yml is the single source of truth for the version
+        # that ships to customer hardware. Read it rather than duplicating it.
+        # The version that ships was previously covered by no matrix at all.
+        run: |
+          python3 - >> "$GITHUB_OUTPUT" <<'PY'
+          import json
+          import yaml
+          with open(".github/workflows/publish-firmware.yml") as handle:
+              data = yaml.safe_load(handle)
+          version = str(data["jobs"]["build-firmware"]["with"]["esphome-version"])
+          print("version=%s" % version)
+          print("versions=%s" % json.dumps(["stable", "beta", version]))
+          PY
+
+      - name: Show the pinned version
+        run: |
+          echo "Pinned release version is ${{ steps.read.outputs.version }}"
+          echo "Scheduled matrix covers ${{ steps.read.outputs.versions }}"
+
+  build:
+    name: Build the HIL image
+    runs-on: ubuntu-latest
+    needs: release-version
+    timeout-minutes: 30
+    container:
+      image: ghcr.io/esphome/esphome:${{ needs.release-version.outputs.version }}
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Check harness pins
+        # The harness pins aioesphomeapi and esptool to what the pinned ESPHome
+        # ships. A Dependabot bump of the ESPHome version must update hil/ too.
+        shell: bash
+        run: python3 hil/tools/build_image.py --check-pins
+
+      - name: Build image and manifest
+        shell: bash
+        env:
+          HIL_COMMIT: ${{ github.sha }}
+        run: python3 hil/tools/build_image.py --out hil-out --commit "$HIL_COMMIT"
+
+      - name: Upload firmware and manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: hil-firmware
+          path: |
+            hil-out/firmware.factory.bin
+            hil-out/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  hil:
+    name: Hardware check on DUT A
+    runs-on: [self-hosted, hil]
+    needs: build
+    environment: hil
+    timeout-minutes: 25
+    steps:
+      - name: Checkout harness
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: hil
+
+      - name: Download firmware and manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: hil-firmware
+          path: hil-fw
+
+      - name: Sync environment
+        working-directory: hil
+        run: uv sync --frozen
+
+      - name: Run hardware check
+        working-directory: hil
+        env:
+          HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
+          HIL_FW_DIR: ${{ github.workspace }}/hil-fw
+          HIL_EXPECTED_COMMIT: ${{ github.sha }}
+        run: exec .venv/bin/python -m hil run
+
+      - name: Teardown
+        if: always()
+        working-directory: hil
+        env:
+          HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
+          HIL_FW_DIR: ${{ github.workspace }}/hil-fw
+          HIL_EXPECTED_COMMIT: ${{ github.sha }}
+          HIL_JOB_STATUS: ${{ job.status }}
+        run: .venv/bin/python -m hil teardown
+
+      - name: Upload masked logs
+        # Last step, on every outcome: a green run's redacted logs are uploaded too.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hil-logs
+          path: hil/reports/redacted/
+          if-no-files-found: ignore
+          retention-days: 14
