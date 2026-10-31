@@ -522,3 +522,42 @@ def test_a_promote_that_raises_is_contained(rig, capsys):
     out = go(rig, [BUILD_ID], job_status="success")
     assert out.code == 0
     assert "Last-green store: unchanged (ValueError)" in capsys.readouterr().out
+
+
+class BrokenSupervisor(FakeSupervisor):
+    """release_all fails the way a dropped API connection does: a non-RigError exception."""
+
+    def release_all(self):
+        raise ConnectionResetError("link down")
+
+
+def test_a_non_rig_error_from_release_all_still_writes_final_image_and_exits_3(rig, capsys):
+    verdict(rig, "FAIL")
+    sv = BrokenSupervisor([])
+    flasher = Flasher("192.0.2.10", 6638, "esp32s2", esptool_cmd=[sys.executable, str(rig.script)])
+    dut = ScriptedDut("A", rig.dutcfg, sv, flasher, answers=["3.2"])
+    code = teardown.run_teardown(
+        rig.cfg, str(rig.fw), "failure", rig.tmp / "reports", supervisor=sv, dut=dut, dut_key="hil-key"
+    )
+    assert code == 3
+    assert "lines not released" in final(rig)["steps"]
+    assert esptool_calls(rig) == []  # no flash while lines may still be asserted
+    assert "ConnectionResetError" in capsys.readouterr().out
+
+
+def test_cmd_teardown_catches_a_late_non_rig_error_and_writes_final_image(rig, monkeypatch):
+    from hil import __main__ as entry
+
+    class Boom(Exception):
+        pass
+
+    def explode(*_args, **_kwargs):
+        raise Boom("secret-looking text must not be printed")
+
+    monkeypatch.setattr(entry, "load_rig", lambda: SimpleNamespace(duts={}, supervisor_host="h", supervisor_key="k", dut_api_key="d"))
+    monkeypatch.setattr(entry, "_rig_dut", lambda _rig: (SimpleNamespace(close=lambda: None), None))
+    monkeypatch.setattr(entry.teardown, "run_teardown", explode)
+    monkeypatch.setattr(entry, "redact_reports", lambda _rig: None)
+    assert entry.cmd_teardown() == 3
+    state = final(rig)
+    assert state["steps"] == ["teardown stopped: Boom"]

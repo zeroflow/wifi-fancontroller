@@ -124,21 +124,36 @@ class Supervisor:
 
     def set_switch(self, name, on):
         key = self._lookup(name, SwitchInfo)
-        self.run(self._command(self._client.switch_command, key, bool(on)), PRESS_S)
+        try:
+            self.run(self._command(self._client.switch_command, key, bool(on)), PRESS_S)
+        except APIConnectionError as exc:
+            raise RigError("switch '%s' command failed (%s)" % (name, type(exc).__name__)) from None
 
     def release_all(self):
-        """Every contract switch OFF, then every one reported OFF within 5 s."""
+        """Best effort on every contract switch: command each one OFF, whatever happens to the others.
+
+        A switch that cannot be commanded (renamed entity, dropped connection, press timeout)
+        never stops the loop; the failures are collected and raised once, as a RigError, after
+        every line has been tried and given STATE_WAIT seconds to report OFF.
+        """
         names = [n for lines in contract.SWITCH.values() for n in lines.values()]
+        failed = []
         for name in names:
-            self.set_switch(name, False)
+            try:
+                self.set_switch(name, False)
+            except RigError:
+                failed.append(name)
         deadline = time.monotonic() + STATE_WAIT
         while True:
-            pending = [n for n in names if self._states.get(n) is not False]
+            pending = [n for n in names if n not in failed and self._states.get(n) is not False]
             if not pending:
-                return
+                break
             if time.monotonic() >= deadline:
-                raise RigError("switch '%s' did not report OFF within %ss" % (pending[0], STATE_WAIT))
+                failed.extend(pending)
+                break
             time.sleep(0.1)
+        if failed:
+            raise RigError("switch '%s' not released" % "', '".join(sorted(failed)))
 
     def serial_connected(self, dut_id):
         name = contract.SERIAL_CONNECTED[dut_id]

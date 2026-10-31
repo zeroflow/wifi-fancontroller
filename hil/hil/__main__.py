@@ -177,6 +177,11 @@ def cmd_teardown():
         state["steps"].append("teardown stopped: %s" % exc)
         teardown.write_final(reports, state)
         return 3
+    except Exception as exc:  # noqa: BLE001 - a late non-RigError must still leave final-image.json behind
+        print("RIG ERROR: teardown stopped unexpectedly (%s)" % type(exc).__name__)
+        state["steps"].append("teardown stopped: %s" % type(exc).__name__)
+        teardown.write_final(reports, state)
+        return 3
     finally:
         if supervisor is not None:
             supervisor.close()
