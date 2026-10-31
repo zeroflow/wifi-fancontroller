@@ -79,8 +79,13 @@ def violations(data):
     environment = hil.get("environment")
     if (environment.get("name") if isinstance(environment, dict) else environment) != "hil":
         found.append("hil job must use environment hil")
-    if not isinstance(hil.get("timeout-minutes"), int) or hil["timeout-minutes"] > 30:
-        found.append("hil job timeout-minutes must be set and at most 30")
+    if not isinstance(hil.get("timeout-minutes"), int) or hil["timeout-minutes"] > 60:
+        found.append("hil job timeout-minutes must be set and at most 60")
+    hil_job_steps = hil.get("steps", [])
+    if not all(isinstance(s.get("timeout-minutes"), int) for s in hil_job_steps):
+        found.append("every hil step must set timeout-minutes")
+    elif isinstance(hil.get("timeout-minutes"), int) and sum(s["timeout-minutes"] for s in hil_job_steps) >= hil["timeout-minutes"]:
+        found.append("hil step timeouts must sum to less than the job timeout-minutes, or the job deadline can cut Teardown")
 
     for job_name, job in data["jobs"].items():
         for step in job.get("steps", []):
@@ -102,6 +107,8 @@ def violations(data):
         found.append("hil job has no Teardown step")
     elif normalized_if(teardown.get("if", "")) != "always()":
         found.append("Teardown must have if: always()")
+    if teardown is not None and (not isinstance(teardown.get("timeout-minutes"), int) or teardown["timeout-minutes"] < 10):
+        found.append("Teardown must have its own timeout-minutes of at least 10 (its worst case is about 14 minutes)")
 
     venv_steps = [s for s in steps if ".venv" in str(s.get("run", ""))]
     if len(venv_steps) < 2:
@@ -141,7 +148,7 @@ def test_the_real_workflow_has_the_expected_shape():
     assert set(data["jobs"]) == {"release-version", "build", "hil"}
     assert data["on"]["push"]["branches"] == list(EXPECTED_BRANCHES)
     assert data["jobs"]["hil"]["needs"] == "build"
-    assert data["jobs"]["hil"]["timeout-minutes"] == 25
+    assert data["jobs"]["hil"]["timeout-minutes"] == 50
     names = [s["name"] for s in steps_of(data, "hil")]
     assert names.index("Runner credential canary") < names.index("Sync environment")
 
@@ -270,6 +277,25 @@ def huge_timeout(d):
 
 
 @mutate
+def step_without_timeout(d):
+    del next(s for s in hil_steps(d) if s.get("name") == "Run hardware check")["timeout-minutes"]
+
+
+@mutate
+def teardown_without_own_timeout(d):
+    del next(s for s in hil_steps(d) if s.get("name") == "Teardown")["timeout-minutes"]
+
+
+@mutate
+def teardown_timeout_too_short(d):
+    next(s for s in hil_steps(d) if s.get("name") == "Teardown")["timeout-minutes"] = 5
+
+
+@mutate
+def job_timeout_below_the_step_sum(d):
+    d["jobs"]["hil"]["timeout-minutes"] = 25
+
+@mutate
 def drop_canary(d):
     d["jobs"]["hil"]["steps"] = [s for s in d["jobs"]["hil"]["steps"] if s.get("name") != "Runner credential canary"]
 
@@ -365,7 +391,8 @@ MUTATIONS = [
     add_paths_ignore, add_paths, change_branches, add_a_branch, add_workflow_concurrency,
     add_job_concurrency, widen_permissions, drop_permissions, widen_firmware_upload,
     add_a_third_firmware_file, drop_environment, other_environment, hosted_runner, drop_timeout,
-    huge_timeout, drop_canary, canary_behind_sync, canary_runs_something_else,
+    huge_timeout, step_without_timeout, teardown_without_own_timeout, teardown_timeout_too_short,
+    job_timeout_below_the_step_sum, drop_canary, canary_behind_sync, canary_runs_something_else,
     third_party_action_in_hil_job, expression_in_hil_run, expression_in_build_run,
     teardown_without_always, teardown_only_on_failure, teardown_without_working_directory,
     run_check_without_working_directory, logs_only_on_failure, logs_only_on_failure_or_cancelled,

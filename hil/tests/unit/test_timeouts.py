@@ -11,12 +11,14 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
-from hil import RigError, contract, dut, flasher, serial_tap, supervisor
+from hil import RigError, contract, dut, flasher, serial_tap, supervisor, teardown
 
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
 PYPROJECT = Path(__file__).resolve().parents[2] / "pyproject.toml"
+WORKFLOW = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "hil.yml"
 
 
 def ini():
@@ -45,11 +47,55 @@ def test_per_test_timeout_exceeds_sum_of_operation_deadlines():
     assert ini()["timeout"] > smoke
 
 
-def test_deadlines_nest_operation_then_test_then_session_then_job():
+def hil_job():
+    data = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    return data["jobs"]["hil"]
+
+
+def step_minutes(name):
+    matches = [s for s in hil_job()["steps"] if s.get("name") == name]
+    assert len(matches) == 1, name
+    return matches[0]["timeout-minutes"]
+
+
+def worst_case_teardown_s():
+    """Every deadline of the teardown path hit: connect, release, bridge wait, then the
+    known-good attempt and the commit-image fallback, each one flash plus one API wait."""
+    switches = len([n for lines in contract.SWITCH.values() for n in lines.values()])
+    connect = supervisor.SUPERVISOR_CONNECT_S + supervisor.STATE_WAIT + 5
+    release = switches * supervisor.PRESS_S + supervisor.STATE_WAIT
+    flash = dut.FLASH_ATTEMPTS * (supervisor.PRESS_S + dut.BOOTLOADER_SETTLE_S + flasher.FLASH_ATTEMPT_S) + supervisor.PRESS_S
+    confirm = dut.API_WAIT_S + dut.API_CONNECT_S + 5  # the last probe may overshoot the deadline
+    return connect + release + teardown.BRIDGE_FREE_S + 2 * (flash + confirm)
+
+
+def test_deadlines_nest_operation_then_test_then_session_then_step_then_job():
     options = ini()
     assert flasher.FLASH_ATTEMPT_S < options["timeout"] < options["session_timeout"]
-    job_timeout_s = 25 * 60  # hil.yml timeout-minutes (01-08)
-    assert options["session_timeout"] < job_timeout_s
+    assert options["session_timeout"] < step_minutes("Run hardware check") * 60
+    assert step_minutes("Run hardware check") < hil_job()["timeout-minutes"]
+
+
+def test_teardown_step_ceiling_exceeds_its_worst_case_so_no_flash_is_cut():
+    assert worst_case_teardown_s() < step_minutes("Teardown") * 60
+
+
+def test_run_step_ceiling_exceeds_the_hardest_run_phase():
+    connect = supervisor.SUPERVISOR_CONNECT_S + supervisor.STATE_WAIT + 5
+    release = 10 * supervisor.PRESS_S + supervisor.STATE_WAIT
+    assert connect + release + ini()["timeout"] + release < step_minutes("Run hardware check") * 60
+
+
+def test_step_ceilings_sum_to_less_than_the_job_deadline():
+    """If every step used its whole ceiling the job deadline still would not fall inside Teardown."""
+    steps = hil_job()["steps"]
+    assert all(isinstance(s.get("timeout-minutes"), int) for s in steps), "every hil step needs timeout-minutes"
+    assert sum(s["timeout-minutes"] for s in steps) < hil_job()["timeout-minutes"]
+
+
+def test_session_timeout_is_documented_as_a_soft_check():
+    text = PYPROJECT.read_text(encoding="utf-8")
+    assert "cooperative only" in text and "HARD ceilings" in text
 
 
 def test_pytest_timeout_uses_signal_method():

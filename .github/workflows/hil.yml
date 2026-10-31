@@ -109,10 +109,18 @@ jobs:
     runs-on: [self-hosted, hil]
     needs: build
     environment: hil
-    timeout-minutes: 25
+    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + run 12 +
+    # teardown 15 + upload 3 = 45, so the job deadline can never fall inside Teardown
+    # and cut a flash mid-write. Teardown's own worst case (every deadline hit, known-good
+    # attempt plus the commit-image fallback) is about 14 minutes; test_timeouts.py
+    # computes both sums from the code and fails if they drift. A user cancel is
+    # different: GitHub gives always() steps a fixed 5 minutes and the job syntax has no
+    # key to change it; a nominal teardown needs about 2 minutes.
+    timeout-minutes: 50
     steps:
       - name: Checkout harness
         uses: actions/checkout@v7
+        timeout-minutes: 3
         with:
           persist-credentials: false
           sparse-checkout: hil
@@ -126,15 +134,18 @@ jobs:
 
       - name: Download firmware and manifest
         uses: actions/download-artifact@v8
+        timeout-minutes: 3
         with:
           name: hil-firmware
           path: hil-fw
 
       - name: Sync environment
+        timeout-minutes: 4
         working-directory: hil
         run: uv sync --frozen
 
       - name: Run hardware check
+        timeout-minutes: 12
         working-directory: hil
         env:
           HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
@@ -144,6 +155,8 @@ jobs:
 
       - name: Teardown
         if: always()
+        # The hard ceiling for the whole teardown, flashes included.
+        timeout-minutes: 15
         working-directory: hil
         env:
           HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
@@ -156,6 +169,7 @@ jobs:
         # Last step, on every outcome: a green run's redacted logs are uploaded too.
         if: always()
         uses: actions/upload-artifact@v7
+        timeout-minutes: 3
         with:
           name: hil-logs
           path: hil/reports/redacted/

@@ -20,9 +20,14 @@ environments = ["sys_platform == 'linux'"]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-p no:cacheprovider"
-# Deadlines nest: operation (flash 120 s, API 90 s, ...) < per-test < session < job (25 min).
+# Deadlines nest: operation (flash 120 s, API 90 s, ...) < per-test < session soft check
+# < "Run hardware check" step (12 min) < job (50 min). The HARD ceilings are the per-test
+# timeout below and the step-level timeout-minutes in hil.yml, which also cap Teardown
+# (15 min, longer than its all-deadlines-hit worst case); tests/unit/test_timeouts.py
+# computes the sums. session_timeout is cooperative only: pytest-timeout checks it after
+# a test has finished and cannot interrupt a running one.
 # 420 s covers 2 x 120 s flash + 5 s tap + 90 s API + 15 s settle plus presses and slack.
 # Signal mode raises inside the test so fixture finalizers (switches off) still run.
 timeout = 420
 timeout_method = "signal"
-session_timeout = 900
+session_timeout = 600
