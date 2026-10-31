@@ -9,8 +9,9 @@ Order: release every supervisor switch, decide green or not, then
                 RIG ERROR and the commit image is flashed instead (D-09)
 Only regions are written; nothing in this module erases flash. Safe to run twice.
 
-Exit codes: 0 confirmed and the run's verdict stands, 3 verdict rewritten to RIG ERROR
-or nothing could be confirmed.
+Exit codes: 0 confirmed and the run's verdict stands, 3 verdict.json rewritten to RIG ERROR
+(a green run whose commit image is not confirmed, or a failed known-good attempt) or the
+lines could not be released.
 """
 
 import hashlib
@@ -187,7 +188,7 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
     state["steps"].append("run verdict: %s" % ("green" if green else "not green"))
     try:
         if green:
-            exit_code = keep_commit_image(cfg, fw_dir, dut, dut_key, state)
+            exit_code = keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state)
         else:
             exit_code = known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state)
     except Exception:  # noqa: BLE001 - keep the steps recorded so far, then let the caller report it
@@ -198,8 +199,12 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
     return exit_code
 
 
-def keep_commit_image(cfg, fw_dir, dut, dut_key, state):
-    """Green: the commit image stays. Confirm its build ID, then maybe update the last-green store."""
+def keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
+    """Green: the commit image stays. Confirm its build ID, then maybe update the last-green store.
+
+    A green run whose image cannot be confirmed is no longer a PASS: the public verdict.json
+    becomes RIG ERROR, as on the not-green path, so it never contradicts the red Teardown step.
+    """
     dutcfg = cfg.duts["A"]
     verified = load_commit_manifest(fw_dir, dutcfg)
     version = confirm(dut, dut_key)
@@ -207,7 +212,11 @@ def keep_commit_image(cfg, fw_dir, dut, dut_key, state):
     state.update(image="commit", version=version, confirmed=matched)
     state["steps"].append("commit image: %s" % ("confirmed" if matched else "not confirmed"))
     update_store(dutcfg, verified, matched, state)
-    return 0 if matched else 3
+    if not matched:
+        say("RIG ERROR: the commit image on DUT A could not be confirmed after a green run")
+        rewrite_verdict(reports_dir, verdict)
+        return 3
+    return 0
 
 
 def update_store(dutcfg, verified, matched, state):

@@ -561,3 +561,36 @@ def test_cmd_teardown_catches_a_late_non_rig_error_and_writes_final_image(rig, m
     assert entry.cmd_teardown() == 3
     state = final(rig)
     assert state["steps"] == ["teardown stopped: Boom"]
+
+
+def written_verdict(rig):
+    return json.loads((rig.tmp / "reports" / "verdict.json").read_text())["verdict"]
+
+
+def test_green_run_with_an_unconfirmed_commit_image_rewrites_the_verdict(rig, capsys):
+    verdict(rig, "PASS")
+    out = go(rig, [None], job_status="success")
+    assert out.code == 3
+    assert written_verdict(rig) == "RIG ERROR"
+    assert "RIG ERROR" in capsys.readouterr().out
+
+
+def test_green_run_with_a_build_id_mismatch_rewrites_the_verdict(rig):
+    verdict(rig, "PASS")
+    out = go(rig, ["3.2+hil." + "f" * 12], job_status="success")
+    assert out.code == 3
+    assert written_verdict(rig) == "RIG ERROR"
+
+
+def test_green_run_whose_manifest_no_longer_verifies_rewrites_the_verdict(rig):
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="success", fw=False)
+    assert out.code == 3
+    assert written_verdict(rig) == "RIG ERROR"
+
+
+def test_a_confirmed_green_run_keeps_its_pass_verdict(rig):
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 0
+    assert written_verdict(rig) == "PASS"
