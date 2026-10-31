@@ -232,13 +232,24 @@ def cmd_status(args):
     return 0
 
 
+def detect_psk(dut, key):
+    """The API mode DUT A answers in right now: the HIL key first, then plaintext (release image)."""
+    for psk in (key, None):
+        try:
+            dut.probe(psk)
+            return psk
+        except Exception:  # noqa: BLE001 - wrong key or image without encryption: try the other mode
+            continue
+    raise RigError("DUT A did not answer with the HIL key or without encryption")
+
+
 def cmd_nvs(args):
     rig = load_rig()
     supervisor, dut = _rig_dut(rig)
     try:
         supervisor.release_all()
         if args.nvs_command == "capture":
-            digest = nvs.capture(dut, args.out, rig.dut_api_key)
+            digest = nvs.capture(dut, args.out, detect_psk(dut, rig.dut_api_key))
             size = Path(args.out).stat().st_size
             if args.plain:
                 print("sha256=%s size=%d" % (digest, size))
