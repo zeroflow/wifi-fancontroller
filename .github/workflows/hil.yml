@@ -109,14 +109,16 @@ jobs:
     runs-on: [self-hosted, hil]
     needs: build
     environment: hil
-    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + run 12 +
-    # teardown 15 + upload 3 = 45, so the job deadline can never fall inside Teardown
-    # and cut a flash mid-write. Teardown's own worst case (every deadline hit, known-good
-    # attempt plus the commit-image fallback) is about 14 minutes; test_timeouts.py
+    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + run 26 +
+    # teardown 15 + upload 3 = 59, so the job deadline can never fall inside Teardown
+    # and cut a flash mid-write. The run step holds the session deadline (13 min), one test
+    # started just before it (10 min) and the connect and release phases around them
+    # (25.3 min). Teardown's own worst case (every deadline hit, known-good attempt plus
+    # the commit-image fallback) is about 14 minutes; test_timeouts.py
     # computes both sums from the code and fails if they drift. A user cancel is
     # different: GitHub gives always() steps a fixed 5 minutes and the job syntax has no
     # key to change it; a nominal teardown needs about 2 minutes.
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - name: Checkout harness
         uses: actions/checkout@v7
@@ -145,7 +147,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run hardware check
-        timeout-minutes: 12
+        timeout-minutes: 26
         working-directory: hil
         env:
           HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
