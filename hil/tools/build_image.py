@@ -46,10 +46,10 @@ the first compile, so a config with the wrong framework can never be built (D-34
 
 --config PATH (local only) builds the commit wrapper from a config inside .hil-build/.
 --config ROLE=PATH (local only, repeatable, with --all) replaces one target's wrapper
-the same way; the build ID of every overridden target gets the .local suffix, which the
-last-green store refuses. Both forms are refused in GitHub Actions (exit 2). The
-override exists for the canary proof: a canary whose fault is cancelled at runtime must
-turn the HIL run red (QC-06).
+the same way. Any override makes the whole build local: every build ID gets the .local
+suffix (the manifest allows one marker per build, and the last-green store refuses it).
+Both forms are refused in GitHub Actions (exit 2). The override exists for the canary
+proof: a canary whose fault is cancelled at runtime must turn the HIL run red (QC-06).
 
 --check-pins compares the aioesphomeapi and esptool versions installed in the
 ESPHome image with the pins in hil/pyproject.toml and builds nothing (a Dependabot
@@ -304,6 +304,11 @@ def hil_commit_for(commit, local_config):
     return commit[:12] + (".local" if local_config else "")
 
 
+def build_hil_commit(commit, overrides):
+    """The hil_commit of a build: any wrapper override makes every build ID of it local."""
+    return hil_commit_for(commit, bool(overrides))
+
+
 ROLE_NAME_RE = re.compile(r"^[a-z][a-z-]*$")
 
 
@@ -515,12 +520,10 @@ def produce(targets, out_dir, commit, hil_commit, version, build_one, fan_hz):
     """Build every target into out_dir; manifest.json is the last thing written.
 
     build_one(target) -> (factory_path or None, ota_path), right after that target's
-    compile. fan_hz maps (role, rev) to the Hz read from the resolved config. hil_commit is
-    one string for every target or a {role: string} map (local overrides carry ".local").
+    compile. fan_hz maps (role, rev) to the Hz read from the resolved config.
     """
     check_targets(targets)
     prepare_out_dir(out_dir, targets)
-    per_role = hil_commit if isinstance(hil_commit, dict) else {t["role"]: hil_commit for t in targets}
     entries, digests = [], {}
     for target in targets:
         factory_path, ota_path = build_one(target)
@@ -530,7 +533,7 @@ def produce(targets, out_dir, commit, hil_commit, version, build_one, fan_hz):
             "chip": target["chip"],
             "offset": target["offset"],
             "framework": target["framework"],
-            "build_id": build_id_for(target, per_role[target["role"]]),
+            "build_id": build_id_for(target, hil_commit),
             "final": target["final"],
             "esphome_name": target["esphome_name"],
             "ota_file": target["ota_out"],
@@ -554,7 +557,7 @@ def produce(targets, out_dir, commit, hil_commit, version, build_one, fan_hz):
                                  % (digests[digest], name))
             digests[digest] = name
         entries.append(entry)
-    return write_manifest(out_dir, commit, next(iter(per_role.values())), version, entries)
+    return write_manifest(out_dir, commit, hil_commit, version, entries)
 
 
 # ----------------------------------------------------------- resolved configs
@@ -875,7 +878,7 @@ def build(args, env, reader=read_text):
     configs = {t["role"]: os.path.join(REPO_ROOT, t["wrapper"]) for t in targets}
     overrides = resolve_overrides(plain, by_role, targets, REPO_ROOT)
     configs.update(overrides)
-    hil_commits = {t["role"]: hil_commit_for(commit, t["role"] in overrides) for t in targets}
+    hil_commit = build_hil_commit(commit, overrides)  # one marker per build (manifest rule)
 
     os.makedirs(build_dir, exist_ok=True)
     for customer in sorted({t["customer_config"] for t in targets}):
@@ -892,7 +895,7 @@ def build(args, env, reader=read_text):
         key = (target["role"], target["rev"])
         resolved_path = os.path.join(build_dir, "resolved-%s-%s.yaml" % key)
         config_log = os.path.join(build_dir, "esphome-config-%s-%s.log" % key)
-        code = run_resolve(REPO_ROOT, configs[target["role"]], hil_commits[target["role"]], network,
+        code = run_resolve(REPO_ROOT, configs[target["role"]], hil_commit, network,
                            resolved_path, config_log)
         if code != 0:
             print("config failed for the %s image (exit %d); last %d log lines, network values hidden:"
@@ -924,7 +927,7 @@ def build(args, env, reader=read_text):
         print("compiling %s (log: %s/%s)" % (os.path.relpath(config, REPO_ROOT),
                                              BUILD_DIR_NAME, COMPILE_LOG_NAME))
         sys.stdout.flush()
-        code = run_compile(REPO_ROOT, config, hil_commits[target["role"]], network, log_path)
+        code = run_compile(REPO_ROOT, config, hil_commit, network, log_path)
         if code != 0:
             print("compile failed (exit %d); last %d log lines, network values hidden:"
                   % (code, FAILURE_TAIL_LINES), file=sys.stderr)
@@ -940,7 +943,7 @@ def build(args, env, reader=read_text):
         return factory, ota
 
     try:
-        manifest = produce(targets, out_dir, commit, hil_commits, esphome_version(), build_one, fan_hz)
+        manifest = produce(targets, out_dir, commit, hil_commit, esphome_version(), build_one, fan_hz)
     except CompileFailed:
         return 1
     print("wrote %s and %s (build_id %s)" % (
@@ -1162,6 +1165,9 @@ def self_test():
           and hil_commit_for(SELF_TEST_SHA, False) == SELF_TEST_SHA[:12])
 
     # 6b. --config ROLE=PATH (local only): parsing, confinement and the .local build IDs.
+    check("a build with a role override is local for every target, one without is not",
+          build_hil_commit(SELF_TEST_SHA, {"canary": "/x"}) == SELF_TEST_SHA[:12] + ".local"
+          and build_hil_commit(SELF_TEST_SHA, {}) == SELF_TEST_SHA[:12])
     roles = [t["role"] for t in TARGETS]
     check("canary=.hil-build/x.yaml is accepted as a role override",
           parse_config_args(["canary=.hil-build/x.yaml"], roles) == (None, {"canary": ".hil-build/x.yaml"}))
@@ -1295,16 +1301,6 @@ def self_test():
         check("manifest top-level build_id is the commit image's",
               on_disk["build_id"] == "3.2+hil." + SELF_TEST_SHA[:12]
               and on_disk["images"][0]["build_id"] == on_disk["build_id"])
-        local_out = os.path.join(tmp, "out-local")
-        local_ids = {t["role"]: hil_commit_for(SELF_TEST_SHA, t["role"] == "canary") for t in TARGETS}
-        produce(TARGETS, local_out, SELF_TEST_SHA, local_ids, "9.9.9", fake_builder(work, []), fan_hz)
-        with open(os.path.join(local_out, MANIFEST_NAME), encoding="utf-8") as handle:
-            local_manifest = json.load(handle)
-        check("an overridden target alone carries the .local build ID",
-              {i["role"]: i["build_id"].endswith(".local") for i in local_manifest["images"]}
-              == {"commit": False, "qc-auto": False, "canary": True}, str(local_manifest["images"]))
-        check("the manifest build_id stays the commit image's",
-              local_manifest["build_id"] == "3.2+hil." + SELF_TEST_SHA[:12])
         commit_entry = on_disk["images"][0]
         check("only the commit entry is final and has a factory file",
               commit_entry["final"] is True and commit_entry["file"] == "firmware.factory.bin"
