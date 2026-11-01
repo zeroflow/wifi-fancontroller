@@ -1,0 +1,33 @@
+[project]
+name = "hil"
+version = "0.1.0"
+description = "Hardware-in-the-loop harness for the WiFi Fan Controller firmware"
+requires-python = ">=3.12"
+dependencies = [
+    "aioesphomeapi==46.12.0",
+    "esptool==5.4.0",
+    "pytest==9.2.0",
+    "pytest-timeout==2.4.0",
+]
+
+[tool.uv]
+package = false
+# The runner and the dev host are Linux; restricting the lock keeps platform-only
+# transitive packages (colorama, and similar) out of the reviewed set.
+environments = ["sys_platform == 'linux'"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-p no:cacheprovider"
+# Deadlines nest: operation (flash 120 s, API 90 s, ...) < per-test < session soft check
+# < "Run hardware check" step (12 min) < job (50 min). The HARD ceilings are the per-test
+# timeout below and the step-level timeout-minutes in hil.yml, which also cap Teardown
+# (15 min, longer than its all-deadlines-hit worst case); tests/unit/test_timeouts.py
+# computes the sums. session_timeout is cooperative only: pytest-timeout checks it after
+# a test has finished and cannot interrupt a running one.
+# 420 s covers 2 x 120 s flash + 5 s tap + 90 s API + 15 s settle plus presses and slack.
+# Signal mode raises inside the test so fixture finalizers (switches off) still run.
+timeout = 420
+timeout_method = "signal"
+session_timeout = 600

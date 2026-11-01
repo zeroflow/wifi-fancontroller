@@ -1,0 +1,25 @@
+# Values for the hardware-in-the-loop (HIL) test rig. Every value in this file
+# is classed NON-SECRET by decision (D-01, D-04; recorded in the hil-rig
+# repository, docs/credential-decision.md). The control is network isolation,
+# not secrecy: the DUT boards run on a dedicated HIL network that reaches
+# nothing else, so these values are safe to publish with the product repo.
+#
+# The DUT API key is named hil_dut_api_key on purpose. The rig supervisor has
+# its own SECRET key in the private hil-rig repository; the two must never be
+# confused in configs, masks or audits. This key only protects a test board
+# on the isolated network.
+#
+# The HIL SSID and PSK (hil_wifi_ssid, hil_wifi_password) belong to the isolated
+# HIL network (hil-rig plan 01-07, D-02/D-03). Local builds may still take other
+# WiFi values from the developer's environment (HIL_LOCAL_WIFI_SSID /
+# HIL_LOCAL_WIFI_PASSWORD) together with a private HIL_LOCAL_DUT_API_KEY: the key
+# below is published, so it must never protect a board on the developer's own
+# WiFi. CI refuses all HIL_LOCAL_* overrides.
+#
+# Format, enforced by hil/tools/build_image.py: one "key: \"value\"" per line,
+# comments and blank lines only. No YAML tags, no unquoted values.
+hil_wifi_ssid: "hil-rig-z58k8s"
+hil_wifi_password: "tgbaCWJMIRY2nQ49mOCyWHNv"
+#
+#   Generate the DUT API key with: openssl rand -base64 32
+hil_dut_api_key: "/B+qBs6LmwNz2I3P5jwywYZW9OYSyG1a1wl7tRez1Lc="
