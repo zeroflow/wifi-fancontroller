@@ -1,0 +1,54 @@
+# Shared QC module for the HIL qc-auto and canary images (D-24).
+#
+# This is an ESPHome package. It is included by hil/rev3.2.qc-auto.yaml on top of
+# the HIL wrapper and is never a customer image: the shipped configs are not
+# edited (D-05) and the framework of the revision is not touched here (Rev 1.0
+# through 3.3 keep the framework they shipped with, permanently).
+#
+# What it changes against the HIL wrapper, and why:
+#   - No first-boot "all fans 100 %": init_done starts true, so the customer
+#     on_boot block does nothing and the fans stay quiet until a test drives them.
+#   - Fans restore OFF at every boot: the tests set every fan state over the API.
+#   - HDC1080 updates every 5 s instead of 10 s so two fresh readings fit the
+#     30 s window of the temperature check.
+#   - Debug text sensors publish the runtime framework ("Framework: Arduino" or
+#     "Framework: ESP-IDF") and the reset reason over the API (D-34 runtime leg).
+#   - A safe mode button gives the harness a deterministic way into ESPHome safe
+#     mode for the safe-mode detection test.
+#
+# There is deliberately NO fan PWM frequency override: the 25 kHz spike decides
+# whether a 1 kHz override is needed (D-27), and the tests then run the real
+# configuration.
+#
+# Entity ids come from hardware-rev-3.1.yaml (included by Rev 3.2).
+
+globals:
+  - id: !extend init_done
+    initial_value: 'true'
+
+fan:
+  - id: !extend fan1
+    restore_mode: ALWAYS_OFF
+  - id: !extend fan2
+    restore_mode: ALWAYS_OFF
+  - id: !extend fan3
+    restore_mode: ALWAYS_OFF
+  - id: !extend fan4
+    restore_mode: ALWAYS_OFF
+
+sensor:
+  - id: !extend temperature_sensor
+    update_interval: 5s
+
+debug:
+
+text_sensor:
+  - platform: debug
+    device:
+      name: "QC Device Info"
+    reset_reason:
+      name: "QC Reset Reason"
+
+button:
+  - platform: safe_mode
+    name: "QC Safe Mode Boot"

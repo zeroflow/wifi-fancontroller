@@ -1,17 +1,25 @@
 #!/usr/bin/env python3
-"""Build the Rev 3.2 HIL commit image from the working tree.
+"""Build the Rev 3.2 HIL images (commit, qc-auto, canary) from the working tree.
 
 Runs inside the pinned ESPHome container (ghcr.io/esphome/esphome:<pin>), stdlib
-only, from the repository root:
+plus the image's PyYAML, from the repository root:
 
     docker run --rm -v "$PWD":/repo -w /repo --entrypoint python3 \\
         ghcr.io/esphome/esphome:2026.10.1 \\
-        hil/tools/build_image.py --out hil-out --commit "$(git rev-parse HEAD)"
+        hil/tools/build_image.py --all --out hil-out --commit "$(git rev-parse HEAD)"
 
 Output, and nothing else, in --out:
 
-    firmware.factory.bin   the image the hil job flashes at offset 0x0
-    manifest.json          schema 1: commit, build_id, sha256, chip, offset, ...
+    firmware.factory.bin   the commit image the hil job flashes at offset 0x0
+    firmware.ota.bin       the commit image as an OTA binary
+    qc-auto-3.2.ota.bin    the qc-auto image (OTA only, never a final image)
+    canary-3.2.ota.bin     the canary image (OTA only, never a final image)
+    manifest.json          schema 2: one entry per image with role, rev, chip, offset,
+                           framework, build_id, final, sha256 of every file, ...
+
+Without --all only the commit target is built (the current hil.yml command keeps
+working). manifest.json is written last and removed first, so an interrupted build
+leaves nothing that can be flashed.
 
 What it does:
 
@@ -22,9 +30,12 @@ What it does:
  2. Reads the HIL network values from hil/hil-network.yaml with a strict line
     parser (not a YAML parser: the file is public and non-secret by decision,
     but a lenient parser would let a tag or an unquoted value slip through).
- 3. Compiles hil/rev3.2.hil.yaml. ESPHome output goes to
-    .hil-build/esphome-compile.log and is never printed raw, because ESPHome
-    echoes substitution values (conceal sequences) into its own output.
+ 3. Resolves every target's wrapper with `esphome config` into
+    .hil-build/resolved-<role>-<rev>.yaml (parsed, never printed: the resolved
+    config holds the substitution values) and reads the fan PWM frequency from it.
+ 4. Compiles each wrapper (hil/rev3.2.hil.yaml, rev3.2.qc-auto.yaml, ...). ESPHome
+    output goes to .hil-build/esphome-compile.log and is never printed raw, because
+    ESPHome echoes substitution values (conceal sequences) into its own output.
 
 --check-pins compares the aioesphomeapi and esptool versions installed in the
 ESPHome image with the pins in hil/pyproject.toml and builds nothing (a Dependabot
@@ -51,20 +62,37 @@ import tomllib
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-CUSTOMER_CONFIG = "fancontroller-rev3.2-esp32s2.yaml"
-WRAPPER_CONFIG = os.path.join("hil", "rev3.2.hil.yaml")
 NETWORK_FILE = os.path.join("hil", "hil-network.yaml")
 BUILD_DIR_NAME = ".hil-build"
 COMPILE_LOG_NAME = "esphome-compile.log"
-BUILD_NAME = "fancontroller-r3-2"
 
-IMAGE_NAME = "firmware.factory.bin"
+FACTORY_IMAGE_NAME = "firmware.factory.bin"
+OTA_IMAGE_NAME = "firmware.ota.bin"
 MANIFEST_NAME = "manifest.json"
 
-CHIP = "esp32s2"
-OFFSET = "0x0"
-REV = "3.2"
-FRAMEWORK = "arduino"
+CUSTOMER_REV32 = "fancontroller-rev3.2-esp32s2.yaml"
+
+# Build order is manifest order. The commit image comes first; qc-auto and canary are
+# never final (D-25) and carry no factory file: they only ever travel by OTA (D-23).
+TARGETS = (
+    {
+        "role": "commit", "rev": "3.2", "customer_config": CUSTOMER_REV32,
+        "wrapper": os.path.join("hil", "rev3.2.hil.yaml"),
+        "chip": "esp32s2", "offset": "0x0", "framework": "arduino",
+        "esphome_name": "fancontroller-r3-2", "final": True, "factory": True,
+        "ota_out": "firmware.ota.bin", "factory_out": "firmware.factory.bin",
+    },
+    {
+        "role": "qc-auto", "rev": "3.2", "customer_config": CUSTOMER_REV32,
+        "wrapper": os.path.join("hil", "rev3.2.qc-auto.yaml"),
+        "chip": "esp32s2", "offset": "0x0", "framework": "arduino",
+        "esphome_name": "fancontroller-qc-r3-2", "final": False, "factory": False,
+        "ota_out": "qc-auto-3.2.ota.bin", "factory_out": None,
+    },
+)
+# The tag between "<rev>+" and ".<hil_commit>" in each role's build ID.
+BUILD_ID_TAG = {"commit": "hil", "qc-auto": "qc", "canary": "canary"}
+FAN_OUTPUT_IDS = ("pwm_fan1", "pwm_fan2", "pwm_fan3", "pwm_fan4")
 
 NETWORK_KEYS = ("hil_wifi_ssid", "hil_wifi_password", "hil_dut_api_key")
 LOCAL_OVERRIDE_ENV = ("HIL_LOCAL_WIFI_SSID", "HIL_LOCAL_WIFI_PASSWORD", "HIL_LOCAL_DUT_API_KEY")
@@ -84,6 +112,10 @@ REMOTE_REF_RE = re.compile(r"github://|https?://github\.com/", re.IGNORECASE)
 
 class BuildError(Exception):
     """Refused or invalid input. Never carries a network value."""
+
+
+class CompileFailed(Exception):
+    """A compile or image lookup failed; the details are already printed (exit 1)."""
 
 
 # ---------------------------------------------------------------- localizing
@@ -129,17 +161,17 @@ def check_no_remote_packages(text, path):
             )
 
 
-def localize_config(repo_root, localizer=None):
-    """Return the localized text of the Rev 3.2 customer config."""
+def localize_config(repo_root, customer_config, localizer=None):
+    """Return the localized text of a customer config."""
     localizer = localizer or load_localizer(repo_root)
-    path = os.path.join(repo_root, CUSTOMER_CONFIG)
+    path = os.path.join(repo_root, customer_config)
     with open(path, "r", encoding="utf-8") as handle:
         text = handle.read()
     try:
-        out, _refs = localizer.localize(text, CUSTOMER_CONFIG)
+        out, _refs = localizer.localize(text, customer_config)
     except localizer.LocalizeError as err:
         raise BuildError(str(err))
-    check_no_remote_packages(out, CUSTOMER_CONFIG)
+    check_no_remote_packages(out, customer_config)
     return out
 
 
@@ -278,61 +310,253 @@ def esphome_version():
     return match.group(1)
 
 
+def esphome_command(hil_commit, network, verb, config):
+    cmd = ["esphome", "-s", "hil_commit", hil_commit]
+    for key in NETWORK_KEYS:
+        cmd += ["-s", key, network[key]]
+    return cmd + [verb, config]
+
+
 def run_compile(repo_root, config, hil_commit, network, log_path):
     """Compile with all output captured to log_path. Returns the exit code."""
-    cmd = ["esphome", "-s", "hil_commit", hil_commit]
-    for key in ("hil_wifi_ssid", "hil_wifi_password", "hil_dut_api_key"):
-        cmd += ["-s", key, network[key]]
-    cmd += ["compile", config]
+    cmd = esphome_command(hil_commit, network, "compile", config)
     with open(log_path, "wb") as log:
         proc = subprocess.run(cmd, cwd=repo_root, stdout=log, stderr=subprocess.STDOUT)
     return proc.returncode
 
 
-def find_image(config_path):
-    tree = os.path.join(os.path.dirname(os.path.abspath(config_path)),
-                        ".esphome", "build", BUILD_NAME)
+def run_resolve(repo_root, config, hil_commit, network, resolved_path, log_path):
+    """`esphome config`: the resolved config goes to resolved_path, the rest to log_path.
+
+    Neither file is ever printed (both can hold substitution values). Returns the exit code.
+    """
+    cmd = esphome_command(hil_commit, network, "config", config)
+    with open(resolved_path, "wb") as out, open(log_path, "wb") as log:
+        proc = subprocess.run(cmd, cwd=repo_root, stdout=out, stderr=log)
+    return proc.returncode
+
+
+def build_tree(config_path, esphome_name):
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)),
+                        ".esphome", "build", esphome_name)
+
+
+def clean_stale_images(config_path, esphome_name):
+    """Remove firmware.* images left in this target's build tree by an earlier compile (Pitfall 3)."""
+    removed = []
+    for root, _dirs, files in os.walk(build_tree(config_path, esphome_name)):
+        for name in files:
+            if name in (FACTORY_IMAGE_NAME, OTA_IMAGE_NAME):
+                os.remove(os.path.join(root, name))
+                removed.append(os.path.join(root, name))
+    return removed
+
+
+def find_image(config_path, esphome_name, file_name):
+    tree = build_tree(config_path, esphome_name)
     found = []
     for root, _dirs, files in os.walk(tree):
-        if IMAGE_NAME in files:
-            found.append(os.path.join(root, IMAGE_NAME))
+        if file_name in files:
+            found.append(os.path.join(root, file_name))
     if len(found) != 1:
         raise RuntimeError(
-            "expected exactly one %s under %s, found %d" % (IMAGE_NAME, tree, len(found))
+            "expected exactly one %s under %s, found %d" % (file_name, tree, len(found))
         )
     return found[0]
 
 
-def write_outputs(image_path, out_dir, commit, hil_commit, version):
+def build_id_for(target, hil_commit):
+    return "%s+%s.%s" % (target["rev"], BUILD_ID_TAG[target["role"]], hil_commit)
+
+
+def output_names(targets):
+    names = {MANIFEST_NAME}
+    for target in targets:
+        names.add(target["ota_out"])
+        if target["factory"]:
+            names.add(target["factory_out"])
+    return names
+
+
+def check_targets(targets):
+    """Two targets with one esphome.name would share a build tree: refuse (QC-01 adjacency)."""
+    seen = {}
+    for target in targets:
+        name = target["esphome_name"]
+        if name in seen:
+            raise BuildError("targets %s and %s share the esphome.name %s"
+                             % (seen[name], target["role"], name))
+        seen[name] = target["role"]
+    outputs = {}
+    for target in targets:
+        for key in ("ota_out", "factory_out"):
+            out = target[key]
+            if out is None:
+                continue
+            if out in outputs or out == MANIFEST_NAME:
+                raise BuildError("output file name %s is used twice" % out)
+            outputs[out] = target["role"]
+
+
+def prepare_out_dir(out_dir, targets):
+    """Create --out, refuse strangers in it, and remove our own earlier outputs and manifest."""
     os.makedirs(out_dir, exist_ok=True)
-    stale = [n for n in os.listdir(out_dir) if n not in (IMAGE_NAME, MANIFEST_NAME)]
+    allowed = output_names(TARGETS) | output_names(targets)
+    stale = [n for n in os.listdir(out_dir) if n not in allowed]
     if stale:
         raise BuildError("output directory %s holds unexpected entries" % out_dir)
-    with open(image_path, "rb") as handle:
-        data = handle.read()
-    with open(os.path.join(out_dir, IMAGE_NAME), "wb") as handle:
-        handle.write(data)
+    for name in os.listdir(out_dir):
+        os.remove(os.path.join(out_dir, name))
+
+
+def sha256_file(path):
+    digest = hashlib.sha256()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def copy_into(path, out_dir, name):
+    data_path = os.path.join(out_dir, name)
+    with open(path, "rb") as source, open(data_path, "wb") as target:
+        target.write(source.read())
+    return data_path
+
+
+def write_manifest(out_dir, commit, hil_commit, version, entries):
+    """manifest.json (schema 2), written last. `entries` are in TARGETS order."""
+    commit_entries = [e for e in entries if e["role"] == "commit"]
     manifest = {
-        "schema": 1,
+        "schema": 2,
         "commit": commit,
-        "build_id": "3.2+hil." + hil_commit,
+        "build_id": commit_entries[0]["build_id"] if commit_entries else "",
         "esphome_version": version,
-        "images": [
-            {
-                "role": "commit",
-                "file": IMAGE_NAME,
-                "sha256": hashlib.sha256(data).hexdigest(),
-                "chip": CHIP,
-                "offset": OFFSET,
-                "rev": REV,
-                "framework": FRAMEWORK,
-            }
-        ],
+        "images": entries,
     }
     with open(os.path.join(out_dir, MANIFEST_NAME), "w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2, sort_keys=True)
         handle.write("\n")
     return manifest
+
+
+def produce(targets, out_dir, commit, hil_commit, version, build_one, fan_hz):
+    """Build every target into out_dir; manifest.json is the last thing written.
+
+    build_one(target) -> (factory_path or None, ota_path), right after that target's
+    compile. fan_hz maps (role, rev) to the Hz read from the resolved config.
+    """
+    check_targets(targets)
+    prepare_out_dir(out_dir, targets)
+    entries, digests = [], {}
+    for target in targets:
+        factory_path, ota_path = build_one(target)
+        entry = {
+            "role": target["role"],
+            "rev": target["rev"],
+            "chip": target["chip"],
+            "offset": target["offset"],
+            "framework": target["framework"],
+            "build_id": build_id_for(target, hil_commit),
+            "final": target["final"],
+            "esphome_name": target["esphome_name"],
+            "ota_file": target["ota_out"],
+        }
+        copied = [(target["ota_out"], copy_into(ota_path, out_dir, target["ota_out"]))]
+        entry["ota_sha256"] = sha256_file(copied[0][1])
+        if target["factory"]:
+            factory_copy = copy_into(factory_path, out_dir, target["factory_out"])
+            entry["file"] = target["factory_out"]
+            entry["sha256"] = sha256_file(factory_copy)
+            copied.append((target["factory_out"], factory_copy))
+        if not target["final"]:
+            hz = fan_hz.get((target["role"], target["rev"]))
+            if hz is None:
+                raise BuildError("no fan frequency was read for the %s image" % target["role"])
+            entry["fan_hz"] = hz
+        for name, path in copied:
+            digest = sha256_file(path)
+            if digest in digests:
+                raise BuildError("%s and %s have identical content (a target did not build its own image)"
+                                 % (digests[digest], name))
+            digests[digest] = name
+        entries.append(entry)
+    return write_manifest(out_dir, commit, hil_commit, version, entries)
+
+
+# ----------------------------------------------------------- resolved configs
+
+
+def tolerant_loader():
+    """yaml.SafeLoader that keeps every !tag (!lambda, !secret, ...) as its plain value."""
+    import yaml
+
+    class TagTolerantLoader(yaml.SafeLoader):
+        pass
+
+    def plain(loader, _suffix, node):
+        if isinstance(node, yaml.ScalarNode):
+            return loader.construct_scalar(node)
+        if isinstance(node, yaml.SequenceNode):
+            return loader.construct_sequence(node, deep=True)
+        return loader.construct_mapping(node, deep=True)
+
+    TagTolerantLoader.add_multi_constructor("!", plain)
+    return yaml, TagTolerantLoader
+
+
+def parse_resolved(text):
+    """Parse the output of `esphome config`. Never echoes the text."""
+    yaml, loader = tolerant_loader()
+    try:
+        data = yaml.load(text, Loader=loader)  # noqa: S506 - SafeLoader subclass
+    except yaml.YAMLError:
+        raise BuildError("the resolved config is not parseable YAML") from None
+    if not isinstance(data, dict):
+        raise BuildError("the resolved config is not a mapping")
+    return data
+
+
+def frequency_hz(value):
+    """Hz from a number or a "<n> Hz" string; None for anything else."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if float(value) == int(value) else None
+    if isinstance(value, str):
+        match = re.match(r"^\s*([0-9]+(?:\.[0-9]+)?)\s*(k?)Hz\s*$", value)
+        if match:
+            hz = float(match.group(1)) * (1000 if match.group(2) else 1)
+            return int(hz) if hz == int(hz) else None
+    return None
+
+
+def ledc_outputs(resolved):
+    """{output id: output entry} of the ledc outputs in a resolved config."""
+    outputs = resolved.get("output")
+    found = {}
+    if isinstance(outputs, list):
+        for entry in outputs:
+            if isinstance(entry, dict) and entry.get("platform") == "ledc":
+                found[str(entry.get("id"))] = entry
+    return found
+
+
+def fan_frequency(resolved):
+    """The one PWM frequency (Hz) of pwm_fan1..pwm_fan4; BuildError when absent or unequal."""
+    outputs = ledc_outputs(resolved)
+    values = set()
+    for ident in FAN_OUTPUT_IDS:
+        entry = outputs.get(ident)
+        if entry is None:
+            raise BuildError("the resolved config has no ledc output %s" % ident)
+        hz = frequency_hz(entry.get("frequency"))
+        if hz is None:
+            raise BuildError("ledc output %s has no readable frequency" % ident)
+        values.add(hz)
+    if len(values) != 1:
+        raise BuildError("fan PWM frequencies differ")
+    return values.pop()
 
 
 # ----------------------------------------------------------------- pin guard
@@ -384,6 +608,8 @@ def parse_args(argv):
     parser.add_argument("--commit", help="40 lowercase hex; falls back to env HIL_COMMIT")
     parser.add_argument("--out", default="hil-out", help="output directory (default hil-out)")
     parser.add_argument("--config", help="local mode only: a config inside .hil-build/")
+    parser.add_argument("--all", action="store_true",
+                        help="build every target (commit, qc-auto, ...); default is the commit image only")
     parser.add_argument("--self-test", action="store_true", help="run the built-in fixtures")
     parser.add_argument("--check-pins", action="store_true",
                         help="compare the installed aioesphomeapi and esptool with hil/pyproject.toml")
@@ -393,6 +619,12 @@ def parse_args(argv):
 def read_text(path):
     with open(path, "r", encoding="utf-8") as handle:
         return handle.read()
+
+
+def selected_targets(args):
+    if args.all:
+        return TARGETS
+    return tuple(t for t in TARGETS if t["role"] == "commit")
 
 
 def build(args, env, reader=read_text):
@@ -420,37 +652,74 @@ def build(args, env, reader=read_text):
         raise BuildError("--commit (or HIL_COMMIT) must be 40 lowercase hex characters")
     hil_commit = hil_commit_for(commit, args.config is not None)
 
+    targets = selected_targets(args)
+    check_targets(targets)
+    if args.config is not None and len(targets) != 1:
+        raise BuildError("--config builds one wrapper: do not combine it with --all")
+
     build_dir = os.path.join(REPO_ROOT, BUILD_DIR_NAME)
-    config = os.path.join(REPO_ROOT, WRAPPER_CONFIG)
+    configs = {t["role"]: os.path.join(REPO_ROOT, t["wrapper"]) for t in targets}
     if args.config is not None:
         config = resolve_config(args.config, REPO_ROOT)
         if not os.path.isfile(config):
             raise BuildError("--config file not found inside %s/" % BUILD_DIR_NAME)
+        configs[targets[0]["role"]] = config
 
     os.makedirs(build_dir, exist_ok=True)
-    localized = localize_config(REPO_ROOT)
-    with open(os.path.join(build_dir, CUSTOMER_CONFIG), "w", encoding="utf-8") as handle:
-        handle.write(localized)
+    for customer in sorted({t["customer_config"] for t in targets}):
+        with open(os.path.join(build_dir, customer), "w", encoding="utf-8") as handle:
+            handle.write(localize_config(REPO_ROOT, customer))
 
     out_dir = args.out if os.path.isabs(args.out) else os.path.join(REPO_ROOT, args.out)
     log_path = os.path.join(build_dir, COMPILE_LOG_NAME)
 
-    print("compiling %s (log: %s/%s)" % (os.path.relpath(config, REPO_ROOT),
-                                         BUILD_DIR_NAME, COMPILE_LOG_NAME))
-    code = run_compile(REPO_ROOT, config, hil_commit, network, log_path)
-    if code != 0:
-        print("compile failed (exit %d); last %d log lines, network values hidden:"
-              % (code, FAILURE_TAIL_LINES), file=sys.stderr)
-        print(failure_tail(log_path, network.values()), file=sys.stderr)
-        return 1
+    # 5. Resolve every wrapper first (output parsed, never printed): the fan frequency
+    #    of each non-final image comes from here.
+    fan_hz = {}
+    for target in targets:
+        key = (target["role"], target["rev"])
+        resolved_path = os.path.join(build_dir, "resolved-%s-%s.yaml" % key)
+        config_log = os.path.join(build_dir, "esphome-config-%s-%s.log" % key)
+        code = run_resolve(REPO_ROOT, configs[target["role"]], hil_commit, network,
+                           resolved_path, config_log)
+        if code != 0:
+            print("config failed for the %s image (exit %d); last %d log lines, network values hidden:"
+                  % (target["role"], code, FAILURE_TAIL_LINES), file=sys.stderr)
+            for path in (config_log, resolved_path):
+                print(failure_tail(path, network.values()), file=sys.stderr)
+            return 1
+        resolved = parse_resolved(read_text(resolved_path))
+        if not target["final"]:
+            fan_hz[key] = fan_frequency(resolved)
+
+    # 6. Compile each target; copy its images out right after, clean its tree before.
+    def build_one(target):
+        config = configs[target["role"]]
+        clean_stale_images(config, target["esphome_name"])
+        print("compiling %s (log: %s/%s)" % (os.path.relpath(config, REPO_ROOT),
+                                             BUILD_DIR_NAME, COMPILE_LOG_NAME))
+        sys.stdout.flush()
+        code = run_compile(REPO_ROOT, config, hil_commit, network, log_path)
+        if code != 0:
+            print("compile failed (exit %d); last %d log lines, network values hidden:"
+                  % (code, FAILURE_TAIL_LINES), file=sys.stderr)
+            print(failure_tail(log_path, network.values()), file=sys.stderr)
+            raise CompileFailed()
+        try:
+            factory = (find_image(config, target["esphome_name"], FACTORY_IMAGE_NAME)
+                       if target["factory"] else None)
+            ota = find_image(config, target["esphome_name"], OTA_IMAGE_NAME)
+        except RuntimeError as err:
+            print("error: %s" % err, file=sys.stderr)
+            raise CompileFailed() from None
+        return factory, ota
 
     try:
-        image = find_image(config)
-    except RuntimeError as err:
-        print("error: %s" % err, file=sys.stderr)
+        manifest = produce(targets, out_dir, commit, hil_commit, esphome_version(), build_one, fan_hz)
+    except CompileFailed:
         return 1
-    manifest = write_outputs(image, out_dir, commit, hil_commit, esphome_version())
-    print("wrote %s and %s (build_id %s)" % (IMAGE_NAME, MANIFEST_NAME, manifest["build_id"]))
+    print("wrote %s and %s (build_id %s)" % (
+        ", ".join(sorted(output_names(targets) - {MANIFEST_NAME})), MANIFEST_NAME, manifest["build_id"]))
     return 0
 
 
@@ -658,6 +927,148 @@ def self_test():
     check("equal versions pass", same == 0, str(same))
     check("a version difference exits 2", drift == 2, str(drift))
     check("a missing package exits 2", absent == 2, str(absent))
+
+    # 9. Multi-target builds: shared names, equal images, stray files, manifest last.
+    clash = [dict(TARGETS[0]), dict(TARGETS[0], role="qc-auto")]
+    message = raises(check_targets, clash)
+    check("two targets sharing an esphome.name are refused",
+          message is not None and "share the esphome.name" in message, repr(message))
+    check("the real TARGETS pass the name check", raises(check_targets, TARGETS) is None)
+    check("TARGETS order puts the commit image first and only it is final",
+          TARGETS[0]["role"] == "commit"
+          and [t["role"] for t in TARGETS if t["final"]] == ["commit"])
+
+    import shutil
+    import tempfile
+    fan_hz = {(t["role"], t["rev"]): 25000 for t in TARGETS if not t["final"]}
+
+    def fake_builder(work, log, tamper=None):
+        def build_one(target):
+            log.append(target["role"])
+            ota = os.path.join(work, "%s.ota" % target["role"])
+            with open(ota, "wb") as handle:
+                handle.write(("ota image of " + target["role"]).encode())
+            factory = None
+            if target["factory"]:
+                factory = os.path.join(work, "%s.factory" % target["role"])
+                with open(factory, "wb") as handle:
+                    handle.write(("factory image of " + target["role"]).encode())
+            if tamper:
+                tamper(target, ota, factory)
+            return factory, ota
+        return build_one
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work = os.path.join(tmp, "work")
+        os.makedirs(work)
+        out = os.path.join(tmp, "out")
+        built = []
+        seen = {}
+
+        def watching(target):
+            seen[target["role"]] = (
+                os.path.exists(os.path.join(out, MANIFEST_NAME)),
+                sorted(os.listdir(out)))
+            return inner(target)
+
+        inner = fake_builder(work, built)
+        manifest = produce(TARGETS, out, SELF_TEST_SHA, SELF_TEST_SHA[:12], "9.9.9", watching, fan_hz)
+        check("every target is built in TARGETS order",
+              built == [t["role"] for t in TARGETS], str(built))
+        check("no manifest.json exists while any target is still building",
+              all(not present for present, _names in seen.values()), str(seen))
+        later = seen[TARGETS[-1]["role"]][1]
+        check("an earlier target's images are in --out before the next target builds",
+              TARGETS[0]["ota_out"] in later and TARGETS[0]["factory_out"] in later, str(later))
+        with open(os.path.join(out, MANIFEST_NAME), encoding="utf-8") as handle:
+            on_disk = json.load(handle)
+        check("manifest is schema 2 with the images in TARGETS order",
+              on_disk["schema"] == 2
+              and [i["role"] for i in on_disk["images"]] == [t["role"] for t in TARGETS], str(on_disk))
+        check("manifest top-level build_id is the commit image's",
+              on_disk["build_id"] == "3.2+hil." + SELF_TEST_SHA[:12]
+              and on_disk["images"][0]["build_id"] == on_disk["build_id"])
+        commit_entry = on_disk["images"][0]
+        check("only the commit entry is final and has a factory file",
+              commit_entry["final"] is True and commit_entry["file"] == "firmware.factory.bin"
+              and all(i["final"] is False and "file" not in i and "sha256" not in i
+                      for i in on_disk["images"][1:]))
+        check("non-final entries carry fan_hz, the commit entry does not",
+              "fan_hz" not in commit_entry
+              and all(i["fan_hz"] == 25000 for i in on_disk["images"][1:]))
+        check("every listed file's sha256 matches its content",
+              all(sha256_file(os.path.join(out, i["ota_file"])) == i["ota_sha256"] for i in on_disk["images"])
+              and sha256_file(os.path.join(out, commit_entry["file"])) == commit_entry["sha256"])
+        with open(os.path.join(out, MANIFEST_NAME), encoding="utf-8") as handle:
+            text = handle.read()
+        check("manifest keys are sorted (two builds differ only in hashes)",
+              text == json.dumps(on_disk, indent=2, sort_keys=True) + "\n")
+        check("--out holds exactly the output names",
+              sorted(os.listdir(out)) == sorted(output_names(TARGETS)), str(sorted(os.listdir(out))))
+
+        # An interrupted build leaves no manifest, not even the previous one.
+        crashed = []
+
+        def crash_on_second(target):
+            if target["role"] != TARGETS[0]["role"]:
+                raise CompileFailed()
+            return fake_builder(work, crashed)(target)
+
+        try:
+            produce(TARGETS, out, SELF_TEST_SHA, SELF_TEST_SHA[:12], "9.9.9", crash_on_second, fan_hz)
+            interrupted = False
+        except CompileFailed:
+            interrupted = True
+        check("an interrupted build raises and leaves no manifest.json",
+              interrupted and not os.path.exists(os.path.join(out, MANIFEST_NAME)))
+
+        # A stray file in --out is refused before anything is touched.
+        with open(os.path.join(out, "stray.txt"), "w") as handle:
+            handle.write("x")
+        refused = []
+        message = raises(lambda: produce(TARGETS, out, SELF_TEST_SHA, SELF_TEST_SHA[:12], "9.9.9",
+                                         fake_builder(work, refused), fan_hz))
+        check("a stray file in --out is refused before any build",
+              message is not None and "unexpected entries" in message and not refused, repr(message))
+        os.remove(os.path.join(out, "stray.txt"))
+
+        # Two roles with the same image bytes are refused, with no manifest written.
+        def same_bytes(target, ota, factory):
+            with open(ota, "wb") as handle:
+                handle.write(b"identical")
+
+        message = raises(lambda: produce(TARGETS, out, SELF_TEST_SHA, SELF_TEST_SHA[:12], "9.9.9",
+                                         fake_builder(work, [], same_bytes), fan_hz))
+        check("equal sha256 across roles is refused and writes no manifest",
+              message is not None and "identical content" in message
+              and not os.path.exists(os.path.join(out, MANIFEST_NAME)), repr(message))
+
+        # A non-final target without a fan frequency is refused.
+        message = raises(lambda: produce(TARGETS, out, SELF_TEST_SHA, SELF_TEST_SHA[:12], "9.9.9",
+                                         fake_builder(work, []), {}))
+        check("a missing fan frequency is refused",
+              message is not None and "fan frequency" in message, repr(message))
+
+    # 10. Reading the fan frequency from a resolved config.
+    def resolved_with(*frequencies):
+        return {"output": [{"platform": "ledc", "id": "pwm_fan%d" % n, "pin": 11 + n, "frequency": f}
+                           for n, f in enumerate(frequencies, 1)]}
+
+    check("fan frequency accepts numbers and '<n> Hz' strings",
+          fan_frequency(resolved_with(25000.0, "25000 Hz", 25000, "25000Hz")) == 25000)
+    check("fan frequency 1000 Hz is read as 1000",
+          fan_frequency(resolved_with(*["1000 Hz"] * 4)) == 1000)
+    message = raises(fan_frequency, resolved_with(25000, 25000, 25000, 1000))
+    check("unequal fan frequencies are refused",
+          message is not None and "fan PWM frequencies differ" in message, repr(message))
+    check("a missing fan output is refused naming it",
+          "pwm_fan4" in (raises(fan_frequency, resolved_with(25000, 25000, 25000)) or ""))
+    check("an unreadable frequency is refused naming the output",
+          "pwm_fan1" in (raises(fan_frequency, resolved_with("fast", 25000, 25000, 25000)) or ""))
+    check("tags in a resolved config are kept as plain values",
+          parse_resolved("a: !lambda |-\n  return 1;\nb: !secret x\n")["b"] == "x")
+    check("an unparseable resolved config is refused without echoing it",
+          "SECRETVALUE" not in (raises(parse_resolved, "a: [SECRETVALUE\n") or ""))
 
     if failures:
         for failure in failures:

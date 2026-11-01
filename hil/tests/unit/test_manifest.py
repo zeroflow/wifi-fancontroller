@@ -10,27 +10,92 @@ from hil import RigError, manifest
 
 COMMIT = "a" * 40
 BUILD_ID = "3.2+hil." + "a" * 12
-DUT = SimpleNamespace(id="A", chip="esp32s2", flash_offset="0x0")
+QC_ID = "3.2+qc." + "a" * 12
+CANARY_ID = "3.2+canary." + "a" * 12
+DUT = SimpleNamespace(id="A", rev="3.2", chip="esp32s2", flash_offset="0x0")
 IMAGE = b"synthetic image bytes"
+COMMIT_OTA = b"synthetic commit ota bytes"
+QC_OTA = b"synthetic qc-auto ota bytes"
+CANARY_OTA = b"synthetic canary ota bytes"
 
 
-def make(tmp_path, **override):
-    """Write a well-formed firmware directory, then apply overrides to the image entry."""
-    entry = {
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+
+
+def commit_entry():
+    return {
         "role": "commit",
-        "file": "firmware.factory.bin",
-        "sha256": hashlib.sha256(IMAGE).hexdigest(),
+        "rev": "3.2",
         "chip": "esp32s2",
         "offset": "0x0",
+        "framework": "arduino",
+        "build_id": BUILD_ID,
+        "final": True,
+        "esphome_name": "fancontroller-r3-2",
+        "file": "firmware.factory.bin",
+        "sha256": sha(IMAGE),
+        "ota_file": "firmware.ota.bin",
+        "ota_sha256": sha(COMMIT_OTA),
     }
-    top = {"schema": 1, "commit": COMMIT, "build_id": BUILD_ID}
-    for key, value in override.items():
-        (top if key in top else entry)[key] = value
-    top["images"] = [entry]
+
+
+def qc_entry():
+    return {
+        "role": "qc-auto",
+        "rev": "3.2",
+        "chip": "esp32s2",
+        "offset": "0x0",
+        "framework": "arduino",
+        "build_id": QC_ID,
+        "final": False,
+        "esphome_name": "fancontroller-qc-r3-2",
+        "ota_file": "qc-auto-3.2.ota.bin",
+        "ota_sha256": sha(QC_OTA),
+        "fan_hz": 25000,
+    }
+
+
+def canary_entry():
+    return {
+        "role": "canary",
+        "rev": "3.2",
+        "chip": "esp32s2",
+        "offset": "0x0",
+        "framework": "arduino",
+        "build_id": CANARY_ID,
+        "final": False,
+        "esphome_name": "fancontroller-canary-r3-2",
+        "ota_file": "canary-3.2.ota.bin",
+        "ota_sha256": sha(CANARY_OTA),
+        "fan_hz": 25000,
+    }
+
+
+FILES = {
+    "firmware.factory.bin": IMAGE,
+    "firmware.ota.bin": COMMIT_OTA,
+    "qc-auto-3.2.ota.bin": QC_OTA,
+    "canary-3.2.ota.bin": CANARY_OTA,
+}
+
+
+def write(tmp_path, top, entries):
+    top = dict(top)
+    top["images"] = entries
     (tmp_path / "manifest.json").write_text(json.dumps(top), encoding="utf-8")
-    if "firmware.factory.bin" == entry["file"]:
-        (tmp_path / entry["file"]).write_bytes(IMAGE)
+    for name, data in FILES.items():
+        (tmp_path / name).write_bytes(data)
     return tmp_path
+
+
+def make(tmp_path, extra=(qc_entry,), top=None, **override):
+    """A well-formed schema-2 firmware directory; overrides apply to the commit entry."""
+    entry = commit_entry()
+    entry.update(override)
+    header = {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "2026.10.1"}
+    header.update(top or {})
+    return write(tmp_path, header, [entry] + [build() for build in extra])
 
 
 def test_well_formed_manifest_is_accepted(tmp_path):
@@ -39,9 +104,36 @@ def test_well_formed_manifest_is_accepted(tmp_path):
     assert verified.image("commit").path.name == "firmware.factory.bin"
 
 
-def test_local_suffix_in_build_id_is_accepted(tmp_path):
-    verified = manifest.load_verified(make(tmp_path, build_id=BUILD_ID + ".local"), COMMIT, DUT)
+def test_commit_plus_qc_auto_is_accepted(tmp_path):
+    verified = manifest.load_verified(make(tmp_path), COMMIT, DUT)
+    assert sorted(verified.images) == [("commit", "3.2"), ("qc-auto", "3.2")]
+
+
+def test_commit_only_is_accepted(tmp_path):
+    verified = manifest.load_verified(make(tmp_path, extra=()), COMMIT, DUT)
+    assert sorted(verified.images) == [("commit", "3.2")]
+
+
+def test_all_three_roles_are_accepted(tmp_path):
+    verified = manifest.load_verified(make(tmp_path, extra=(qc_entry, canary_entry)), COMMIT, DUT)
+    assert sorted(role for role, _rev in verified.images) == ["canary", "commit", "qc-auto"]
+
+
+def test_schema_1_is_refused(tmp_path):
+    with pytest.raises(RigError, match="schema must be 2"):
+        manifest.load_verified(make(tmp_path, top={"schema": 1}), COMMIT, DUT)
+
+
+def test_local_suffix_in_build_id_is_accepted_on_every_role(tmp_path):
+    local = {"build_id": BUILD_ID + ".local"}
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID + ".local", "esphome_version": "x"},
+        [dict(commit_entry(), **local), dict(qc_entry(), build_id=QC_ID + ".local")],
+    )
+    verified = manifest.load_verified(root, COMMIT, DUT)
     assert verified.build_id.endswith(".local")
+    assert verified.image("qc-auto").build_id.endswith(".local")
 
 
 def test_commit_mismatch_is_rejected(tmp_path):
@@ -52,6 +144,23 @@ def test_commit_mismatch_is_rejected(tmp_path):
 def test_sha256_mismatch_is_rejected(tmp_path):
     with pytest.raises(RigError, match="sha256"):
         manifest.load_verified(make(tmp_path, sha256="0" * 64), COMMIT, DUT)
+
+
+def test_ota_sha256_mismatch_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), ota_sha256="0" * 64)],
+    )
+    with pytest.raises(RigError, match="ota_sha256"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_a_tampered_ota_file_is_rejected(tmp_path):
+    root = make(tmp_path)
+    (root / "qc-auto-3.2.ota.bin").write_bytes(b"swapped after the build")
+    with pytest.raises(RigError, match="ota_sha256"):
+        manifest.load_verified(root, COMMIT, DUT)
 
 
 def test_chip_mismatch_is_rejected(tmp_path):
@@ -70,6 +179,17 @@ def test_file_name_with_path_separator_or_dotdot_is_rejected(tmp_path, name):
         manifest.load_verified(make(tmp_path, file=name), COMMIT, DUT)
 
 
+@pytest.mark.parametrize("name", ["../x", "a/b", "..", "a..b.ota.bin"])
+def test_ota_file_name_with_path_separator_or_dotdot_is_rejected(tmp_path, name):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), ota_file=name)],
+    )
+    with pytest.raises(RigError, match="bare file name"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
 def test_missing_image_file_is_rejected(tmp_path):
     with pytest.raises(RigError, match="not in the firmware directory"):
         manifest.load_verified(make(tmp_path, file="other.bin"), COMMIT, DUT)
@@ -78,4 +198,152 @@ def test_missing_image_file_is_rejected(tmp_path):
 @pytest.mark.parametrize("build_id", ["4.0+hil." + "a" * 12, "3.2+hil.devbuild", "3.2+hil." + "a" * 11, "3.2+hil." + "A" * 12])
 def test_build_id_with_wrong_prefix_or_shape_is_rejected(tmp_path, build_id):
     with pytest.raises(RigError, match="build_id"):
-        manifest.load_verified(make(tmp_path, build_id=build_id), COMMIT, DUT)
+        manifest.load_verified(make(tmp_path, build_id=build_id, top={"build_id": build_id}), COMMIT, DUT)
+
+
+def test_unknown_role_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), role="mystery")],
+    )
+    with pytest.raises(RigError, match="role"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_duplicate_role_and_rev_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), qc_entry(), qc_entry()],
+    )
+    with pytest.raises(RigError, match="duplicate"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_final_true_on_qc_auto_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), final=True)],
+    )
+    with pytest.raises(RigError, match="final"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_final_true_on_canary_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(canary_entry(), final=True)],
+    )
+    with pytest.raises(RigError, match="final"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_final_false_on_commit_is_rejected(tmp_path):
+    with pytest.raises(RigError, match="final"):
+        manifest.load_verified(make(tmp_path, final=False), COMMIT, DUT)
+
+
+def test_final_must_be_a_bool(tmp_path):
+    with pytest.raises(RigError, match="final"):
+        manifest.load_verified(make(tmp_path, final="yes"), COMMIT, DUT)
+
+
+def test_qc_auto_build_id_with_a_different_commit_part_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), build_id="3.2+qc." + "b" * 12)],
+    )
+    with pytest.raises(RigError, match="build_id"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_qc_auto_build_id_with_the_commit_prefix_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), build_id=BUILD_ID)],
+    )
+    with pytest.raises(RigError, match="build_id"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_two_commit_entries_are_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), commit_entry()],
+    )
+    with pytest.raises(RigError, match="duplicate|exactly one"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_commit_entry_without_a_factory_file_is_rejected(tmp_path):
+    entry = commit_entry()
+    del entry["file"], entry["sha256"]
+    root = write(tmp_path, {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"}, [entry])
+    with pytest.raises(RigError, match="file"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_no_commit_entry_is_rejected(tmp_path):
+    root = write(tmp_path, {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"}, [qc_entry()])
+    with pytest.raises(RigError, match="exactly one"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_error_text_never_carries_a_hash(tmp_path):
+    with pytest.raises(RigError) as info:
+        manifest.load_verified(make(tmp_path, sha256="0" * 64), COMMIT, DUT)
+    assert "0" * 16 not in str(info.value) and sha(IMAGE)[:16] not in str(info.value)
+
+
+def test_qc_auto_image_carries_ota_path_and_fan_hz(tmp_path):
+    verified = manifest.load_verified(make(tmp_path), COMMIT, DUT)
+    image = verified.image("qc-auto")
+    assert image.ota_path.name == "qc-auto-3.2.ota.bin"
+    assert image.fan_hz == 25000
+    assert image.final is False
+    assert image.path is None and image.sha256 == ""
+    assert image.ota_sha256 == sha(QC_OTA)
+    assert image.build_id == QC_ID and image.framework == "arduino"
+
+
+def test_commit_image_is_final_and_has_both_files(tmp_path):
+    image = manifest.load_verified(make(tmp_path), COMMIT, DUT).image("commit")
+    assert image.final is True and image.rev == "3.2" and image.role == "commit"
+    assert image.path.name == "firmware.factory.bin" and image.ota_path.name == "firmware.ota.bin"
+
+
+def test_image_with_an_explicit_rev(tmp_path):
+    verified = manifest.load_verified(make(tmp_path), COMMIT, DUT)
+    assert verified.image("qc-auto", "3.2").role == "qc-auto"
+
+
+def test_image_lookup_miss_names_role_and_rev(tmp_path):
+    verified = manifest.load_verified(make(tmp_path, extra=()), COMMIT, DUT)
+    with pytest.raises(RigError, match="no image with role 'canary' for rev 3.2"):
+        verified.image("canary")
+
+
+def test_chip_of_a_qc_auto_entry_for_the_dut_rev_is_checked_too(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), chip="esp32c6")],
+    )
+    with pytest.raises(RigError, match="chip"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_a_factory_file_on_a_qc_auto_entry_is_rejected(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(qc_entry(), file="firmware.factory.bin", sha256=sha(IMAGE))],
+    )
+    with pytest.raises(RigError, match="only the commit image has a factory file"):
+        manifest.load_verified(root, COMMIT, DUT)
