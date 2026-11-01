@@ -65,7 +65,7 @@ def canary_entry():
         "framework": "arduino",
         "build_id": CANARY_ID,
         "final": False,
-        "esphome_name": "fancontroller-canary-r3-2",
+        "esphome_name": "fancontroller-can-r3-2",
         "ota_file": "canary-3.2.ota.bin",
         "ota_sha256": sha(CANARY_OTA),
         "fan_hz": 25000,

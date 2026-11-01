@@ -37,6 +37,13 @@ What it does:
     output goes to .hil-build/esphome-compile.log and is never printed raw, because
     ESPHome echoes substitution values (conceal sequences) into its own output.
 
+--check-configs resolves every target with placeholder values (no compile) and checks
+each resolved config against hil/frameworks.toml, the entity names the tests drive, the
+UART0 logger, one fan PWM frequency and, for the canary, its deliberate pin swap. It
+prints one line per problem and "checked <n> configs: <k> problem(s)", and exits 2 on any
+problem. --all and the default build run the same check on the real-value configs before
+the first compile, so a config with the wrong framework can never be built (D-34).
+
 --check-pins compares the aioesphomeapi and esptool versions installed in the
 ESPHome image with the pins in hil/pyproject.toml and builds nothing (a Dependabot
 bump of the ESPHome pin then forces a pin update in hil/).
@@ -88,6 +95,13 @@ TARGETS = (
         "chip": "esp32s2", "offset": "0x0", "framework": "arduino",
         "esphome_name": "fancontroller-qc-r3-2", "final": False, "factory": False,
         "ota_out": "qc-auto-3.2.ota.bin", "factory_out": None,
+    },
+    {
+        "role": "canary", "rev": "3.2", "customer_config": CUSTOMER_REV32,
+        "wrapper": os.path.join("hil", "rev3.2.canary.yaml"),
+        "chip": "esp32s2", "offset": "0x0", "framework": "arduino",
+        "esphome_name": "fancontroller-can-r3-2", "final": False, "factory": False,
+        "ota_out": "canary-3.2.ota.bin", "factory_out": None,
     },
 )
 # The tag between "<rev>+" and ".<hil_commit>" in each role's build ID.
@@ -559,6 +573,142 @@ def fan_frequency(resolved):
     return values.pop()
 
 
+# ------------------------------------------------------------ configuration checks
+
+FRAMEWORKS_FILE = os.path.join("hil", "frameworks.toml")
+# Validation-only values for `--check-configs` (RESEARCH Pitfall 9): ESPHome rejects the
+# all-zeros API key, so this is base64 of the bytes 1..32. They must never equal a real value.
+PLACEHOLDERS = {
+    "hil_wifi_ssid": "hil-placeholder",
+    "hil_wifi_password": "placeholder-pass",
+    "hil_dut_api_key": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA=",
+}
+PLACEHOLDER_COMMIT = "000000000000"
+REQUIRED_ENTITIES = (
+    tuple("Fan %d" % n for n in (1, 2, 3, 4))
+    + tuple("Fan %d Speed" % n for n in (1, 2, 3, 4))
+    + ("Temperature", "Humidity")
+    + tuple("Button USR%d" % n for n in (1, 2, 3))
+)
+QC_ENTITIES = ("QC Device Info", "QC Safe Mode Boot")
+ENTITY_DOMAINS = ("fan", "sensor", "binary_sensor", "text_sensor", "button", "switch", "light")
+
+
+def load_framework_table(text):
+    """hil/frameworks.toml as {"schema": 1, "revisions": {rev: framework}}."""
+    try:
+        data = tomllib.loads(text)
+    except tomllib.TOMLDecodeError:
+        raise BuildError("%s is not valid TOML" % FRAMEWORKS_FILE) from None
+    if data.get("schema") != 1:
+        raise BuildError("%s: schema must be 1" % FRAMEWORKS_FILE)
+    if not isinstance(data.get("revisions"), dict):
+        raise BuildError("%s: the [revisions] table is missing" % FRAMEWORKS_FILE)
+    return data
+
+
+def entity_names(resolved):
+    """Every entity name in a resolved config, including names nested one level (hdc1080, debug)."""
+    names = set()
+    for domain in ENTITY_DOMAINS:
+        entries = resolved.get(domain)
+        if not isinstance(entries, list):
+            continue
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            if isinstance(entry.get("name"), str):
+                names.add(entry["name"])
+            for value in entry.values():
+                if isinstance(value, dict) and isinstance(value.get("name"), str):
+                    names.add(value["name"])
+    return names
+
+
+def pin_number(entry):
+    pin = entry.get("pin") if isinstance(entry, dict) else None
+    if isinstance(pin, dict):
+        pin = pin.get("number")
+    if isinstance(pin, str):
+        match = re.match(r"^(?:GPIO)?([0-9]+)$", pin.strip())
+        pin = int(match.group(1)) if match else None
+    return pin if isinstance(pin, int) and not isinstance(pin, bool) else None
+
+
+def placeholder_problems(placeholders, network_values):
+    """A placeholder that equals a real HIL value would make a validation build look real."""
+    return ["placeholder %s equals the value in hil/hil-network.yaml" % key
+            for key in sorted(placeholders) if placeholders[key] == network_values.get(key)]
+
+
+def check_configs(resolved_by_target, table, network_values, placeholders=None):
+    """Problems (sorted strings; keys and names only, never a value) in the resolved configs.
+
+    resolved_by_target maps (role, rev) to a parsed `esphome config` output. Enforces the
+    framework table (D-34), the identity of each image, the entities the tests drive, one fan
+    PWM frequency, and the canary's deliberate pin swap (D-31).
+    """
+    problems = placeholder_problems(placeholders or {}, network_values)
+    revisions = table.get("revisions", {}) if isinstance(table, dict) else {}
+    for target in TARGETS:
+        key = (target["role"], target["rev"])
+        resolved = resolved_by_target.get(key)
+        if resolved is None:
+            continue
+        who = target["role"]
+        rev = target["rev"]
+        expected = revisions.get(rev)
+        if rev not in revisions:
+            problems.append("%s: rev %s is not in %s" % (who, rev, FRAMEWORKS_FILE))
+        elif not isinstance(expected, str) or not expected:
+            problems.append("%s: rev %s: the framework value in %s is empty" % (who, rev, FRAMEWORKS_FILE))
+        esp32 = resolved.get("esp32")
+        framework = esp32.get("framework") if isinstance(esp32, dict) else None
+        actual = framework.get("type") if isinstance(framework, dict) else None
+        if not isinstance(actual, str) or not actual:
+            problems.append("%s: the resolved config has no esp32.framework.type" % who)
+        else:
+            if isinstance(expected, str) and expected and actual != expected:
+                problems.append("%s: rev %s: framework %s, table says %s" % (who, rev, actual, expected))
+            if actual != target["framework"]:
+                problems.append("%s: framework %s, the build target says %s" % (who, actual, target["framework"]))
+        logger = resolved.get("logger")
+        if not isinstance(logger, dict) or logger.get("hardware_uart") != "UART0":
+            problems.append("%s: logger.hardware_uart is not UART0" % who)
+        esphome = resolved.get("esphome") if isinstance(resolved.get("esphome"), dict) else {}
+        if esphome.get("name") != target["esphome_name"]:
+            problems.append("%s: esphome.name is not %s" % (who, target["esphome_name"]))
+        project = esphome.get("project") if isinstance(esphome.get("project"), dict) else {}
+        version = project.get("version")
+        prefix = "%s+%s." % (rev, BUILD_ID_TAG[target["role"]])
+        if not isinstance(version, str) or not version.startswith(prefix):
+            problems.append("%s: esphome.project.version does not start with %s" % (who, prefix))
+        names = entity_names(resolved)
+        wanted = REQUIRED_ENTITIES + (QC_ENTITIES if target["role"] != "commit" else ())
+        for name in wanted:
+            if name not in names:
+                problems.append("%s: entity missing: %s" % (who, name))
+        try:
+            fan_frequency(resolved)
+        except BuildError as err:
+            problems.append("%s: %s" % (who, err))
+    canary = resolved_by_target.get(("canary", "3.2"))
+    if canary is not None:
+        qc = resolved_by_target.get(("qc-auto", "3.2"))
+        if qc is None:
+            problems.append("canary: no qc-auto config to compare the pins against")
+        else:
+            qc_pins = {i: pin_number(e) for i, e in ledc_outputs(qc).items()}
+            can_pins = {i: pin_number(e) for i, e in ledc_outputs(canary).items()}
+            one, two = "pwm_fan1", "pwm_fan2"
+            swapped = (None not in (can_pins.get(one), can_pins.get(two), qc_pins.get(one), qc_pins.get(two))
+                       and can_pins[one] == qc_pins[two] and can_pins[two] == qc_pins[one]
+                       and can_pins[one] != qc_pins[one])
+            if not swapped:
+                problems.append("canary: pwm_fan1/pwm_fan2 pins are not swapped")
+    return sorted(problems)
+
+
 # ----------------------------------------------------------------- pin guard
 
 
@@ -611,6 +761,9 @@ def parse_args(argv):
     parser.add_argument("--all", action="store_true",
                         help="build every target (commit, qc-auto, ...); default is the commit image only")
     parser.add_argument("--self-test", action="store_true", help="run the built-in fixtures")
+    parser.add_argument("--check-configs", action="store_true",
+                        help="resolve every target with placeholder values and check framework, "
+                             "entities and the canary fault; builds nothing")
     parser.add_argument("--check-pins", action="store_true",
                         help="compare the installed aioesphomeapi and esptool with hil/pyproject.toml")
     return parser.parse_args(argv)
@@ -675,7 +828,7 @@ def build(args, env, reader=read_text):
 
     # 5. Resolve every wrapper first (output parsed, never printed): the fan frequency
     #    of each non-final image comes from here.
-    fan_hz = {}
+    fan_hz, resolved_by_key = {}, {}
     for target in targets:
         key = (target["role"], target["rev"])
         resolved_path = os.path.join(build_dir, "resolved-%s-%s.yaml" % key)
@@ -688,9 +841,22 @@ def build(args, env, reader=read_text):
             for path in (config_log, resolved_path):
                 print(failure_tail(path, network.values()), file=sys.stderr)
             return 1
-        resolved = parse_resolved(read_text(resolved_path))
+        resolved_by_key[key] = parse_resolved(read_text(resolved_path))
         if not target["final"]:
-            fan_hz[key] = fan_frequency(resolved)
+            fan_hz[key] = fan_frequency(resolved_by_key[key])
+
+    # 5b. D-34 at build time: nothing compiles while a config has the wrong framework,
+    #     a missing entity or (canary) a lost fault. A local --config experiment is not
+    #     one of the build targets and is not held to them.
+    if args.config is None:
+        table = load_framework_table(reader(os.path.join(REPO_ROOT, FRAMEWORKS_FILE)))
+        problems = check_configs(resolved_by_key, table, network)
+        if problems:
+            for problem in problems:
+                print("config check: %s" % problem, file=sys.stderr)
+            print("refusing to build: %d config problem(s); nothing was compiled" % len(problems),
+                  file=sys.stderr)
+            return 2
 
     # 6. Compile each target; copy its images out right after, clean its tree before.
     def build_one(target):
@@ -721,6 +887,42 @@ def build(args, env, reader=read_text):
     print("wrote %s and %s (build_id %s)" % (
         ", ".join(sorted(output_names(targets) - {MANIFEST_NAME})), MANIFEST_NAME, manifest["build_id"]))
     return 0
+
+
+def check_configs_command(reader=read_text):
+    """--check-configs: resolve every target with placeholder values and check them. Builds nothing."""
+    file_values = parse_network(reader(os.path.join(REPO_ROOT, NETWORK_FILE)))
+    refused = placeholder_problems(PLACEHOLDERS, file_values)
+    if refused:
+        for problem in refused:
+            print(problem)
+        print("checked 0 configs: %d problem(s)" % len(refused))
+        return 2
+    table = load_framework_table(reader(os.path.join(REPO_ROOT, FRAMEWORKS_FILE)))
+    build_dir = os.path.join(REPO_ROOT, BUILD_DIR_NAME)
+    os.makedirs(build_dir, exist_ok=True)
+    for customer in sorted({t["customer_config"] for t in TARGETS}):
+        with open(os.path.join(build_dir, customer), "w", encoding="utf-8") as handle:
+            handle.write(localize_config(REPO_ROOT, customer))
+    resolved_by_key = {}
+    for target in TARGETS:
+        key = (target["role"], target["rev"])
+        resolved_path = os.path.join(build_dir, "resolved-%s-%s.yaml" % key)
+        config_log = os.path.join(build_dir, "esphome-config-%s-%s.log" % key)
+        code = run_resolve(REPO_ROOT, os.path.join(REPO_ROOT, target["wrapper"]), PLACEHOLDER_COMMIT,
+                           PLACEHOLDERS, resolved_path, config_log)
+        if code != 0:
+            print("config failed for the %s image (exit %d); last %d log lines:"
+                  % (target["role"], code, FAILURE_TAIL_LINES))
+            for path in (config_log, resolved_path):
+                print(failure_tail(path, PLACEHOLDERS.values()))
+            return 1
+        resolved_by_key[key] = parse_resolved(reader(resolved_path))
+    problems = check_configs(resolved_by_key, table, file_values, placeholders=PLACEHOLDERS)
+    for problem in problems:
+        print(problem)
+    print("checked %d configs: %d problem(s)" % (len(resolved_by_key), len(problems)))
+    return 2 if problems else 0
 
 
 def run(argv, env, reader=read_text):
@@ -1070,6 +1272,154 @@ def self_test():
     check("an unparseable resolved config is refused without echoing it",
           "SECRETVALUE" not in (raises(parse_resolved, "a: [SECRETVALUE\n") or ""))
 
+    # 11. check_configs: framework table, identity, entities, canary fault (D-34, D-31).
+    table = {"schema": 1, "revisions": {"3.2": "arduino", "4.0": "esp-idf"}}
+    placeholders = dict(PLACEHOLDERS)
+
+    def good_resolved(target):
+        names_fan = ["Fan %d" % n for n in (1, 2, 3, 4)]
+        names_speed = ["Fan %d Speed" % n for n in (1, 2, 3, 4)]
+        swapped = target["role"] == "canary"
+        pins = {1: 12, 2: 13, 3: 14, 4: 15}
+        if swapped:
+            pins[1], pins[2] = 13, 12
+        resolved = {
+            "esphome": {"name": target["esphome_name"],
+                        "project": {"version": "%s+%s.000000000000" % (
+                            target["rev"], BUILD_ID_TAG[target["role"]])}},
+            "esp32": {"framework": {"type": target["framework"]}},
+            "logger": {"hardware_uart": "UART0"},
+            "output": [{"platform": "ledc", "id": "pwm_fan%d" % n, "pin": {"number": pins[n]},
+                        "frequency": 25000.0} for n in (1, 2, 3, 4)],
+            "fan": [{"platform": "speed", "name": name} for name in names_fan],
+            "sensor": [{"platform": "pulse_counter", "name": name} for name in names_speed]
+                      + [{"platform": "hdc1080", "temperature": {"name": "Temperature"},
+                          "humidity": {"name": "Humidity"}}],
+            "binary_sensor": [{"platform": "gpio", "name": "Button USR%d" % n} for n in (1, 2, 3)],
+        }
+        if target["role"] != "commit":
+            resolved["text_sensor"] = [{"platform": "debug", "device": {"name": "QC Device Info"},
+                                        "reset_reason": {"name": "QC Reset Reason"}}]
+            resolved["button"] = [{"platform": "safe_mode", "name": "QC Safe Mode Boot"}]
+        return resolved
+
+    import copy
+
+    def all_good():
+        return {(t["role"], t["rev"]): good_resolved(t) for t in TARGETS}
+
+    network_real = {"hil_wifi_ssid": "real-ssid-0001", "hil_wifi_password": "real-pass-0001",
+                    "hil_dut_api_key": "real-key-0123456789"}
+    check("a correct set of resolved configs has no problems",
+          check_configs(all_good(), table, network_real) == [], str(check_configs(all_good(), table, network_real)))
+
+    wrong = all_good()
+    wrong[("commit", "3.2")]["esp32"]["framework"]["type"] = "esp-idf"
+    problems = check_configs(wrong, table, network_real)
+    check("a framework that differs from the table is reported",
+          any("rev 3.2: framework esp-idf, table says arduino" in p for p in problems), str(problems))
+
+    missing_rev = check_configs(all_good(), {"schema": 1, "revisions": {"4.0": "esp-idf"}}, network_real)
+    check("a revision missing from the table names the revision and the key",
+          any("rev 3.2" in p and "frameworks.toml" in p for p in missing_rev), str(missing_rev))
+    empty_value = check_configs(all_good(), {"schema": 1, "revisions": {"3.2": ""}}, network_real)
+    check("an empty framework value names the revision and the key",
+          any("rev 3.2" in p and "empty" in p for p in empty_value), str(empty_value))
+    no_framework = all_good()
+    del no_framework[("qc-auto", "3.2")]["esp32"]["framework"]
+    problems = check_configs(no_framework, table, network_real)
+    check("a resolved config without esp32.framework.type is reported naming the key",
+          any("esp32.framework.type" in p for p in problems), str(problems))
+
+    same_pins = all_good()
+    same_pins[("canary", "3.2")]["output"] = copy.deepcopy(same_pins[("qc-auto", "3.2")]["output"])
+    problems = check_configs(same_pins, table, network_real)
+    check("a canary whose pins are not swapped is reported",
+          any("canary: pwm_fan1/pwm_fan2 pins are not swapped" in p for p in problems), str(problems))
+    half_swapped = all_good()
+    half_swapped[("canary", "3.2")]["output"][1]["pin"]["number"] = 13
+    problems = check_configs(half_swapped, table, network_real)
+    check("a canary with only one swapped pin is reported",
+          any("canary: pwm_fan1/pwm_fan2 pins are not swapped" in p for p in problems), str(problems))
+
+    differ = all_good()
+    differ[("qc-auto", "3.2")]["output"][3]["frequency"] = 1000.0
+    problems = check_configs(differ, table, network_real)
+    check("different ledc frequencies are reported",
+          any("fan PWM frequencies differ" in p for p in problems), str(problems))
+
+    no_uart = all_good()
+    no_uart[("commit", "3.2")]["logger"] = {}
+    problems = check_configs(no_uart, table, network_real)
+    check("a config without the UART0 logger is reported",
+          any("logger.hardware_uart" in p for p in problems), str(problems))
+    wrong_name = all_good()
+    wrong_name[("qc-auto", "3.2")]["esphome"]["name"] = "fancontroller-r3-2"
+    problems = check_configs(wrong_name, table, network_real)
+    check("an esphome.name other than the target's is reported",
+          any("esphome.name" in p for p in problems), str(problems))
+    wrong_version = all_good()
+    wrong_version[("canary", "3.2")]["esphome"]["project"]["version"] = "3.2+qc.000000000000"
+    problems = check_configs(wrong_version, table, network_real)
+    check("a version prefix of another role is reported",
+          any("esphome.project.version" in p for p in problems), str(problems))
+
+    for entity, domain in (("Fan 3", "fan"), ("Fan 2 Speed", "sensor"), ("Button USR3", "binary_sensor")):
+        broken = all_good()
+        broken[("commit", "3.2")][domain] = [e for e in broken[("commit", "3.2")][domain]
+                                             if e.get("name") != entity]
+        problems = check_configs(broken, table, network_real)
+        check("a missing entity %s is named" % entity,
+              any(("entity missing: " + entity) in p for p in problems), str(problems))
+    no_hdc = all_good()
+    no_hdc[("commit", "3.2")]["sensor"] = [e for e in no_hdc[("commit", "3.2")]["sensor"]
+                                           if e["platform"] != "hdc1080"]
+    problems = check_configs(no_hdc, table, network_real)
+    check("missing Temperature and Humidity are both named",
+          any("entity missing: Temperature" in p for p in problems)
+          and any("entity missing: Humidity" in p for p in problems), str(problems))
+    no_qc = all_good()
+    no_qc[("qc-auto", "3.2")]["button"] = []
+    no_qc[("canary", "3.2")]["text_sensor"] = []
+    problems = check_configs(no_qc, table, network_real)
+    check("the QC entities are required on qc-auto and canary only",
+          any(p.startswith("qc-auto") and "entity missing: QC Safe Mode Boot" in p for p in problems)
+          and any(p.startswith("canary") and "entity missing: QC Device Info" in p for p in problems)
+          and not any(p.startswith("commit") for p in problems), str(problems))
+    check("the commit image does not need the QC entities",
+          check_configs({k: v for k, v in all_good().items() if k[0] == "commit"}, table, network_real) == [])
+    lonely = {k: v for k, v in all_good().items() if k[0] == "canary"}
+    problems = check_configs(lonely, table, network_real)
+    check("a canary without a qc-auto config to compare against is reported",
+          any("canary" in p and "qc-auto" in p for p in problems), str(problems))
+
+    problems = check_configs(wrong, table, network_real)
+    check("problems are sorted and never carry a network value",
+          problems == sorted(problems)
+          and not any(v in p for p in problems for v in network_real.values()))
+    equal = check_configs(all_good(), table, dict(network_real, hil_wifi_ssid=PLACEHOLDERS["hil_wifi_ssid"]),
+                          placeholders=PLACEHOLDERS)
+    check("a placeholder equal to a real network value is refused naming the key only",
+          equal == ["placeholder hil_wifi_ssid equals the value in hil/hil-network.yaml"], str(equal))
+    check("distinct placeholders are not reported",
+          check_configs(all_good(), table, network_real, placeholders=PLACEHOLDERS) == [])
+    check("the real placeholders differ from every committed network value",
+          placeholder_problems(PLACEHOLDERS, parse_network(
+              read_text(os.path.join(REPO_ROOT, NETWORK_FILE)))) == [])
+    check("the placeholder API key is not the all-zeros key ESPHome rejects",
+          PLACEHOLDERS["hil_dut_api_key"] != "A" * 43 + "=")
+
+    # 12. The framework table file.
+    real_table = load_framework_table(read_text(os.path.join(REPO_ROOT, FRAMEWORKS_FILE)))
+    check("frameworks.toml holds the shipped frameworks",
+          real_table["revisions"] == {"1.0": "esp-idf", "2.0": "arduino", "3.0": "arduino",
+                                      "3.1": "arduino", "3.2": "arduino", "3.3": "arduino",
+                                      "4.0": "esp-idf"}, str(real_table))
+    check("a table without [revisions] is refused",
+          raises(load_framework_table, "schema = 1\n") is not None)
+    check("a table with another schema is refused",
+          raises(load_framework_table, 'schema = 2\n[revisions]\n"3.2" = "arduino"\n') is not None)
+
     if failures:
         for failure in failures:
             print("FAIL: %s" % failure, file=sys.stderr)
@@ -1082,6 +1432,12 @@ def main(argv):
     args = parse_args(argv[1:])
     if args.self_test:
         return self_test()
+    if args.check_configs:
+        try:
+            return check_configs_command()
+        except BuildError as err:
+            print("error: %s" % err, file=sys.stderr)
+            return 2
     if args.check_pins:
         try:
             return check_pins(read_text(os.path.join(REPO_ROOT, PYPROJECT)))

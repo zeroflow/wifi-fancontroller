@@ -8,6 +8,8 @@ The build-time check on the RESOLVED configs (framework table, entity names, fan
 frequency, canary pin swap) lives in hil/tools/build_image.py --check-configs.
 """
 
+import re
+import tomllib
 from pathlib import Path
 
 import yaml
@@ -114,3 +116,78 @@ def test_no_hil_image_yaml_defines_a_top_level_safe_mode_block():
         data = load(path)
         assert isinstance(data, dict), path.name
         assert "safe_mode" not in data, "%s defines a top-level safe_mode block" % path.name
+
+
+# ---- Task 2: the canary and the framework table -----------------------------------------------
+
+# The project constraint (hil-rig CLAUDE.md): Rev 1.0 esp-idf, Rev 2.0-3.3 arduino, Rev 4.0 esp-idf.
+PROJECT_FRAMEWORKS = {
+    "1.0": "esp-idf",
+    "2.0": "arduino",
+    "3.0": "arduino",
+    "3.1": "arduino",
+    "3.2": "arduino",
+    "3.3": "arduino",
+    "4.0": "esp-idf",
+}
+
+
+def pin_of(output_entry):
+    match = re.match(r"^GPIO([0-9]+)$", str(output_entry["pin"]))
+    assert match, "unexpected pin %r" % output_entry["pin"]
+    return int(match.group(1))
+
+
+def framework_table():
+    return tomllib.loads((HIL / "frameworks.toml").read_text(encoding="utf-8"))
+
+
+def test_canary_layers_on_qc_auto_and_has_its_own_name_and_version():
+    data = load(HIL / "rev3.2.canary.yaml")
+    assert data["packages"]["qc"] == "rev3.2.qc-auto.yaml"
+    assert data["esphome"]["name"] == "fancontroller-can-r3-2"
+    assert data["esphome"]["project"]["version"].startswith("3.2+canary.")
+    assert "${hil_commit}" in data["esphome"]["project"]["version"]
+
+
+def test_canary_swaps_the_fan1_and_fan2_pins_against_the_hardware_package():
+    hardware = load(REPO / "hardware-rev-3.1.yaml")
+    base = {entry["id"]: pin_of(entry) for entry in hardware["output"] if entry.get("platform") == "ledc"}
+    canary = {entry["id"]: pin_of(entry) for entry in load(HIL / "rev3.2.canary.yaml")["output"]}
+    assert canary["pwm_fan1"] == base["pwm_fan2"]
+    assert canary["pwm_fan2"] == base["pwm_fan1"]
+    assert canary["pwm_fan1"] != base["pwm_fan1"]
+    assert set(canary) == {"pwm_fan1", "pwm_fan2"}  # channels 3 and 4 stay as shipped
+
+
+def test_canary_does_not_touch_the_framework():
+    data = load(HIL / "rev3.2.canary.yaml")
+    assert "esp32" not in data
+
+
+def test_frameworks_table_equals_the_project_constraint_exactly():
+    table = framework_table()
+    assert table["schema"] == 1
+    assert table["revisions"] == PROJECT_FRAMEWORKS
+
+
+def test_every_explicit_framework_in_a_hil_yaml_equals_the_table_for_its_revision():
+    revisions = framework_table()["revisions"]
+    checked = 0
+    for path in sorted(HIL.glob("rev*.yaml")):
+        rev = re.match(r"^rev([0-9]+\.[0-9]+)\.", path.name).group(1)
+        data = load(path)
+        framework = (data.get("esp32") or {}).get("framework", {}).get("type")
+        if framework is None:
+            continue
+        assert framework == revisions[rev], "%s declares %s, table says %s" % (path.name, framework, revisions[rev])
+        checked += 1
+    assert checked >= 1  # qc-auto declares one; a test that checks nothing would be vacuous
+
+
+
+def test_esphome_names_fit_the_hostname_limit_with_the_mac_suffix():
+    # The customer config sets name_add_mac_suffix; ESPHome allows 24 characters before the suffix.
+    for filename in ("rev3.2.qc-auto.yaml", "rev3.2.canary.yaml"):
+        name = load(HIL / filename)["esphome"]["name"]
+        assert len(name) <= 24, "%s: esphome.name %s is %d characters" % (filename, name, len(name))
