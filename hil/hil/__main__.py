@@ -20,6 +20,7 @@ from .flasher import Flasher
 from .supervisor import Supervisor
 
 EXIT = {"PASS": 0, "FAIL": 1, "INTERRUPTED": 2, "RIG ERROR": 3}
+PROVISIONAL_REASON = "run did not complete"
 TEST_DIR = Path(__file__).resolve().parent.parent / "tests" / "rig"
 PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
@@ -34,9 +35,12 @@ class Collector:
     def __init__(self):
         self.rig_errors = []
         self.skipped = []  # {"nodeid", "reason"} in the order pytest reported them
+        self.collected = 0
+        self.session_cut = None  # pytest's session.shouldfail text when pytest-timeout's session deadline ended the run
         self._canary = set()
         self._call_passed = set()
         self._failed = set()
+        self._finished = set()  # tests whose whole protocol (setup, call, teardown) was reported
 
     def pytest_runtest_makereport(self, item, call):
         if call.excinfo is not None and isinstance(call.excinfo.value, RigError):
@@ -44,7 +48,17 @@ class Collector:
         if item.get_closest_marker("canary") is not None:
             self._canary.add(item.nodeid)
 
+    def pytest_collection_finish(self, session):
+        self.collected = len(session.items)
+
+    def pytest_sessionfinish(self, session, exitstatus):
+        reason = getattr(session, "shouldfail", None)
+        if isinstance(reason, str) and reason.startswith("session-timeout"):
+            self.session_cut = reason
+
     def pytest_runtest_logreport(self, report):
+        if report.when == "teardown":
+            self._finished.add(report.nodeid)
         if report.failed:
             self._failed.add(report.nodeid)
         elif report.skipped and not hasattr(report, "wasxfail"):
@@ -62,6 +76,11 @@ class Collector:
         return len(self._failed)
 
     @property
+    def not_run(self):
+        """Collected tests whose protocol never finished (the run was cut before them)."""
+        return max(self.collected - len(self._finished), 0)
+
+    @property
     def canary_passed(self):
         return bool((self._canary & self._call_passed) - self._failed)
 
@@ -77,7 +96,12 @@ class Collector:
             "failed_tests": sorted(self._failed),
             "skipped": list(self.skipped),
             "canary_passed": self.canary_passed,
+            "not_run": self.not_run,
+            "session_cut": self.session_cut,
         }
+
+    def cut_line(self):
+        return "RIG ERROR: run cut by the session deadline (%s); %d test(s) not run" % (self.session_cut, self.not_run)
 
 
 def skip_reason(report):
@@ -87,26 +111,45 @@ def skip_reason(report):
     return text.removeprefix("Skipped: ")
 
 
+NO_PASS_LINE = "RIG ERROR: no test passed; a run without a passing test is never green"
+
+
 def decide_verdict(code, collector):
     """(verdict, lines to print) from pytest's exit code and what the Collector saw.
 
-    A green run (exit 0) must contain a passed canary detection (D-31, QC-06): a canary that
-    was skipped by a missing capability, deselected or never collected is RIG ERROR, never PASS.
+    pytest's exit 0 also means "everything was skipped" and "the canary never ran", and its
+    exit 1 also means "pytest-timeout's session deadline stopped the run", so none of them
+    is taken at face value. A green run contains at least one passed test and a passed
+    canary detection (HARN-02, D-31, QC-06); a run cut by the session deadline is RIG ERROR
+    whatever ran before the cut.
     """
     if code == 0:
+        if collector.passed == 0:
+            return "RIG ERROR", [NO_PASS_LINE]
         if not collector.canary_passed:
             return "RIG ERROR", [
                 "RIG ERROR: the canary was not detected in this run (%s); a run without canary detection is never green"
                 % collector.canary_state()
             ]
         return "PASS", []
-    if collector.rig_errors:
-        return "RIG ERROR", ["RIG ERROR: %s" % message for message in collector.rig_errors]
+    lines = ["RIG ERROR: %s" % message for message in collector.rig_errors]
+    if collector.session_cut is not None:
+        lines.append(collector.cut_line())
+    if lines:
+        return "RIG ERROR", lines
     if code == 1:
         return "FAIL", []
     if code == 2:
         return "INTERRUPTED", []
-    return "RIG ERROR", []
+    return "RIG ERROR", ["RIG ERROR: pytest ended with exit code %d" % code]
+
+
+def warning_lines(collector, env=None):
+    """One GitHub Actions warning naming the skip count; skips never hide in a green run."""
+    env = os.environ if env is None else env
+    if env.get("GITHUB_ACTIONS") != "true" or not collector.skipped:
+        return []
+    return ["::warning title=HIL skipped tests::%d test(s) skipped, see the job summary" % len(collector.skipped)]
 
 
 def write_tests_report(collector):
@@ -119,7 +162,7 @@ def _terminate(_signum, _frame):
     raise KeyboardInterrupt
 
 
-def write_verdict(verdict, commit, build_id):
+def write_verdict(verdict, commit, build_id, reason=None, announce=True):
     reports = config.reports_dir()
     reports.mkdir(parents=True, exist_ok=True)
     reported = None
@@ -136,8 +179,11 @@ def write_verdict(verdict, commit, build_id):
         "build_id": build_id,
         "reported_build_id": reported,
     }
+    if reason:
+        data["reason"] = reason
     (reports / "verdict.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print("HIL verdict: %s build_id=%s" % (verdict, build_id))
+    if announce:
+        print("HIL verdict: %s build_id=%s" % (verdict, build_id))
     return EXIT[verdict]
 
 
@@ -188,6 +234,9 @@ def _run(holder):
         stale = reports / name
         if stale.exists():
             stale.unlink()
+    # A run that is killed from here on (step ceiling, signal) leaves this, never PASS or an
+    # earlier run's verdict; the final write_verdict replaces it. It prints nothing.
+    write_verdict("RIG ERROR", commit, None, reason=PROVISIONAL_REASON, announce=False)
     try:
         rig = load_rig()
         holder["rig"] = rig
@@ -210,7 +259,7 @@ def _run(holder):
     code = int(code)
     write_tests_report(collector)
     verdict, lines = decide_verdict(code, collector)
-    for line in lines:
+    for line in [*warning_lines(collector), *lines]:
         print(line)
     return write_verdict(verdict, commit, build_id)
 
