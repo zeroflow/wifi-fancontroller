@@ -212,13 +212,23 @@ class Dut:
         self._mark("ota_start_%s" % role)
         if self._ota is None:
             self._ota = Ota(self.cfg.host)
-        result = self._ota.upload(image.ota_path, noise_psk)
+        end_mark = "ota_end_%s" % role
+        # The worker reports the finished upload before its process exits, so the mark lands
+        # before the DUT's reboot banner; the check after the upload covers a launcher that never reports.
+        reported_done = []
+
+        def done():
+            reported_done.append(True)
+            self._mark(end_mark)
+
+        result = self._ota.upload(image.ota_path, noise_psk, on_done=done)
         if not result.ok:
             if result.reason == "setup":
                 raise RigError("OTA worker could not run; last output:\n%s" % result.output_tail)
             self._record_ota(image, result.duration_s, None, False, result.reason)
             raise FirmwareFailure("OTA to %s failed (%s); last output:\n%s" % (role, result.reason, result.output_tail))
-        self._mark("ota_end_%s" % role)
+        if not reported_done:
+            self._mark(end_mark)
 
         started = time.monotonic()
         end = started + OTA_BOOT_S
@@ -245,7 +255,7 @@ class Dut:
         if self.tap is None or self.tap.closed:
             self._record_ota(image, result.duration_s, boot_s, False, "serial tap lost")
             raise RigError("serial tap lost the bridge after OTA to %s; the reboot cannot be confirmed" % role)
-        if not bootlog.has_boot_banner(self.tap.text("ota_end_%s" % role), self.cfg.chip):
+        if not bootlog.has_boot_banner(self.tap.text(end_mark), self.cfg.chip):
             self._record_ota(image, result.duration_s, boot_s, False, "no reboot seen")
             raise FirmwareFailure("no reboot seen after OTA to %s" % role)
         self._record_ota(image, result.duration_s, boot_s, True, "")

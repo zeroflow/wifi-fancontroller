@@ -28,6 +28,10 @@ json.dump({"argv": sys.argv[1:], "key_set": bool(os.environ.get("HIL_OTA_KEY"))}
 print("worker argv count", len(sys.argv) - 1)
 if mode == "ok":
     sys.exit(0)
+if mode == "done_slow":
+    print("HIL-OTA-DONE", flush=True)
+    time.sleep(1.5)
+    sys.exit(0)
 if mode == "exit1":
     print("synthetic upload failure")
     sys.exit(1)
@@ -74,6 +78,21 @@ def test_key_is_in_the_worker_environment_and_never_in_argv_or_output(worker, tm
     assert KEY not in json.dumps(call["argv"])
     assert KEY not in result.output_tail
     assert call["argv"][:2] == ["203.0.113.9", str(ota.OTA_PORT)]
+
+
+def test_done_line_calls_back_before_the_worker_exits_and_is_not_output(worker, tmp_path):
+    seen = []
+    result = worker("done_slow").upload(tmp_path / "fw.bin", KEY, on_done=lambda: seen.append(time.monotonic()))
+    finished = time.monotonic()
+    assert result.ok and len(seen) == 1
+    assert finished - seen[0] > 1.0, "the callback must not wait for the worker process to exit"
+    assert ota.DONE_LINE not in result.output_tail
+
+
+def test_no_done_line_means_no_callback(worker, tmp_path):
+    seen = []
+    worker("ok").upload(tmp_path / "fw.bin", KEY, on_done=lambda: seen.append(True))
+    assert seen == []
 
 
 def test_worker_exit_1_is_reason_exit_1(worker, tmp_path):
@@ -125,10 +144,11 @@ def stub_espota2(monkeypatch, returns=(0, None)):
     return calls
 
 
-def test_main_passes_the_key_as_noise_psk_and_refuses_plaintext(monkeypatch, tmp_path):
+def test_main_passes_the_key_as_noise_psk_and_refuses_plaintext(monkeypatch, tmp_path, capsys):
     calls = stub_espota2(monkeypatch)
     monkeypatch.setenv(ota.KEY_ENV, KEY)
     assert ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")]) == ota.EXIT_OK
+    assert capsys.readouterr().out.splitlines() == [ota.DONE_LINE]
     (args, kwargs), = calls
     assert args[:3] == ("203.0.113.9", 3232, None)  # no password
     assert str(args[3]) == str(tmp_path / "fw.bin")
@@ -143,10 +163,11 @@ def test_main_without_a_key_exits_3_before_importing_esphome(monkeypatch, tmp_pa
     assert ota.KEY_ENV in capsys.readouterr().out
 
 
-def test_main_failed_upload_exits_1(monkeypatch, tmp_path):
+def test_main_failed_upload_exits_1_without_a_done_line(monkeypatch, tmp_path, capsys):
     stub_espota2(monkeypatch, returns=(1, None))
     monkeypatch.setenv(ota.KEY_ENV, KEY)
     assert ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")]) == ota.EXIT_OTA_FAILED
+    assert ota.DONE_LINE not in capsys.readouterr().out
 
 
 def test_main_without_esphome_names_the_module_and_exits_3(monkeypatch, tmp_path, capsys):
@@ -166,12 +187,15 @@ def test_main_rejects_a_wrong_argument_count(capsys):
 
 
 class FakeOta:
-    def __init__(self, result):
+    def __init__(self, result, reports_done=True):
         self.result = result
+        self.reports_done = reports_done
         self.uploads = []
 
-    def upload(self, path, key, deadline_s=ota.OTA_ATTEMPT_S):
+    def upload(self, path, key, deadline_s=ota.OTA_ATTEMPT_S, on_done=None):
         self.uploads.append((path, key))
+        if self.result.ok and self.reports_done and on_done is not None:
+            on_done()
         return self.result
 
 
@@ -246,13 +270,21 @@ def test_ota_old_old_new_is_ok_and_reported(rig, capsys):
     device, fake_ota, _, tap = rig.build(ok_result(), [OLD_ID, OLD_ID, NEW_ID])
     device.ota(rig.image, noise_psk=KEY)
     assert fake_ota.uploads == [(rig.image.ota_path, KEY)]
-    assert tap.marks[0] == "ota_start_qc-auto" and "ota_end_qc-auto" in tap.marks
+    assert tap.marks[0] == "ota_start_qc-auto" and tap.marks.count("ota_end_qc-auto") == 1
     assert tap.asked == ["ota_end_qc-auto"]
     (entry,) = read_report(rig)
     assert entry["role"] == "qc-auto" and entry["build_id"] == NEW_ID and entry["ok"] is True
     assert entry["transfer_s"] == 12.3 and entry["reason"] == "" and entry["boot_s"] is not None
     out = capsys.readouterr().out
     assert "ota qc-auto: ok transfer=12.3s" in out and NEW_ID in out
+
+
+def test_end_mark_is_set_once_even_when_the_launcher_never_reports_done(rig):
+    fake = FakeOta(ok_result(), reports_done=False)
+    device, _, _, tap = rig.build(ok_result(), [NEW_ID])
+    device._ota = fake
+    device.ota(rig.image, noise_psk=KEY)
+    assert tap.marks.count("ota_end_qc-auto") == 1
 
 
 def test_ota_survives_a_rebooting_dut_that_refuses_connections(rig):

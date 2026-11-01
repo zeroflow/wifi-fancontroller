@@ -13,6 +13,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +22,11 @@ OTA_PORT = 3232
 OTA_ATTEMPT_S = 180  # run_ota itself retries 3 times, 5 s apart, 20 s connect timeout each
 TAIL_LINES = 40
 KEY_ENV = "HIL_OTA_KEY"
+# The worker prints this line the moment run_ota has returned success. The launcher turns it
+# into the on_done callback, so the caller's "OTA end" mark lands before the DUT's reboot
+# (ESPHome waits 100 ms after the last ack); marking at process exit is too late, because
+# the interpreter needs longer than that to shut down (seen on DUT A, 2026-11-01).
+DONE_LINE = "HIL-OTA-DONE"
 
 EXIT_OK = 0
 EXIT_OTA_FAILED = 1
@@ -43,8 +49,12 @@ class Ota:
         self._port = port
         self._cmd = list(worker_cmd) if worker_cmd else [sys.executable, "-m", "hil.ota"]
 
-    def upload(self, path, key, deadline_s=OTA_ATTEMPT_S):
-        """Upload one firmware file once. Never raises for an upload outcome; see OtaResult.reason."""
+    def upload(self, path, key, deadline_s=OTA_ATTEMPT_S, on_done=None):
+        """Upload one firmware file once. Never raises for an upload outcome; see OtaResult.reason.
+
+        `on_done()` is called from a reader thread as soon as the worker reports a finished
+        upload, before the worker process has exited.
+        """
         argv = self._cmd + [self._host, str(self._port), str(path)]
         env = dict(os.environ)
         env[KEY_ENV] = key
@@ -58,26 +68,41 @@ class Ota:
             cwd=str(HIL_DIR),
             start_new_session=True,
         )
+        collected = []
+
+        def read():
+            for raw_line in iter(proc.stdout.readline, b""):
+                line = raw_line.decode("utf-8", "replace").rstrip("\r\n")
+                if line == DONE_LINE:
+                    if on_done is not None:
+                        on_done()
+                else:
+                    collected.append(line)
+
+        reader = threading.Thread(target=read, name="hil-ota-reader", daemon=True)
+        reader.start()
+
+        def kill_group():
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+
         timed_out = False
         try:
-            raw, _ = proc.communicate(timeout=deadline_s)
+            proc.wait(timeout=deadline_s)
         except subprocess.TimeoutExpired:
             timed_out = True
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            raw, _ = proc.communicate()
+            kill_group()
+            proc.wait()
         except BaseException:
             # Interrupted (SIGTERM handler, pytest-timeout): never leave a worker uploading.
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            kill_group()
             proc.wait()
             raise
+        reader.join(5)
         seconds = time.monotonic() - started
-        text = raw.decode("utf-8", "replace").replace("\r", "\n")
+        text = "\n".join(collected).replace("\r", "\n")
         lines = [line for line in text.split("\n") if line.strip()]
         tail = lines[-TAIL_LINES:]
         if timed_out:
@@ -124,6 +149,7 @@ def main(argv):
         allow_plaintext_upload=False,
     )
     if code == 0:
+        print(DONE_LINE, flush=True)
         return EXIT_OK
     print("OTA upload failed (run_ota returned %s)" % code)
     return EXIT_OTA_FAILED
