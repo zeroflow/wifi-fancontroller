@@ -9,7 +9,7 @@ from hil import RigError, entities, qc
 HZ = 25000
 E = qc.expected_reading(HZ)
 CHANNELS = entities.CHANNELS
-PARTIAL = 987654321  # what the first, partial interval after a command looks like: always discarded
+PARTIAL = 987654321  # what the intervals around a command look like: always dropped
 
 
 def perfect(hz=HZ):
@@ -172,14 +172,27 @@ class FakeLink:
         for fan, duty in self.duty.items():
             if self.wiring[fan] == tach and duty == 50:
                 reading = qc.expected_reading(self.hz)
-        return [PARTIAL] + [reading] * (n - 1)
+        return [PARTIAL] * qc.DISCARD_READINGS + [reading] * (n - qc.DISCARD_READINGS)
 
 
-def test_measure_mapping_on_a_perfect_device_passes_and_drops_the_partial_first_value():
+def test_measure_mapping_on_a_perfect_device_passes_and_drops_the_first_two_values():
     link = FakeLink()
     readings = qc.measure_mapping(link, HZ)
     assert qc.evaluate_mapping(HZ, readings) == []
     assert all(PARTIAL not in row for by_n in readings.values() for row in (r for n in by_n.values() for r in n.values()))
+
+
+def test_two_values_are_dropped_because_the_transition_can_sit_in_the_second_one():
+    """DUT A, first hardware run: fan 4's first kept value read 0.88 of the expected one."""
+    assert qc.DISCARD_READINGS == 2
+
+
+def test_measure_mapping_traces_what_it_dropped():
+    trace = []
+    qc.measure_mapping(FakeLink(), HZ, trace=trace)
+    assert len(trace) == 3 * 4 * 4
+    assert all(values == [PARTIAL, PARTIAL] for *_key, values in trace)
+    assert trace[0][:3] == (50, 1, 1)
 
 
 def test_measure_mapping_drives_1_2_3_4_with_everything_off_first_and_last():
@@ -193,10 +206,10 @@ def test_measure_mapping_drives_1_2_3_4_with_everything_off_first_and_last():
     assert link.duty == {n: 0 for n in CHANNELS}
 
 
-def test_measure_mapping_waits_for_one_discarded_plus_two_kept_values_within_the_settle_deadline():
+def test_measure_mapping_waits_for_two_dropped_plus_two_kept_values_within_the_settle_deadline():
     link = FakeLink()
     qc.measure_mapping(link, HZ)
-    steps = [w for w in link.waits if w[1] == 1 + qc.READINGS_PER_CHECK]
+    steps = [w for w in link.waits if w[1] == qc.DISCARD_READINGS + qc.READINGS_PER_CHECK]
     assert len(steps) == 3 * 4 * 4  # duties x driven channels x tachs
     assert all(0 <= deadline <= qc.FAN_SETTLE_S for _name, _n, deadline in link.waits)
 

@@ -36,6 +36,7 @@ def test_named_deadlines():
     assert dut.OTA_BOOT_S == 90
     assert dut.OTA_CONFIRM_WINDOW_S == 75
     assert qc.FAN_SETTLE_S == 15
+    assert qc.DISCARD_READINGS == 2
     assert dutlink.API_CONNECT_S == 10
     assert dutlink.RECONNECT_S == 1
     assert dutlink.COMMAND_S == 5

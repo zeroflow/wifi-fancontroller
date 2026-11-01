@@ -15,6 +15,10 @@ from . import RigError, entities
 MAPPING_TOLERANCE = 0.10
 FAN_SETTLE_S = 15  # one phase (a duty step and the readings that follow it)
 READINGS_PER_CHECK = 2
+# Fresh values dropped after a command. Two, not one: the command can land just after a
+# tach publish, so the first fresh value is a pure old-state window and the second one the
+# partial window that holds the transition (seen on DUT A: 0.88 of the expected reading).
+DISCARD_READINGS = 2
 DUTIES = (50, 100, 0)
 CHANNELS = entities.CHANNELS
 
@@ -93,14 +97,15 @@ def _fans_off(link, channels, strict):
         raise RigError("fans not switched off: %s" % "; ".join(failed))
 
 
-def measure_mapping(link, fan_hz, channels=CHANNELS):
+def measure_mapping(link, fan_hz, channels=CHANNELS, trace=None):
     """Drive each channel at 50 %, 100 % and off in turn and read every tach (D-28).
 
-    Channels run in the order given with every other fan off. For each step the first fresh
-    value of a tach after the command is discarded (it covers a partial interval) and the next
-    READINGS_PER_CHECK are kept; one deadline of FAN_SETTLE_S covers the step. Every fan is
-    switched off at the end, also when the measurement is cut short. `fan_hz` is only used by
-    the evaluators; the DUT is driven by duty alone.
+    Channels run in the order given with every other fan off. For each step the first
+    DISCARD_READINGS fresh values of a tach after the command are dropped (one of them covers
+    the transition) and the next READINGS_PER_CHECK are kept; one deadline of FAN_SETTLE_S
+    covers the step. Every fan is switched off at the end, also when the measurement is cut
+    short. `fan_hz` is not used here (the DUT is driven by duty alone); the evaluators take it.
+    `trace`, when a list, receives (duty, n, m, dropped values) for the record.
     """
     tachs = {m: entities.FAN_SPEED[m] for m in channels}
     readings = {duty: {n: {} for n in channels} for duty in DUTIES}
@@ -116,8 +121,12 @@ def measure_mapping(link, fan_hz, channels=CHANNELS):
                 _drive(link, n, duty)
                 end = time.monotonic() + FAN_SETTLE_S
                 for m, name in tachs.items():
-                    fresh = link.wait_fresh(name, afters[m], 1 + READINGS_PER_CHECK, end - time.monotonic())
-                    readings[duty][n][m] = fresh[1:]
+                    fresh = link.wait_fresh(
+                        name, afters[m], DISCARD_READINGS + READINGS_PER_CHECK, end - time.monotonic()
+                    )
+                    readings[duty][n][m] = fresh[DISCARD_READINGS:]
+                    if trace is not None:
+                        trace.append((duty, n, m, fresh[:DISCARD_READINGS]))
     except BaseException:
         _fans_off(link, channels, strict=False)
         raise

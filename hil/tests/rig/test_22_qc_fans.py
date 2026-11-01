@@ -25,7 +25,7 @@ from hil import config, qc
 pytestmark = pytest.mark.image("qc-auto")
 
 
-def write_report(fan_hz, readings, problems):
+def write_report(fan_hz, readings, problems, dropped):
     reports = config.reports_dir()
     reports.mkdir(parents=True, exist_ok=True)
     table = qc.ratio_table(fan_hz, readings)
@@ -36,6 +36,8 @@ def write_report(fan_hz, readings, problems):
                      for d, by_n in readings.items()},
         "ratios": {str(n): record for n, record in table.items()},
         "problems": [list(p) for p in problems],
+        # the values dropped after each command, for the record (not evaluated)
+        "dropped": [[duty, n, m, values] for duty, n, m, values in dropped],
     }
     (reports / "qc-fans-dut-a.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return table
@@ -43,9 +45,10 @@ def write_report(fan_hz, readings, problems):
 
 def test_fan_channels_map_to_their_own_tach(dut_link, fw_manifest):
     fan_hz = fw_manifest.image("qc-auto").fan_hz
-    readings = qc.measure_mapping(dut_link, fan_hz)
+    dropped = []
+    readings = qc.measure_mapping(dut_link, fan_hz, trace=dropped)
     problems = qc.evaluate_mapping(fan_hz, readings)
-    table = write_report(fan_hz, readings, problems)
+    table = write_report(fan_hz, readings, problems, dropped)
     for n, record in table.items():
         own = ",".join("%g" % v for v in record["own"])
         others = [record["others"][m] for m in sorted(record["others"])]
