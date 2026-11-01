@@ -4,6 +4,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import sys
 import time
 import types
@@ -248,6 +249,7 @@ class FakeTap:
         self.closed = closed
         self.marks = []
         self.asked = []
+        self.waited = []
 
     def mark(self, name):
         self.marks.append(name)
@@ -255,6 +257,13 @@ class FakeTap:
     def text(self, since, until=None):
         self.asked.append(since)
         return self.window
+
+    def wait_for(self, regex, since, deadline_s):
+        self.waited.append((regex, since, deadline_s))
+        found = re.search(regex, self.window)
+        if not found:
+            raise RigError("no match for /%s/ within %ss" % (regex, deadline_s))
+        return found
 
 
 class FakeSupervisor:
@@ -399,31 +408,64 @@ def test_closed_tap_is_a_rig_error_not_a_pass(rig):
 # Rollback window ----------------------------------------------------------------------
 
 
-def test_reset_inside_the_confirmation_window_raises_and_presses_nothing(rig):
+BOOT_OK = "[I][safe_mode:154]: Boot seems successful; resetting boot loop counter\r\n"
+
+
+def test_reset_inside_the_window_without_boot_ok_is_refused_and_presses_nothing(rig):
     device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID])
     device.ota(rig.image, noise_psk=KEY)
     assert device.unconfirmed_until > time.monotonic() + dut_module.OTA_CONFIRM_WINDOW_S - 5
-    with pytest.raises(RigError, match="EN reset refused"):
+    with pytest.raises(RigError, match="EN reset refused: the OTA image was not confirmed"):
         device.reset()
     assert supervisor.pressed == [] and "reset_pressed" not in tap.marks
+    assert not any(m.startswith("reset_") for m in tap.marks)
+    assert device.budget.report()["used"] == 1  # only the OTA reboot; the refused press is no boot
 
 
-def test_reset_after_the_window_presses_reset(rig):
+def test_reset_inside_the_window_waits_for_boot_ok_since_the_ota_end_mark_then_presses_once(rig):
+    device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY)
+    mark = device.reset()
+    assert supervisor.pressed == [contract.BUTTON["A"]["reset"]]
+    assert mark == "reset_1" and mark in tap.marks and "reset_pressed" in tap.marks
+    regex, since, deadline = tap.waited[-1]
+    assert re.search(regex, BOOT_OK) and since == "ota_end_qc-auto"
+    assert deadline <= dut_module.CONFIRM_WAIT_S
+    assert device.unconfirmed_until == 0.0  # the window is cleared once confirmed
+
+
+def test_reset_inside_the_window_with_no_tap_or_a_closed_tap_is_refused(rig):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID])
+    device.unconfirmed_until = time.monotonic() + 50
+    device.tap = None
+    with pytest.raises(RigError, match="EN reset refused"):
+        device.reset()
+    device.tap = FakeTap(window=BOOT_OK, closed=True)
+    device._ota_mark = "ota_end_qc-auto"
+    with pytest.raises(RigError, match="EN reset refused"):
+        device.reset()
+    assert supervisor.pressed == []
+
+
+def test_reset_after_the_window_presses_reset_and_records_an_en_reset(rig):
     device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID])
     device.unconfirmed_until = time.monotonic() - 1
     device.reset()
     assert supervisor.pressed == [contract.BUTTON["A"]["reset"]] and "reset_pressed" in tap.marks
+    assert [b["cause"] for b in device.budget.report()["boots"]] == ["en_reset"]
 
 
 def test_a_serial_flash_ends_the_window(rig):
     flasher = SimpleNamespace(
         write=lambda regions, deadline_s: SimpleNamespace(ok=True, verified=True, duration_s=1.0, reason="", output_tail="")
     )
-    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID])
+    tap = FakeTap(window=BANNER + "ROM: boot:0x0 (DOWNLOAD(USB/UART0))\r\n")
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID], tap=tap)
     device._flasher = flasher
     device.unconfirmed_until = time.monotonic() + 100
     device.flash_regions([("0x0", "fw.bin")])
     assert supervisor.pressed[-1] == contract.BUTTON["A"]["reset"]
+    assert [b["cause"] for b in device.budget.report()["boots"]] == ["flash_reset"]
 
 
 def test_timing_constants_cover_boot_is_good_after():

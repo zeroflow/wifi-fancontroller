@@ -9,13 +9,15 @@ import asyncio
 import hashlib
 import json
 import os
+import socket
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from aioesphomeapi import APIClient, APIConnectionError
 
-from . import FirmwareFailure, RigError, bootlog, config, contract
+from . import FirmwareFailure, RigError, bootlog, config, contract, entities, manifest
+from .budget import ResetBudget, SafeModeError
 from .flasher import FLASH_ATTEMPT_S
 from .ota import Ota
 
@@ -26,6 +28,47 @@ BOOTLOADER_SETTLE_S = 0.5
 FLASH_ATTEMPTS = 2
 OTA_BOOT_S = 90  # upload finished -> the new build ID answers on the API
 OTA_CONFIRM_WINDOW_S = 75  # safe_mode boot_is_good_after (60 s) plus margin; see Dut.reset
+BOOTLOADER_BANNER_S = 3  # Bootloader pressed -> the ROM download-mode banner is on UART0
+CONFIRM_WAIT_S = 75  # most an EN reset waits for 'Boot seems successful' of an unconfirmed OTA image
+SETTLE_S = 10  # one shared deadline for the whole of Dut.settle
+SAFE_MODE_DETECT_S = 45  # most a safe-mode press may take until SAFE MODE IS ACTIVE shows on UART0
+PORT_PROBE_S = 2  # TCP connect deadline of the OTA / API port probes after an API timeout
+OTA_PORT = 3232
+
+# HARN-03: every rig test names the image DUT A runs before and after it (marker `image`), except the
+# tests listed here. A new rig test cannot become exempt by omission: it needs an entry and a reason.
+STATE_EXEMPT = {
+    "test_00_contract.py": "supervisor-only: checks the supervisor contract and switch states, never touches DUT A",
+}
+
+
+def state_roles(marker, module_name, roles=None):
+    """(before, after) image roles a test starts and ends in, from its `image` marker.
+
+    `image("qc-auto")` is ("qc-auto", "qc-auto"); the keywords before= and after= override one side
+    and may be given alone (`image(after="commit")` is (None, "commit")). No marker is allowed only
+    for the modules in STATE_EXEMPT and returns None. Pure: collection calls it without a manifest or
+    rig.toml (roles=None checks the names against the roles a manifest can hold); the state fixture
+    calls it again with the roles of the loaded manifest, so a role the manifest lacks is a RigError.
+    """
+    if marker is None:
+        if module_name in STATE_EXEMPT:
+            return None
+        raise RigError("%s: no image marker and no recorded HARN-03 exemption" % module_name)
+    if len(marker.args) > 1 or set(marker.kwargs) - {"before", "after"}:
+        raise RigError("%s: image() takes one role, or the keywords before= and after=" % module_name)
+    before = after = marker.args[0] if marker.args else None
+    before = marker.kwargs.get("before", before)
+    after = marker.kwargs.get("after", after)
+    if before is None and after is None:
+        raise RigError("%s: image() names no role" % module_name)
+    known = set(manifest.ROLE_BUILD_ID_RE) if roles is None else set(roles)
+    for role in (before, after):
+        if role is not None and (not isinstance(role, str) or role not in known):
+            raise RigError(
+                "%s: image role %r is not %s" % (module_name, role, "a known role" if roles is None else "in the manifest")
+            )
+    return before, after
 
 
 @dataclass(frozen=True)
@@ -50,20 +93,76 @@ class Dut:
         # monotonic() until which a freshly OTA-ed image is unconfirmed: ESP32 rollback is on,
         # and an EN reset before boot_is_good_after silently boots the previous image.
         self.unconfirmed_until = 0.0
+        self._ota_mark = None  # the ota_end_<role> mark of the OTA that opened the window
+        self.budget = ResetBudget(label="DUT %s" % dut_id)
+        self._marks = 0  # unique mark names: bootloader_<n>, reset_<n>
+        self._in_bootloader = False
 
     def _mark(self, name):
         if self.tap is not None:
             self.tap.mark(name)
 
+    def _next_mark(self, prefix):
+        self._marks += 1
+        return "%s_%d" % (prefix, self._marks)
+
     def enter_bootloader(self):
+        """Press Bootloader and, with a tap, wait for the ROM download-mode banner (RigError without it).
+
+        The banner is the signal that esptool will find the chip in the loader; without a tap
+        (teardown builds its Dut without one) the settle delay stays and esptool's own sync is the
+        confirmation.
+        """
+        self._in_bootloader = True
+        if self.tap is None:
+            self._supervisor.press(contract.BUTTON[self.id]["bootloader"])
+            time.sleep(BOOTLOADER_SETTLE_S)
+            return
+        mark = self._next_mark("bootloader")
+        self._mark(mark)
         self._supervisor.press(contract.BUTTON[self.id]["bootloader"])
-        time.sleep(BOOTLOADER_SETTLE_S)
+        code = bootlog.DOWNLOAD_BOOT[self.cfg.chip]
+        try:
+            self.tap.wait_for(bootlog.download_banner_regex(self.cfg.chip), since=mark, deadline_s=BOOTLOADER_BANNER_S)
+        except RigError:
+            raise RigError(
+                "DUT %s did not enter download mode (no %s within %d s)" % (self.id, code, BOOTLOADER_BANNER_S)
+            ) from None
+
+    def _wait_confirmed(self):
+        """Inside the rollback window: wait for 'Boot seems successful' or refuse. Never presses."""
+        left = self.unconfirmed_until - time.monotonic()
+        if left <= 0:
+            return
+        refusal = RigError("EN reset refused: the OTA image was not confirmed (no 'Boot seems successful')")
+        if self.tap is None or self.tap.closed or self._ota_mark is None:
+            raise refusal
+        try:
+            self.tap.wait_for(bootlog.BOOT_OK_RE.pattern, since=self._ota_mark, deadline_s=min(left, CONFIRM_WAIT_S))
+        except RigError:
+            raise refusal from None
+        self.unconfirmed_until = 0.0
 
     def reset(self):
-        if time.monotonic() < self.unconfirmed_until:
-            raise RigError("EN reset refused: the OTA image is not confirmed yet (rollback window)")
+        """Press Reset and return the mark that precedes the press (the start of the boot to wait for).
+
+        Leaving the bootloader after a flash or a read is always allowed and only recorded. An EN
+        reset of a running image is budgeted (ResetBudgetExhausted before the press) and, while the
+        running OTA image is unconfirmed, waits for its 'Boot seems successful' or is refused.
+        """
+        if self._in_bootloader:
+            cause = "flash_reset"
+        else:
+            self._wait_confirmed()
+            self.budget.before_reset()
+            cause = "en_reset"
+        mark = self._next_mark("reset")
+        self._mark(mark)
         self._mark("reset_pressed")
         self._supervisor.press(contract.BUTTON[self.id]["reset"])
+        self._in_bootloader = False
+        self.budget.record(cause)
+        return mark
 
     def _announce_retry(self, reason):
         label = "DUT %s" % self.id
@@ -172,6 +271,105 @@ class Dut:
             time.sleep(1)
         raise RigError("DUT %s API did not answer within %ss (last: %s)" % (self.id, deadline_s, last))
 
+    def _port_open(self, port):
+        """True when a TCP connect to the DUT's port succeeds within PORT_PROBE_S."""
+        try:
+            socket.create_connection((self.cfg.host, port), timeout=PORT_PROBE_S).close()
+        except OSError:
+            return False
+        return True
+
+    def _safe_mode_error(self, evidence):
+        self.budget.record("safe_mode_reboot", orderly=True)  # safe mode clears the firmware's boot counter
+        report = self.budget.report()
+        return SafeModeError(
+            "DUT %s booted into ESPHome safe mode (%s); boots this run: %d, streak %d/%d"
+            % (self.id, evidence, report["used"], report["streak"], report["limit"])
+        )
+
+    def check_safe_mode_ports(self):
+        """Raise SafeModeError when the OTA port answers and the API port refuses (no API, OTA up: safe mode)."""
+        if self._port_open(OTA_PORT) and not self._port_open(contract.API_PORT):
+            raise self._safe_mode_error(
+                "port %d answers and API port %d refuses" % (OTA_PORT, contract.API_PORT)
+            )
+
+    def wait_running(self, noise_psk, since_mark, deadline_s=API_WAIT_S):
+        """The DUT's device_info once it has booted after `since_mark` and answers on the API.
+
+        Poll a fresh client once a second (no ReconnectLogic). With a tap, two things come first: the
+        UART0 text since the mark is scanned for ESPHome safe mode (SafeModeError, never a plain
+        timeout), and an answer only counts after the ROM boot banner since the mark, so the old image
+        answering for a moment after a press cannot be mistaken for the new boot. At the deadline the
+        ports tell safe mode from a dead DUT: SafeModeError when 3232 answers and 6053 refuses, else RigError.
+        """
+        end = time.monotonic() + deadline_s
+        last = "no attempt finished"
+        booted = self.tap is None  # without a tap the boot cannot be told from the answer
+        while True:
+            if self.tap is not None:
+                text = self.tap.text(since_mark)
+                found = bootlog.safe_mode_lines(text)
+                if found:
+                    raise self._safe_mode_error(found[0])
+                booted = booted or bootlog.has_boot_banner(text, self.cfg.chip)
+            if booted:
+                try:
+                    info = self.probe(noise_psk)
+                    self._mark("api_ready")
+                    return info
+                except RigError:
+                    last = "attempt timed out"
+                except (APIConnectionError, OSError, TimeoutError) as exc:
+                    last = type(exc).__name__
+            else:
+                last = "no ROM boot banner since %s" % since_mark
+            if time.monotonic() >= end:
+                break
+            time.sleep(1)
+        if booted:
+            self.check_safe_mode_ports()
+        raise RigError("DUT %s API did not answer within %ss (last: %s)" % (self.id, deadline_s, last))
+
+    def settle(self, link):
+        """Bring DUT A's inputs and outputs to the CLEAN baseline without a reboot; returns the sorted problems.
+
+        Reset levels, lowest first (HARN-03): this settle (no reboot, between tests); one budgeted EN
+        reset (reset(), only after a settle found problems, at most once per test); a reflash
+        (flash_regions: the smoke test and teardown only, never inside a test).
+
+        CLEAN: all four fans commanded off with a fresh tach reading of 0 each, every Button USRn OFF
+        on the DUT API, every supervisor USR switch OFF. One deadline, SETTLE_S, covers the whole
+        settle, whatever the number of signals; a signal that never arrives is a problem, not a pass.
+        """
+        end = time.monotonic() + SETTLE_S
+        problems = []
+        before = {n: link.count(entities.FAN_SPEED[n]) for n in entities.CHANNELS}
+        for n in entities.CHANNELS:
+            link.fan(n, False)
+        for n in entities.CHANNELS:
+            name = entities.FAN_SPEED[n]
+            wanted = 1
+            while True:
+                fresh = link.wait_fresh(name, before[n], wanted, max(0.0, end - time.monotonic()))
+                if len(fresh) < wanted:
+                    problems.append("%s: no fresh reading within %d s" % (name, SETTLE_S))
+                    break
+                if fresh[-1] == 0:
+                    break
+                if time.monotonic() >= end:
+                    problems.append("%s still reads %s" % (name, fresh[-1]))
+                    break
+                wanted += 1  # a partial window right after the command: the next fresh one decides
+        for name in entities.BUTTON_USR.values():
+            if link.wait_value(name, lambda value: value is False, max(0.0, end - time.monotonic())) is None:
+                problems.append("%s is not OFF" % name)
+        for n in (1, 2, 3):
+            name = contract.SWITCH[self.id]["usr%d" % n]
+            if self._supervisor.switch_is_on(name) is not False:
+                problems.append("supervisor switch '%s' is not OFF" % name)
+        return sorted(problems)
+
     def _write_ota_report(self):
         reports = config.reports_dir()
         reports.mkdir(parents=True, exist_ok=True)
@@ -230,6 +428,8 @@ class Dut:
             raise FirmwareFailure("OTA to %s failed (%s); last output:\n%s" % (role, result.reason, result.output_tail))
         if not reported_done:
             self._mark(end_mark)
+        self._ota_mark = end_mark
+        self.budget.record("ota_reboot", orderly=True)  # the DUT reboots at once after the upload, orderly
         window_start = end_mark if reported_done else "ota_start_%s" % role
 
         started = time.monotonic()

@@ -283,6 +283,9 @@ WORST_CASE_S = {
     "test_fan_channels_map_to_their_own_tach": fan_steps_s() + ALLOWANCE_S,
     "test_hdc1080_reports_plausible_climate": qc.HDC_WINDOW_S + ALLOWANCE_S,
     "test_usr_button_reaches_dut": 3 * qc.USR_WAIT_S + 3 * supervisor.PRESS_S,
+    "test_safe_mode_boot_is_reported_as_safe_mode": (
+        dut.SAFE_MODE_DETECT_S + dut.CONFIRM_WAIT_S + supervisor.PRESS_S + dut.API_WAIT_S + ALLOWANCE_S
+    ),
     "test_canary_swap_is_detected": ota_s() + fan_steps_s() + ALLOWANCE_S,
     "test_ota_back_to_commit_image": ota_s() + ALLOWANCE_S,
 }
