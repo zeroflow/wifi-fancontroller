@@ -25,14 +25,94 @@ PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 
 class Collector:
-    """pytest plugin: remember every RigError, whichever phase raised it."""
+    """pytest plugin: every RigError, and what each test did (passed, failed, skipped and why).
+
+    The run's verdict is decided from these facts by decide_verdict, never from pytest's
+    exit code alone: exit 0 also means "everything was skipped" or "the canary never ran".
+    """
 
     def __init__(self):
         self.rig_errors = []
+        self.skipped = []  # {"nodeid", "reason"} in the order pytest reported them
+        self._canary = set()
+        self._call_passed = set()
+        self._failed = set()
 
     def pytest_runtest_makereport(self, item, call):
         if call.excinfo is not None and isinstance(call.excinfo.value, RigError):
             self.rig_errors.append(str(call.excinfo.value))
+        if item.get_closest_marker("canary") is not None:
+            self._canary.add(item.nodeid)
+
+    def pytest_runtest_logreport(self, report):
+        if report.failed:
+            self._failed.add(report.nodeid)
+        elif report.skipped and not hasattr(report, "wasxfail"):
+            self.skipped.append({"nodeid": report.nodeid, "reason": skip_reason(report)})
+        elif report.passed and report.when == "call":
+            self._call_passed.add(report.nodeid)
+
+    @property
+    def passed(self):
+        """Tests whose call phase passed and in which no phase failed."""
+        return len(self._call_passed - self._failed)
+
+    @property
+    def failed(self):
+        return len(self._failed)
+
+    @property
+    def canary_passed(self):
+        return bool((self._canary & self._call_passed) - self._failed)
+
+    def canary_state(self):
+        """Why no canary passed: the skip reason of the canary test, or 'not run'."""
+        reasons = [s["reason"] for s in self.skipped if s["nodeid"] in self._canary]
+        return "skipped: " + "; ".join(reasons) if reasons else "not run"
+
+    def report(self):
+        return {
+            "passed": self.passed,
+            "failed": self.failed,
+            "failed_tests": sorted(self._failed),
+            "skipped": list(self.skipped),
+            "canary_passed": self.canary_passed,
+        }
+
+
+def skip_reason(report):
+    """The reason text of a skipped report (the third element of its longrepr tuple)."""
+    longrepr = report.longrepr
+    text = longrepr[2] if isinstance(longrepr, tuple) and len(longrepr) == 3 else str(longrepr or "")
+    return text.removeprefix("Skipped: ")
+
+
+def decide_verdict(code, collector):
+    """(verdict, lines to print) from pytest's exit code and what the Collector saw.
+
+    A green run (exit 0) must contain a passed canary detection (D-31, QC-06): a canary that
+    was skipped by a missing capability, deselected or never collected is RIG ERROR, never PASS.
+    """
+    if code == 0:
+        if not collector.canary_passed:
+            return "RIG ERROR", [
+                "RIG ERROR: the canary was not detected in this run (%s); a run without canary detection is never green"
+                % collector.canary_state()
+            ]
+        return "PASS", []
+    if collector.rig_errors:
+        return "RIG ERROR", ["RIG ERROR: %s" % message for message in collector.rig_errors]
+    if code == 1:
+        return "FAIL", []
+    if code == 2:
+        return "INTERRUPTED", []
+    return "RIG ERROR", []
+
+
+def write_tests_report(collector):
+    reports = config.reports_dir()
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "tests.json").write_text(json.dumps(collector.report(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _terminate(_signum, _frame):
@@ -104,9 +184,10 @@ def _run(holder):
     build_id = None
     reports = config.reports_dir()
     reports.mkdir(parents=True, exist_ok=True)
-    stale = reports / "dut-a.json"
-    if stale.exists():
-        stale.unlink()
+    for name in ("dut-a.json", "tests.json"):
+        stale = reports / name
+        if stale.exists():
+            stale.unlink()
     try:
         rig = load_rig()
         holder["rig"] = rig
@@ -127,18 +208,10 @@ def _run(holder):
     except KeyboardInterrupt:
         code = 2
     code = int(code)
-    if code == 0:
-        verdict = "PASS"
-    elif collector.rig_errors:
-        verdict = "RIG ERROR"
-        for message in collector.rig_errors:
-            print("RIG ERROR: %s" % message)
-    elif code == 1:
-        verdict = "FAIL"
-    elif code == 2:
-        verdict = "INTERRUPTED"
-    else:
-        verdict = "RIG ERROR"
+    write_tests_report(collector)
+    verdict, lines = decide_verdict(code, collector)
+    for line in lines:
+        print(line)
     return write_verdict(verdict, commit, build_id)
 
 

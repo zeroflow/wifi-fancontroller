@@ -32,6 +32,7 @@ requires-dist = ["aioesphomeapi==46.12.0"]
 markers = [
     "image(before=None, after=None): manifest role DUT A must run before and after the test (HARN-03)",
     "requires(*capabilities): rig.toml capabilities the test needs; missing ones skip with a reason (HARN-02)",
+    "canary: the QC-06 canary detection test; a run in which no canary-marked test passed is never green (D-31)",
 ]
 testpaths = ["tests"]
 pythonpath = ["."]

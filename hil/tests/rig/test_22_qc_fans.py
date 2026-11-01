@@ -22,7 +22,7 @@ import pytest
 
 from hil import config, qc
 
-pytestmark = pytest.mark.image("qc-auto")
+pytestmark = [pytest.mark.image("qc-auto"), pytest.mark.requires("fan_tach_bridge")]
 
 
 def write_report(fan_hz, readings, problems, dropped):

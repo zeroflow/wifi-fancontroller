@@ -9,7 +9,8 @@ map to themselves, everything else reads 0.
 There is no expected-failure marker. A canary that slips through (the mapping looks
 perfect), a dead API, all-zero readings, another fault or a wrong build ID are not
 detection: the test fails and the run is red. A skipped, deselected or uncollected canary
-must not leave a run green either; the verdict rule for that lands with plan 02-11.
+must not leave a run green either: a run in which this test did not pass is never green
+(the canary marker; hil.__main__.decide_verdict ends such a run RIG ERROR).
 """
 
 import json
@@ -19,7 +20,11 @@ import pytest
 from hil import config, qc
 from hil.dut import API_WAIT_S
 
-pytestmark = pytest.mark.image(before="qc-auto", after="canary")
+pytestmark = [
+    pytest.mark.image(before="qc-auto", after="canary"),
+    pytest.mark.requires("fan_tach_bridge"),
+    pytest.mark.canary,
+]
 
 
 def test_canary_swap_is_detected(dut_a, dut_link, fw_manifest, rig_config):
