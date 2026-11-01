@@ -114,7 +114,7 @@ MIN_VALUE_LENGTH = 8
 FAILURE_TAIL_LINES = 80
 
 PYPROJECT = os.path.join("hil", "pyproject.toml")
-PINNED_PACKAGES = ("aioesphomeapi", "esptool")
+PINNED_PACKAGES = ("aioesphomeapi", "esptool", "esphome")
 PIN_RE = re.compile(r"^([A-Za-z0-9_.-]+)==([A-Za-z0-9_.+!-]+)$")
 
 COMMIT_RE = re.compile(r"^[0-9a-f]{40}$")
@@ -765,7 +765,7 @@ def parse_args(argv):
                         help="resolve every target with placeholder values and check framework, "
                              "entities and the canary fault; builds nothing")
     parser.add_argument("--check-pins", action="store_true",
-                        help="compare the installed aioesphomeapi and esptool with hil/pyproject.toml")
+                        help="compare the installed aioesphomeapi, esptool and esphome with hil/pyproject.toml")
     return parser.parse_args(argv)
 
 
@@ -1115,19 +1115,24 @@ def self_test():
 
     # 8. The pin guard: equal versions pass, any difference or absence exits 2.
     toml_text = ('[project]\nname = "x"\ndependencies = [\n    "aioesphomeapi==46.12.0",\n'
-                 '    "esptool==5.4.0",\n    "pytest==9.2.0",\n]\n')
-    check("pin reader finds both pins",
-          pinned_versions(toml_text) == {"aioesphomeapi": "46.12.0", "esptool": "5.4.0"})
+                 '    "esptool==5.4.0",\n    "esphome==2026.10.1",\n    "pytest==9.2.0",\n]\n')
+    good = {"aioesphomeapi": "46.12.0", "esptool": "5.4.0", "esphome": "2026.10.1"}
+    check("pin reader finds all three pins", pinned_versions(toml_text) == good)
     check("pin reader refuses a missing pin",
           raises(pinned_versions, '[project]\ndependencies = ["esptool==5.4.0"]\n') is not None)
+    check("pin reader refuses a missing esphome pin",
+          raises(pinned_versions, '[project]\ndependencies = ["aioesphomeapi==46.12.0", "esptool==5.4.0"]\n')
+          is not None)
     import contextlib
     import io
     with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
-        same = check_pins(toml_text, lambda n: {"aioesphomeapi": "46.12.0", "esptool": "5.4.0"}[n])
-        drift = check_pins(toml_text, lambda n: {"aioesphomeapi": "46.23.0", "esptool": "5.4.0"}[n])
+        same = check_pins(toml_text, lambda n: good[n])
+        drift = check_pins(toml_text, lambda n: dict(good, aioesphomeapi="46.23.0")[n])
+        esphome_drift = check_pins(toml_text, lambda n: dict(good, esphome="2026.11.0")[n])
         absent = check_pins(toml_text, lambda n: None)
     check("equal versions pass", same == 0, str(same))
     check("a version difference exits 2", drift == 2, str(drift))
+    check("an esphome version difference exits 2", esphome_drift == 2, str(esphome_drift))
     check("a missing package exits 2", absent == 2, str(absent))
 
     # 9. Multi-target builds: shared names, equal images, stray files, manifest last.

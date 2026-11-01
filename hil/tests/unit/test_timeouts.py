@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from hil import RigError, contract, dut, flasher, serial_tap, supervisor, teardown
+from hil import RigError, contract, dut, flasher, ota, serial_tap, supervisor, teardown
 
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
@@ -32,6 +32,9 @@ def test_named_deadlines():
     assert flasher.FLASH_ATTEMPT_S == 120
     assert dut.API_WAIT_S == 90
     assert dut.BOOT_SETTLE_S == 15
+    assert ota.OTA_ATTEMPT_S == 180
+    assert dut.OTA_BOOT_S == 90
+    assert dut.OTA_CONFIRM_WINDOW_S == 75
 
 
 def test_per_test_timeout_exceeds_sum_of_operation_deadlines():
@@ -45,6 +48,11 @@ def test_per_test_timeout_exceeds_sum_of_operation_deadlines():
         + dut.BOOT_SETTLE_S
     )
     assert ini()["timeout"] > smoke
+
+
+def test_one_ota_test_fits_its_ceiling():
+    """The OTA test of D-23: upload, then the new build ID, plus the API connect of the last probe and slack."""
+    assert ota.OTA_ATTEMPT_S + dut.OTA_BOOT_S + dut.API_CONNECT_S + 30 < ini()["timeout"]
 
 
 def hil_job():
