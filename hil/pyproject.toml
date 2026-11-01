@@ -38,21 +38,21 @@ testpaths = ["tests"]
 pythonpath = ["."]
 # -rs: every skip and its reason appear in the run output, so a capability skip is visible (HARN-02).
 addopts = "-p no:cacheprovider -rs"
-# Deadlines nest: operation (flash 120 s, API 90 s, OTA 180 s, ...) < per-test 600 s < session
+# Deadlines nest: operation (flash 120 s, API 90 s, OTA 180 s, ...) < per-test 620 s < session
 # 780 s < "Run hardware check" step (26 min = 1560 s) < job (60 min, the policy cap).
 # The HARD ceilings are the per-test timeout below and the step-level timeout-minutes in
 # hil.yml, which also cap Teardown (15 min, longer than its all-deadlines-hit worst case); the step budgets sum
 # to 59 min so the job deadline can never fall inside Teardown. tests/unit/test_timeouts.py
 # computes the sums and the run-step bound (connect + release + session + one overshooting test
-# + release + API connect = 1520 s < 1560 s) from the code and fails if they drift.
+# + release + API connect = 1540 s < 1560 s) from the code and fails if they drift.
 # session_timeout is cooperative only: pytest-timeout checks it after a test has finished and
 # cannot interrupt a running one, so a test started just before it may run its whole timeout.
 # A run it ends is RIG ERROR ("run cut by the session deadline"), never PASS or FAIL
 # (hil/__main__.py decide_verdict), and the run-step bound keeps the step ceiling from cutting first.
-# Per-test worst cases (tests/unit/test_timeouts.py WORST_CASE_S): smoke about 405 s, OTA about 310 s,
-# canary about 505 s before 02-07 adds its state checks; 600 s covers each with room.
+# Per-test worst cases (tests/unit/test_timeouts.py WORST_CASE_S, with the 100 s state-check allowance of
+# 02-07 on every test that has an image marker): smoke 506 s, OTA 410 s, canary 605 s; 620 s covers each.
 # Signal mode raises inside the test so fixture finalizers (switches off) still run.
-timeout = 600
+timeout = 620
 timeout_method = "signal"
 session_timeout = 780
 

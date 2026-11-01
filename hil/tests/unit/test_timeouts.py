@@ -1,5 +1,6 @@
 """Deadlines nest, and a pytest-timeout in signal mode still runs finalizers."""
 
+import ast
 import asyncio
 import socket
 import subprocess
@@ -13,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from hil import RigError, contract, dut, dutlink, flasher, ota, qc, serial_tap, supervisor, teardown
+from hil import RigError, budget, contract, dut, dutlink, flasher, ota, qc, serial_tap, supervisor, teardown
 
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
@@ -35,7 +36,16 @@ def test_named_deadlines():
     assert ota.OTA_ATTEMPT_S == 180
     assert dut.OTA_BOOT_S == 90
     assert dut.OTA_CONFIRM_WINDOW_S == 75
+    assert dut.BOOTLOADER_BANNER_S == 3
+    assert dut.CONFIRM_WAIT_S == 75
+    assert dut.SETTLE_S == 10
+    assert dut.SAFE_MODE_DETECT_S == 45
+    assert budget.RESET_BUDGET_LIMIT == 8
+    assert budget.RESET_DECAY_S == 70
     assert qc.FAN_SETTLE_S == 15
+    assert qc.HDC_WINDOW_S == 30
+    assert qc.USR_WAIT_S == 5
+    assert qc.TEXT_SENSOR_WAIT_S == 10
     assert qc.DISCARD_READINGS == 2
     assert dutlink.API_CONNECT_S == 10
     assert dutlink.RECONNECT_S == 1
@@ -123,15 +133,15 @@ def run_step_worst_case_s():
 
 
 def test_run_step_ceiling_exceeds_the_session_deadline_plus_one_overshooting_test():
-    """20 + 55 + 780 + 600 + 55 + 10 = 1520 s < 1560 s: the step ceiling is never the cut, the
+    """20 + 55 + 780 + 620 + 55 + 10 = 1540 s < 1560 s: the step ceiling is never the cut, the
     session deadline (RIG ERROR, Task 2 of 02-11) is."""
-    assert run_step_worst_case_s() == 1520
+    assert run_step_worst_case_s() == 1540
     assert run_step_worst_case_s() < step_minutes("Run hardware check") * 60
 
 
 def test_phase_2_budgets_are_the_documented_numbers():
     options = ini()
-    assert (options["timeout"], options["session_timeout"]) == (600, 780)
+    assert (options["timeout"], options["session_timeout"]) == (620, 780)
     assert step_minutes("Run hardware check") == 26
     assert hil_job()["timeout-minutes"] == 60
     steps = [s["timeout-minutes"] for s in hil_job()["steps"]]
@@ -269,12 +279,19 @@ def smoke_s():
     return serial_tap.TAP_CONNECT_S + flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + dut.BOOT_SETTLE_S + ALLOWANCE_S
 
 
+# 02-07: the before and after state checks of a test with an image marker (HARN-03) add one fixed
+# allowance: a settle (SETTLE_S) and one wait for the API to answer again (API_WAIT_S). It is a
+# fixed allowance, not the sum of every check at its deadline: a check that hits a deadline fails
+# the test at once, and the one escalation (EN reset, wait for the boot, settle again) only happens
+# after a test has already ended.
+STATE_CHECK_S = dut.SETTLE_S + dut.API_WAIT_S
+
 # Seconds per rig test function if every named wait of the test ran to its whole deadline, plus the
 # session fixture the test is the first to pull in (the supervisor for test_00, the DutLink for the
-# framework test) and ALLOWANCE_S. Parametrized tests have one row; the sum counts each case.
-# A test that hits a deadline fails at once, so these are the longest a test can take and go on.
-# 02-07 adds the state-check allowance to every row and a row for the safe-mode test.
-WORST_CASE_S = {
+# framework test) and ALLOWANCE_S, WITHOUT the state checks (added below). Parametrized tests have
+# one row; the sum counts each case. A test that hits a deadline fails at once, so these are the
+# longest a test can take and go on.
+BASE_S = {
     "test_supervisor_exposes_contract": SV_CONNECT_S + SV_RELEASE_S + ALLOWANCE_S,
     "test_switches_released": SWITCHES * supervisor.STATE_WAIT + ALLOWANCE_S,
     "test_commit_image_boots_and_reports_build_id": smoke_s(),
@@ -288,6 +305,20 @@ WORST_CASE_S = {
     ),
     "test_canary_swap_is_detected": ota_s() + fan_steps_s() + ALLOWANCE_S,
     "test_ota_back_to_commit_image": ota_s() + ALLOWANCE_S,
+}
+
+
+def exempt_test_functions():
+    """Test functions of the modules dut.STATE_EXEMPT lists: the only rows without the state-check allowance."""
+    names = set()
+    for module in dut.STATE_EXEMPT:
+        tree = ast.parse((HIL_ROOT / "tests" / "rig" / module).read_text(encoding="utf-8"))
+        names |= {n.name for n in ast.walk(tree) if isinstance(n, ast.FunctionDef) and n.name.startswith("test_")}
+    return names
+
+
+WORST_CASE_S = {
+    name: seconds + (0 if name in exempt_test_functions() else STATE_CHECK_S) for name, seconds in BASE_S.items()
 }
 
 
@@ -343,12 +374,41 @@ def test_every_row_stays_below_the_per_test_timeout():
     assert over == {}
 
 
-def test_the_canary_worst_case_fits_the_per_test_timeout_with_room_for_state_checks():
-    """180 s OTA + 90 s boot wait + 13 fan steps of 15 s (the 12 steps and the initial settle)
-    exceeded the old 420 s ceiling; 02-11 raised it to 600 s."""
+def test_state_check_allowance_is_a_settle_plus_one_api_wait():
+    assert STATE_CHECK_S == 100 == dut.SETTLE_S + dut.API_WAIT_S
+
+
+def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowance():
+    """The numbers, written out: the two exempt rows (test_00_contract) are unchanged from 02-11, every
+    other row is its 02-11 value plus 100 s, and the safe-mode test has its own row."""
+    assert exempt_test_functions() == {"test_supervisor_exposes_contract", "test_switches_released"}
+    assert WORST_CASE_S == {
+        "test_supervisor_exposes_contract": 105,
+        "test_switches_released": 80,
+        "test_commit_image_boots_and_reports_build_id": 506,
+        "test_ota_to_qc_auto": 410,
+        "test_dut_runs_the_shipped_framework": 230,
+        "test_fan_channels_map_to_their_own_tach": 325,
+        "test_hdc1080_reports_plausible_climate": 160,
+        "test_usr_button_reaches_dut": 130,
+        "test_safe_mode_boot_is_reported_as_safe_mode": 345,
+        "test_canary_swap_is_detected": 605,
+        "test_ota_back_to_commit_image": 410,
+    }
+
+
+def test_the_canary_worst_case_with_its_state_checks_fits_the_per_test_timeout():
+    """180 s OTA + 90 s boot wait + 13 fan steps of 15 s exceeded the old 420 s ceiling (02-11 raised it to
+    600 s). With 02-07's state checks the canary row is 605 s, so the ceiling is 620 s (the run-step bound
+    in test_run_step_ceiling_exceeds_the_session_deadline_plus_one_overshooting_test moves with it)."""
     assert ota.OTA_ATTEMPT_S + dut.OTA_BOOT_S + 12 * qc.FAN_SETTLE_S > 420
-    assert WORST_CASE_S["test_canary_swap_is_detected"] < ini()["timeout"]
-    assert ini()["timeout"] - WORST_CASE_S["test_canary_swap_is_detected"] >= 90  # left for 02-07's state checks
+    assert WORST_CASE_S["test_canary_swap_is_detected"] == 605
+    assert ini()["timeout"] - WORST_CASE_S["test_canary_swap_is_detected"] >= 15
+
+
+def test_the_safe_mode_test_row_is_its_waits_plus_the_allowances():
+    expected = dut.SAFE_MODE_DETECT_S + dut.CONFIRM_WAIT_S + supervisor.PRESS_S + dut.API_WAIT_S + ALLOWANCE_S + STATE_CHECK_S
+    assert WORST_CASE_S["test_safe_mode_boot_is_reported_as_safe_mode"] == expected < ini()["timeout"]
 
 
 def test_the_worst_case_sum_exceeds_the_session_deadline_by_design(capsys):
