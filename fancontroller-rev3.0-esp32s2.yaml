@@ -79,6 +79,10 @@ light:
     pin: GPIO42
     num_leds: 5 # default, increase if needed
     id: neopixel_light
+    # One 64-symbol RMT block, refilled during transmit. The default of 192
+    # takes three of the four S2 blocks, so a second strip added later would
+    # find no free TX channel. At 64 this strip leaves three blocks free.
+    rmt_symbols: 64
     name: "NeoPixel Light"
     effects:
       - pulse:

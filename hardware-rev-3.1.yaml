@@ -239,6 +239,10 @@ light:
     pin: GPIO01
     num_leds: 5
     id: status_leds
+    # One 64-symbol RMT block, refilled during transmit. The default of 192
+    # takes three of the four S2 blocks, so a second strip finds no free TX
+    # channel. Two strips at 64 leave two blocks free.
+    rmt_symbols: 64
     internal: True
 
   # Board Status LED
