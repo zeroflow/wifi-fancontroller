@@ -245,3 +245,122 @@ def test_a_link_that_cannot_switch_fans_off_is_a_rig_error_after_a_clean_run():
 
     with pytest.raises(RigError, match="fans not switched off"):
         qc.measure_mapping(Stuck(), HZ)
+
+
+# ------------------------------------------------------------ canary_detected (D-31)
+
+
+def swapped(hz=HZ, a=1, b=2):
+    """A device whose fan a drives tach b and the other way round (the canary's fault)."""
+    e = qc.expected_reading(hz)
+    wiring = {n: n for n in CHANNELS}
+    wiring[a], wiring[b] = b, a
+    out = perfect(hz)
+    for n in CHANNELS:
+        for m in CHANNELS:
+            out[50][n][m] = [e, e] if wiring[n] == m else [0, 0]
+    return out
+
+
+SWAP_TEXT = "fan 1 <-> fan 2 swap"
+
+
+def test_canary_detected_on_the_exact_swap_signature():
+    assert qc.canary_detected(HZ, swapped()) == (True, SWAP_TEXT)
+
+
+def test_canary_swap_is_detected_at_1000_hz_too():
+    assert qc.canary_detected(1000, swapped(1000)) == (True, SWAP_TEXT)
+
+
+def test_the_swapped_fixture_has_exactly_the_four_swap_problems():
+    assert [p[:3] for p in qc.evaluate_mapping(HZ, swapped())] == [(50, 1, 1), (50, 1, 2), (50, 2, 1), (50, 2, 2)]
+
+
+def test_canary_not_detected_on_a_perfect_device():
+    detected, text = qc.canary_detected(HZ, perfect())
+    assert (detected, text) == (False, "no swap seen")
+
+
+def test_canary_not_detected_on_an_all_zero_device():
+    zero = {duty: {n: {m: [0, 0] for m in CHANNELS} for n in CHANNELS} for duty in qc.DUTIES}
+    detected, text = qc.canary_detected(HZ, zero)
+    assert detected is False and text == "all channels silent"
+
+
+def test_canary_not_detected_on_a_swap_of_3_and_4():
+    detected, text = qc.canary_detected(HZ, swapped(a=3, b=4))
+    assert detected is False and text.startswith("unexpected problems:")
+
+
+def test_canary_not_detected_when_the_swap_comes_with_a_nonzero_100_percent_reading():
+    detected, text = qc.canary_detected(HZ, with_value(swapped(), 100, 3, 3, [0, 9]))
+    assert detected is False and text.startswith("unexpected problems:") and "duty 100" in text
+
+
+def test_canary_not_detected_when_a_reading_is_missing():
+    for readings in (
+        with_value(swapped(), 50, 3, 3, [E]),
+        with_value(swapped(), 50, 1, 2, []),
+        with_value(swapped(), 0, 4, 4, []),
+    ):
+        detected, text = qc.canary_detected(HZ, readings)
+        assert detected is False and "no fresh reading" in text
+
+
+def test_canary_not_detected_when_the_cross_reading_is_out_of_band_or_the_own_tach_is_not_silent():
+    # fan 1 drives tach 2 only at half the expected value: a different fault, not the swap
+    half = with_value(swapped(), 50, 1, 2, [E // 2, E // 2])
+    assert qc.canary_detected(HZ, half)[0] is False
+    # fan 1 still reads 1 on its own tach: not the clean swap signature
+    leak = with_value(swapped(), 50, 1, 1, [0, 1])
+    assert qc.canary_detected(HZ, leak)[0] is False
+
+
+def test_canary_not_detected_on_nan_readings():
+    nan = float("nan")
+    assert qc.canary_detected(HZ, with_value(swapped(), 50, 2, 1, [nan, nan]))[0] is False
+    all_nan = {duty: {n: {m: [nan, nan] for m in CHANNELS} for n in CHANNELS} for duty in qc.DUTIES}
+    assert qc.canary_detected(HZ, all_nan)[0] is False
+
+
+def test_canary_not_detected_on_the_real_wiring_with_a_dead_tach():
+    dead = perfect()
+    dead[50][2][2] = [0, 0]
+    detected, text = qc.canary_detected(HZ, dead)
+    assert detected is False and text.startswith("unexpected problems:")
+
+
+def test_canary_detection_is_the_only_place_that_knows_the_swap_pair():
+    assert qc.CANARY_SWAP == (1, 2)
+
+
+def test_readings_as_json_has_string_keys_and_survives_a_json_round_trip():
+    import json
+
+    data = qc.readings_as_json(swapped())
+    assert sorted(data) == ["0", "100", "50"]
+    assert json.loads(json.dumps(data))["50"]["1"]["2"] == [E, E]
+
+
+def test_no_rig_test_marks_anything_as_an_expected_failure():
+    """D-31: the canary test passes on detection; nothing in the suite may use xfail."""
+    import ast
+    from pathlib import Path
+
+    tests = Path(__file__).resolve().parents[1]
+    offenders = []
+    for path in sorted(tests.rglob("*.py")):
+        if path == Path(__file__).resolve():
+            continue
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Attribute) and node.attr == "xfail":
+                offenders.append("%s:%d" % (path.relative_to(tests), node.lineno))
+    assert not offenders, ", ".join(offenders)
+
+
+def test_the_canary_test_passes_only_through_canary_detected():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "rig" / "test_30_canary.py").read_text(encoding="utf-8")
+    assert "qc.canary_detected(" in source and "assert detected" in source

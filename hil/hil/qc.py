@@ -23,6 +23,7 @@ DUTIES = (50, 100, 0)
 CHANNELS = entities.CHANNELS
 
 NO_FRESH = "no fresh reading"
+CANARY_SWAP = (1, 2)  # the canary image swaps the PWM pins of these two fans (hil/rev3.2.canary.yaml)
 
 
 def expected_reading(fan_hz):
@@ -58,6 +59,50 @@ def evaluate_mapping(fan_hz, readings, tolerance=MAPPING_TOLERANCE, channels=CHA
                 elif not all(v == 0 for v in values):
                     problems.append((duty, n, m, values, "expected exactly 0"))
     return sorted(problems, key=lambda p: (p[0], p[1], p[2]))
+
+
+def _numbers(readings):
+    return [v for by_n in readings.values() for row in by_n.values() for values in row.values() for v in values]
+
+
+def canary_detected(fan_hz, readings, tolerance=MAPPING_TOLERANCE):
+    """(True, "fan 1 <-> fan 2 swap") only for the exact signature of the canary's fault (D-31).
+
+    The mapping problems must be exactly the four duty-50 entries of the swapped pair: driving
+    fan a reads the expected value on tach b and exactly 0 on tach a, and the other way round.
+    Every other tach, every 100 % and 0 % reading must be clean. Anything else is not
+    detection: an all-silent or dead-API device ("all channels silent"), a perfect device
+    ("no swap seen"), another swap, an extra problem, a missing or NaN reading.
+    """
+    a, b = CANARY_SWAP
+    problems = evaluate_mapping(fan_hz, readings, tolerance)
+    values = _numbers(readings)
+    if not values or all(v == 0 or v != v for v in values):
+        return False, "all channels silent"
+    if not problems:
+        return False, "no swap seen"
+    signature = [(50, a, a), (50, a, b), (50, b, a), (50, b, b)]
+    if [p[:3] for p in problems] != signature or any(p[4] == NO_FRESH for p in problems):
+        return False, "unexpected problems: " + format_problems(problems).replace("\n", "; ")
+    expected = expected_reading(fan_hz)
+    row = readings[50]
+    shape = (
+        all(_within(v, expected, tolerance) for v in row[a][b])
+        and all(_within(v, expected, tolerance) for v in row[b][a])
+        and all(v == 0 for v in row[a][a])
+        and all(v == 0 for v in row[b][b])
+    )
+    if not shape:
+        return False, "unexpected problems: " + format_problems(problems).replace("\n", "; ")
+    return True, "fan %d <-> fan %d swap" % (a, b)
+
+
+def readings_as_json(readings):
+    """readings[duty][n][m] with string keys, for the JSON reports."""
+    return {
+        str(duty): {str(n): {str(m): list(values) for m, values in row.items()} for n, row in by_n.items()}
+        for duty, by_n in readings.items()
+    }
 
 
 def format_problems(problems):

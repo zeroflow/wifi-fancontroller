@@ -32,8 +32,7 @@ def write_report(fan_hz, readings, problems, dropped):
     data = {
         "fan_hz": fan_hz,
         "expected": qc.expected_reading(fan_hz),
-        "readings": {str(d): {str(n): {str(m): v for m, v in row.items()} for n, row in by_n.items()}
-                     for d, by_n in readings.items()},
+        "readings": qc.readings_as_json(readings),
         "ratios": {str(n): record for n, record in table.items()},
         "problems": [list(p) for p in problems],
         # the values dropped after each command, for the record (not evaluated)
