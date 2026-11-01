@@ -98,12 +98,17 @@ def fw_manifest():
     return SimpleNamespace(images=images, image=lambda role, rev=None: images[(role, rev)])
 
 
+@pytest.fixture(scope="session", autouse=True)
+def tap_a():
+    return None
+
+
 @pytest.fixture(scope="session")
 def dut_a():
     return FakeDut()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def dut_link():
     return FakeLink()
 

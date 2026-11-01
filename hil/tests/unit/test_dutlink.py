@@ -37,6 +37,9 @@ class FakeClient:
         self.disconnected = False
         self.on_stop = None
         self.on_state = None
+        self.on_log = None
+        self.log_level = None
+        self.unsubscribed = False
         FakeClient.instances.append(self)
 
     async def connect(self, on_stop=None, login=False, log_errors=True):
@@ -53,6 +56,16 @@ class FakeClient:
 
     def subscribe_states(self, on_state):
         self.on_state = on_state
+
+    def subscribe_logs(self, on_log, log_level=None, dump_config=None):
+        self.on_log = on_log
+        self.log_level = log_level
+        self.unsubscribed = False
+
+        def unsubscribe():
+            self.unsubscribed = True
+
+        return unsubscribe
 
     def fan_command(self, key, state=None, speed=None, speed_level=None, **kwargs):
         self.commands.append(("fan", key, state, speed_level))
@@ -278,3 +291,101 @@ def test_wait_value_with_the_link_down_at_the_deadline_is_a_rig_error(link):
     drop_on_loop(link, current())
     with pytest.raises(RigError, match="link is down"):
         link.wait_value(entities.FAN_SPEED[1], lambda v: True, 0.5)
+
+
+# ------------------------------------------------------------------ API log (HARN-08)
+
+
+def log_message(text):
+    from aioesphomeapi.api_pb2 import SubscribeLogsResponse
+
+    return SubscribeLogsResponse(message=text)
+
+
+@pytest.fixture
+def logged(monkeypatch, tmp_path):
+    FakeClient.instances = []
+    FakeClient.version = "3.2+qc.aaaaaaaaaaaa"
+    FakeClient.refuse = 0
+    monkeypatch.setattr(dutlink, "APIClient", FakeClient)
+    monkeypatch.setattr(dutlink, "RECONNECT_S", 0.05)
+    path = tmp_path / "raw" / "api-dut-a.log"
+    made = dutlink.DutLink("192.0.2.1", "key", log_path=path)
+    made.log_path = path
+    yield made
+    made.close()
+
+
+def lines(link):
+    return link.log_path.read_text(encoding="utf-8").splitlines()
+
+
+def test_the_log_callback_writes_one_stamped_line_per_message_with_ansi_stripped(logged):
+    logged.start()
+    logged.wait_connected(5)
+    current().on_log(log_message(b"\x1b[0;36m[D][sensor:093]: 'Fan 1 Speed': Sending state 0.0\x1b[0m"))
+    current().on_log(log_message(b"[I][app:100]: ESPHome version\r\n"))
+    first, second = lines(logged)
+    stamp, text = first.split(" ", 1)
+    assert float(stamp) >= 0 and len(stamp.split(".")[1]) == 3
+    assert text == "[D][sensor:093]: 'Fan 1 Speed': Sending state 0.0"
+    assert second.split(" ", 1)[1] == "[I][app:100]: ESPHome version"
+
+
+def test_boundary_lines_land_between_messages_in_arrival_order(logged):
+    logged.start()
+    logged.wait_connected(5)
+    current().on_log(log_message(b"before"))
+    logged.boundary("START tests/rig/test_x.py::test_a t=3.0")
+    current().on_log(log_message(b"inside"))
+    logged.boundary("END tests/rig/test_x.py::test_a passed t=4.0")
+    current().on_log(log_message(b"after"))
+    texts = [line.split(" ", 1)[1] for line in lines(logged)]
+    assert texts == [
+        "before",
+        "[HIL] ===== START tests/rig/test_x.py::test_a t=3.0 =====",
+        "inside",
+        "[HIL] ===== END tests/rig/test_x.py::test_a passed t=4.0 =====",
+        "after",
+    ]
+    stamps = [float(line.split(" ", 1)[0]) for line in lines(logged)]
+    assert stamps == sorted(stamps)
+
+
+def test_the_log_file_exists_after_start_even_when_no_connection_was_made(logged):
+    FakeClient.refuse = 10_000
+    logged.start()
+    assert logged.log_path.is_file() and logged.log_path.read_text(encoding="utf-8") == ""
+    logged.boundary("START tests/rig/test_00_contract.py::test_a t=0.0")
+    assert lines(logged)[0].endswith("[HIL] ===== START tests/rig/test_00_contract.py::test_a t=0.0 =====")
+    assert not logged.connected()
+
+
+def test_every_session_subscribes_at_debug_level_and_stops_the_callback_when_it_drops(logged):
+    from aioesphomeapi import LogLevel
+
+    logged.start()
+    logged.wait_connected(5)
+    first = current()
+    assert first.log_level == LogLevel.LOG_LEVEL_DEBUG
+    drop_on_loop(logged, first)
+    end = time.monotonic() + 5
+    while len(FakeClient.instances) < 2 or not logged.connected():
+        assert time.monotonic() < end
+        time.sleep(0.02)
+    assert first.unsubscribed and first.disconnected
+    assert current().log_level == LogLevel.LOG_LEVEL_DEBUG and current() is not first
+
+
+def test_the_log_callback_survives_a_message_that_is_not_valid_utf8(logged):
+    logged.start()
+    logged.wait_connected(5)
+    current().on_log(log_message(b"bad \xff byte"))
+    assert lines(logged)[0].split(" ", 1)[1].startswith("bad ")
+
+
+def test_a_link_without_a_log_path_records_nothing_and_boundary_is_harmless(link, tmp_path):
+    link.wait_connected(5)
+    link.boundary("START x t=0.0")
+    current().on_log(log_message(b"ignored"))
+    assert list(tmp_path.iterdir()) == []

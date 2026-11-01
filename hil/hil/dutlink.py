@@ -9,6 +9,12 @@ always disconnected in a finally block: a leaked API slot is the failure mode.
 Every method is a blocking call with a deadline, so pytest-timeout in signal mode can
 interrupt a plain call and fixture finalizers still run. Entity names come from
 entities.py only.
+
+With a `log_path` the link also records the DUT's runtime log (HARN-08): every session
+subscribes to the device log at DEBUG level and each message is appended as
+"<seconds since start()> <message>" (ANSI codes stripped). boundary() writes the test
+boundary lines into the same file under the same lock. The file exists from start() on,
+also when no connection is ever made.
 """
 
 import asyncio
@@ -16,17 +22,21 @@ import threading
 import time
 from collections import deque
 
+from pathlib import Path
+
 from aioesphomeapi import (
     APIClient,
     APIConnectionError,
     BinarySensorInfo,
     ButtonInfo,
     FanInfo,
+    LogLevel,
     SensorInfo,
     TextSensorInfo,
 )
 
 from . import RigError, contract, entities
+from .redact import ANSI
 
 API_CONNECT_S = 10
 RECONNECT_S = 1
@@ -44,9 +54,13 @@ def _value(state):
 
 
 class DutLink:
-    def __init__(self, host, noise_psk):
+    def __init__(self, host, noise_psk, log_path=None):
         self._host = host
         self._key = noise_psk
+        self._log_path = None if log_path is None else Path(log_path)
+        self._log = None
+        self._log_lock = threading.Lock()
+        self._t0 = time.monotonic()
         self._cond = threading.Condition()
         self._seq = {}  # name -> state messages received so far (not value changes)
         self._history = {}  # name -> deque of (sequence number, value)
@@ -84,6 +98,41 @@ class DutLink:
             self._latest[name] = value
             self._cond.notify_all()
 
+    # ----------------------------------------------------------- API log
+
+    def _open_log(self):
+        """Create (truncate) the API log file; no-op without a log_path."""
+        if self._log_path is None:
+            return
+        self._log_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._log_lock:
+            if self._log is None:
+                self._log = self._log_path.open("w", encoding="utf-8", newline="\n")
+
+    def _close_log(self):
+        with self._log_lock:
+            log, self._log = self._log, None
+        if log is not None:
+            log.close()
+
+    def _write_log(self, text):
+        """One line, stamped with the seconds since start(); a closed or absent log ignores it."""
+        with self._log_lock:
+            if self._log is None:
+                return
+            self._log.write("%.3f %s\n" % (time.monotonic() - self._t0, text))
+            self._log.flush()
+
+    def _on_log(self, response):
+        """subscribe_logs callback: one stamped, ANSI-stripped line per message."""
+        message = response.message
+        text = message.decode("utf-8", "replace") if isinstance(message, (bytes, bytearray)) else str(message)
+        self._write_log(ANSI.sub("", text).rstrip("\r\n").replace("\r", " ").replace("\n", " "))
+
+    def boundary(self, text):
+        """Write a `[HIL] ===== text =====` test boundary line into the API log (HARN-08)."""
+        self._write_log("[HIL] ===== %s =====" % str(text).replace("\n", " "))
+
     def _set_connected(self, client, info, infos):
         with self._cond:
             self._client = client
@@ -105,6 +154,7 @@ class DutLink:
         """One connection: connect, subscribe, hold until it drops. Always disconnects."""
         client = APIClient(self._host, contract.API_PORT, None, noise_psk=self._key)
         lost = asyncio.Event()
+        unsubscribe = None
 
         async def on_stop(_expected):
             lost.set()
@@ -116,9 +166,15 @@ class DutLink:
                 infos, _services = await client.list_entities_services()
             self._set_connected(client, info, infos)
             client.subscribe_states(self._on_state)
+            unsubscribe = client.subscribe_logs(self._on_log, log_level=LogLevel.LOG_LEVEL_DEBUG)
             await lost.wait()
         finally:
             self._set_disconnected()
+            if unsubscribe is not None:
+                try:
+                    unsubscribe()
+                except Exception:  # noqa: BLE001 - the callback only stops; a dead link must not mask its cause
+                    pass
             try:
                 await client.disconnect()
             except Exception:  # noqa: BLE001 - a dead link must not leak the slot, nor mask its cause
@@ -149,6 +205,8 @@ class DutLink:
     # -------------------------------------------------------------- public
 
     def start(self):
+        self._t0 = time.monotonic()
+        self._open_log()
         self._run(self._start(), COMMAND_S)
 
     def connected(self):
@@ -274,3 +332,4 @@ class DutLink:
             self._loop.call_soon_threadsafe(self._loop.stop)
             self._thread.join(5)
             self._thread = None
+            self._close_log()

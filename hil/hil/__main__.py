@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from . import RigError, config, contract, manifest, nvs, redact, teardown
+from . import RigError, config, contract, manifest, nvs, redact, summary, teardown
 from .dut import Dut
 from .flasher import Flasher
 from .supervisor import Supervisor
@@ -34,6 +34,7 @@ class Collector:
 
     def __init__(self):
         self.rig_errors = []
+        self.rig_error_records = []  # {"nodeid", "kind", "message"} for reports/rig-errors.json
         self.skipped = []  # {"nodeid", "reason"} in the order pytest reported them
         self.collected = 0
         self.session_cut = None  # pytest's session.shouldfail text when pytest-timeout's session deadline ended the run
@@ -45,6 +46,7 @@ class Collector:
     def pytest_runtest_makereport(self, item, call):
         if call.excinfo is not None and isinstance(call.excinfo.value, RigError):
             self.rig_errors.append(str(call.excinfo.value))
+            self.rig_error_records.append(rig_error_record(item.nodeid, call.excinfo.value))
         if item.get_closest_marker("canary") is not None:
             self._canary.add(item.nodeid)
 
@@ -104,6 +106,11 @@ class Collector:
         return "RIG ERROR: run cut by the session deadline (%s); %d test(s) not run" % (self.session_cut, self.not_run)
 
 
+def rig_error_record(nodeid, exc):
+    """One entry of reports/rig-errors.json: the test, the exception class name and its message."""
+    return {"nodeid": nodeid, "kind": type(exc).__name__, "message": str(exc)}
+
+
 def skip_reason(report):
     """The reason text of a skipped report (the third element of its longrepr tuple)."""
     longrepr = report.longrepr
@@ -152,10 +159,18 @@ def warning_lines(collector, env=None):
     return ["::warning title=HIL skipped tests::%d test(s) skipped, see the job summary" % len(collector.skipped)]
 
 
+def write_rig_errors(records):
+    """reports/rig-errors.json: every RigError of the run (the summary shows SAFE MODE, RESET BUDGET, RIG ERROR rows)."""
+    reports = config.reports_dir()
+    reports.mkdir(parents=True, exist_ok=True)
+    (reports / "rig-errors.json").write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def write_tests_report(collector):
     reports = config.reports_dir()
     reports.mkdir(parents=True, exist_ok=True)
     (reports / "tests.json").write_text(json.dumps(collector.report(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_rig_errors(collector.rig_error_records)
 
 
 def _terminate(_signum, _frame):
@@ -230,7 +245,23 @@ def _run(holder):
     build_id = None
     reports = config.reports_dir()
     reports.mkdir(parents=True, exist_ok=True)
-    for name in ("dut-a.json", "tests.json"):
+    # Nothing of an earlier run may be uploaded or summarised as this run's: reports, logs, JUnit, summary.
+    for name in (
+        "dut-a.json",
+        "tests.json",
+        "rig-errors.json",
+        "timings.json",
+        "budget-dut-a.json",
+        "flash-dut-a.json",
+        "ota-dut-a.json",
+        "qc-fans-dut-a.json",
+        "canary-dut-a.json",
+        "raw/uart-dut-a.log",
+        "raw/uart-dut-a.marks.json",
+        "raw/api-dut-a.log",
+        "raw/junit.xml",
+        "raw/summary.md",
+    ):
         stale = reports / name
         if stale.exists():
             stale.unlink()
@@ -244,6 +275,7 @@ def _run(holder):
         build_id = verified.build_id
     except RigError as exc:
         print("RIG ERROR: %s" % exc)
+        write_rig_errors([rig_error_record(None, exc)])
         return write_verdict("RIG ERROR", commit, build_id)
 
     signal.signal(signal.SIGTERM, _terminate)
@@ -251,7 +283,12 @@ def _run(holder):
     try:
         code = pytest.main(
             # Timeouts come from pyproject.toml (timeout, timeout_method = signal, session_timeout).
-            ["-c", str(PYPROJECT), str(TEST_DIR), "-s"],
+            # JUnit (xunit2) goes under reports/raw, so the redaction copies a masked version (CI-06).
+            [
+                "-c", str(PYPROJECT), str(TEST_DIR), "-s",
+                "--junitxml=%s" % (reports / "raw" / "junit.xml"),
+                "-o", "junit_family=xunit2",
+            ],
             plugins=[collector],
         )
     except KeyboardInterrupt:
@@ -275,6 +312,29 @@ def _rig_dut(rig):
         raise
     flasher = Flasher(rig.supervisor_host, contract.BRIDGE_PORT["A"], cfg.chip)
     return supervisor, Dut("A", cfg, supervisor, flasher)
+
+
+def firmware_manifest_dict():
+    """manifest.json of HIL_FW_DIR as a dict for the summary's display fields, or None (it was verified by `hil run`)."""
+    try:
+        data = json.loads((Path(os.environ.get("HIL_FW_DIR", "")) / "manifest.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def write_summary(rig, reports):
+    """Render the job summary after the final image is known; it never changes the exit code.
+
+    Without a loaded config there are no literals to mask with, so no summary is written (the
+    redaction would not be complete).
+    """
+    if rig is None:
+        return
+    try:
+        summary.write(reports, firmware_manifest_dict(), config.mask_literals(rig))
+    except Exception as exc:  # noqa: BLE001 - a summary fault must not hide the teardown result
+        print("RIG ERROR: job summary not written (%s)" % type(exc).__name__)
 
 
 def cmd_teardown():
@@ -307,6 +367,7 @@ def cmd_teardown():
     finally:
         if supervisor is not None:
             supervisor.close()
+        write_summary(rig, reports)
         redact_reports(rig)
 
 

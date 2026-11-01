@@ -1,8 +1,16 @@
 """Session fixtures. `supervisor` is the safety fixture: autouse, so every rig
 session switches every contract line off before the first test and again in its
-finalizer, also when a test is killed by its timeout."""
+finalizer, also when a test is killed by its timeout.
+
+Log boundaries (HARN-08): `tap_a` and `dut_link` are autouse session fixtures that register
+themselves in LOG_SINKS. The autouse `log_boundaries` fixture writes `START <nodeid> t=<s>` to every
+sink before a test and `END <nodeid> <outcome> t=<s>` after it, and the capability skip hook writes
+`SKIP <nodeid>: <reason>`; `dut_state` depends on `log_boundaries`, so the order is START,
+before-check, test, after-check, END.
+"""
 
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -18,6 +26,34 @@ from hil.supervisor import Supervisor
 
 _RIG = []
 RIG_DIR = Path(__file__).resolve().parent
+T0 = time.monotonic()  # session start: the `t=` of every boundary line counts from here
+LOG_SINKS = []  # objects with boundary(text): the UART0 tap and the API log of DUT A
+_PENDING = []  # boundary lines written before the first sink existed (a skip of the first test)
+
+
+def add_log_sink(sink):
+    """Register a log sink; it first receives the lines that were written before any sink existed."""
+    LOG_SINKS.append(sink)
+    for text in _PENDING:
+        sink.boundary(text)
+
+
+def remove_log_sink(sink):
+    if sink in LOG_SINKS:
+        LOG_SINKS.remove(sink)
+
+
+def log_boundary(text):
+    """One `[HIL] ===== text =====` line in every registered log (HARN-08)."""
+    if not LOG_SINKS:
+        _PENDING.append(text)
+        return
+    for sink in list(LOG_SINKS):
+        sink.boundary(text)
+
+
+def _elapsed():
+    return time.monotonic() - T0
 
 
 def _rig():
@@ -57,7 +93,29 @@ def pytest_runtest_setup(item):
     for marker in item.iter_markers("requires"):
         absent = caps.missing(_rig().duts["A"], marker.args)
         if absent:
-            pytest.skip(caps.skip_reason("A", absent))
+            reason = caps.skip_reason("A", absent)
+            log_boundary("SKIP %s: %s" % (item.nodeid, reason))
+            pytest.skip(reason)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item, call):
+    """Keep each phase's report on the item, so the END boundary can name the outcome."""
+    report = yield
+    reports = item.__dict__.setdefault("_hil_reports", {})
+    reports[report.when] = report
+    return report
+
+
+def _outcome(item):
+    """passed, failed, skipped (the call phase) or error (setup failed) of a test, for its END line."""
+    reports = item.__dict__.get("_hil_reports", {})
+    if "call" in reports:
+        return reports["call"].outcome
+    setup = reports.get("setup")
+    if setup is not None and setup.outcome == "failed":
+        return "error"
+    return setup.outcome if setup is not None else "unknown"
 
 
 @pytest.fixture(scope="session")
@@ -88,10 +146,11 @@ def supervisor(request, rig_config):
     return sv
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def tap_a(request, rig_config, supervisor):
-    """Always-on UART0 tap. Depends on `supervisor` so it starts after the bridge-busy
-    check and before any press; with esptool it is the two-client maximum."""
+    """Always-on UART0 tap, autouse so the log covers the whole run from the first test on.
+    Depends on `supervisor` so it starts after the bridge-busy check and before any press;
+    with esptool it is the two-client maximum."""
     tap = SerialTap(
         rig_config.supervisor_host,
         contract.BRIDGE_PORT["A"],
@@ -99,6 +158,8 @@ def tap_a(request, rig_config, supervisor):
     )
     request.addfinalizer(tap.stop)
     tap.start()
+    add_log_sink(tap)
+    request.addfinalizer(lambda: remove_log_sink(tap))  # runs before tap.stop
     return tap
 
 
@@ -119,18 +180,34 @@ def dut_a(request, rig_config, supervisor, tap_a):
     return dut
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="session", autouse=True)
 def dut_link(request, rig_config, dut_a):
     """The one persistent API session to DUT A for the whole run (QC reads and fan commands).
 
-    It reconnects by polling after every reboot and OTA and is closed in the finalizer, so
-    no API slot outlives the run. Depends on `dut_a` so it starts after the serial tap.
+    Autouse, so the API log covers the whole run. It does not block on the first connect: the link
+    polls in the background and reconnects after every reboot and OTA, and tests that need a session
+    call `wait_connected`. It is closed in the finalizer, so no API slot outlives the run. Depends
+    on `dut_a` so it starts after the serial tap.
     """
-    link = DutLink(rig_config.duts["A"].host, rig_config.dut_api_key)
+    link = DutLink(rig_config.duts["A"].host, rig_config.dut_api_key, log_path=config.reports_dir() / "raw" / "api-dut-a.log")
     request.addfinalizer(link.close)
     link.start()
-    link.wait_connected(API_WAIT_S)
+    add_log_sink(link)
+    request.addfinalizer(lambda: remove_log_sink(link))  # runs before link.close
     return link
+
+
+@pytest.fixture(autouse=True)
+def log_boundaries(request):
+    """HARN-08: START and END lines around every executed test, in the UART0 log and the API log.
+
+    Both lines carry the node id and the seconds since session start. The outcome in the END line
+    is the test's own (call phase); a failure of a later teardown shows in JUnit, not here.
+    """
+    node = request.node
+    log_boundary("START %s t=%.1f" % (node.nodeid, _elapsed()))
+    yield
+    log_boundary("END %s %s t=%.1f" % (node.nodeid, _outcome(node), _elapsed()))
 
 
 def _answering_build_id(dut_a, noise_psk, problem):
@@ -149,7 +226,7 @@ def _clean_problems(dut_a, dut_link, build_id):
 
 
 @pytest.fixture(autouse=True)
-def dut_state(request):
+def dut_state(request, log_boundaries):
     """HARN-03: a test with an `image` marker starts and ends with DUT A in a confirmed state.
 
     Before: DUT A answers with the build ID of the marker's before-role and is CLEAN. After: the
