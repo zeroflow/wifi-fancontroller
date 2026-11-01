@@ -34,6 +34,8 @@ DUT_REQUIRED = (
     "nvs_offset",
     "nvs_size",
     "last_green_dir",
+    "framework",
+    "capabilities",
 )
 DUT_B_REQUIRED = ("rev", "chip", "host", "mac")
 HEX_FIELDS = ("flash_offset", "nvs_offset", "nvs_size")

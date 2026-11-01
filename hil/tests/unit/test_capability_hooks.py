@@ -31,6 +31,7 @@ nvs_backup = "/nonexistent/nvs.bin"
 nvs_offset = "0x3A0000"
 nvs_size = "0x60000"
 last_green_dir = "/nonexistent/last-green"
+framework = "arduino"
 capabilities = %s
 """
 

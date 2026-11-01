@@ -12,7 +12,10 @@ DUT_KEY = "dut-key-0123456789"
 SHA = "b" * 64
 
 
-def rig_toml(sup_host="192.0.2.10", a_host="192.0.2.20", a_mac="02:00:00:00:00:0a", b_host="192.0.2.30", b_mac="02:00:00:00:00:0b"):
+A_KEYS = 'framework = "arduino"\ncapabilities = []\n'
+
+
+def rig_toml(sup_host="192.0.2.10", a_host="192.0.2.20", a_mac="02:00:00:00:00:0a", b_host="192.0.2.30", b_mac="02:00:00:00:00:0b", a_keys=A_KEYS, b_keys=""):
     return """
 schema = 1
 [supervisor]
@@ -30,12 +33,12 @@ nvs_backup = "/nonexistent/nvs.bin"
 nvs_offset = "0x3A0000"
 nvs_size = "0x60000"
 last_green_dir = "/nonexistent/last-green"
-[dut.b]
+%s[dut.b]
 rev = "4.0"
 chip = "esp32c6"
 host = "%s"
 mac = "%s"
-""" % (sup_host, a_host, a_mac, SHA, b_host, b_mac)
+%s""" % (sup_host, a_host, a_mac, SHA, a_keys, b_host, b_mac, b_keys)
 
 
 def network(tmp_path, ssid=None, psk=None, key=DUT_KEY):
@@ -146,10 +149,8 @@ def test_emit_masks_prints_nothing_outside_actions(tmp_path):
 # ---- framework and capabilities of rig.toml (HARN-02, D-33) ----
 
 
-def with_dut_keys(a_extra="", b_extra=""):
-    text = rig_toml()
-    text = text.replace('last_green_dir = "/nonexistent/last-green"\n', 'last_green_dir = "/nonexistent/last-green"\n' + a_extra, 1)
-    return text + b_extra
+def with_dut_keys(a_keys=A_KEYS, b_keys=""):
+    return rig_toml(a_keys=a_keys, b_keys=b_keys)
 
 
 def test_framework_and_capabilities_are_read_for_dut_a(tmp_path):
@@ -159,7 +160,7 @@ def test_framework_and_capabilities_are_read_for_dut_a(tmp_path):
 
 
 def test_dut_b_may_carry_the_keys_too(tmp_path):
-    cfg, _env, _net = load(tmp_path, with_dut_keys(b_extra='framework = "esp-idf"\ncapabilities = []\n'))
+    cfg, _env, _net = load(tmp_path, with_dut_keys(b_keys='framework = "esp-idf"\ncapabilities = []\n'))
     assert cfg.duts["B"].framework == "esp-idf" and cfg.duts["B"].capabilities == ()
 
 
@@ -179,5 +180,26 @@ def test_dut_b_may_carry_the_keys_too(tmp_path):
 )
 def test_bad_framework_or_capabilities_are_refused_naming_the_key_not_the_list(tmp_path, line, match):
     with pytest.raises(RigError, match=match) as err:
-        load(tmp_path, with_dut_keys(line + "\n"))
+        other = 'capabilities = []\n' if line.startswith("framework") else 'framework = "arduino"\n'
+        load(tmp_path, with_dut_keys(line + "\n" + other))
     assert "usr10" not in str(err.value) and "hdc1080" not in str(err.value)
+
+
+def test_dut_a_without_capabilities_is_refused(tmp_path):
+    with pytest.raises(RigError, match=r"dut\.a\.capabilities is missing"):
+        load(tmp_path, with_dut_keys('framework = "arduino"\n'))
+
+
+def test_dut_a_without_framework_is_refused(tmp_path):
+    with pytest.raises(RigError, match=r"dut\.a\.framework is missing"):
+        load(tmp_path, with_dut_keys("capabilities = []\n"))
+
+
+def test_dut_a_with_an_empty_capability_list_is_accepted(tmp_path):
+    cfg, _env, _net = load(tmp_path, with_dut_keys('framework = "esp-idf"\ncapabilities = []\n'))
+    assert cfg.duts["A"].capabilities == () and cfg.duts["A"].framework == "esp-idf"
+
+
+def test_dut_b_may_omit_both_keys(tmp_path):
+    cfg, _env, _net = load(tmp_path)
+    assert cfg.duts["B"].framework == "" and cfg.duts["B"].capabilities == ()

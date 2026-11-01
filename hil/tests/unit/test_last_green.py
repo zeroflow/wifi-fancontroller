@@ -298,6 +298,8 @@ known_good_api_encryption = false
 nvs_backup = "/nonexistent/nvs.bin"
 nvs_offset = "0x3A0000"
 nvs_size = "0x60000"
+framework = "arduino"
+capabilities = []
 %s
 """ % ("b" * 64, last_green_line)
 
