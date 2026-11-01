@@ -466,3 +466,53 @@ def test_run_prints_the_rule_lines_and_the_warning_and_writes_the_final_verdict(
     assert lines[-1].startswith("HIL verdict: RIG ERROR")
     assert stored(run_env)["verdict"] == "RIG ERROR" and "reason" not in stored(run_env)
     assert json.loads((run_env / "tests.json").read_text(encoding="utf-8"))["skipped"] == [{"nodeid": "t::a", "reason": "why"}]
+
+
+def test_rig_errors_are_recorded_with_node_id_class_name_and_message_for_the_summary(tmp_path, monkeypatch):
+    from hil import RigError
+    from hil.budget import ResetBudgetExhausted, SafeModeError
+
+    monkeypatch.setenv("HIL_REPORTS_DIR", str(tmp_path))
+    collector = Collector()
+    item = SimpleNamespace(nodeid="tests/rig/test_x.py::test_a", get_closest_marker=lambda name: None)
+    for exc in (SafeModeError("in safe mode"), ResetBudgetExhausted("8/8"), RigError("plain"), ValueError("not a rig error")):
+        collector.pytest_runtest_makereport(item, SimpleNamespace(excinfo=SimpleNamespace(value=exc)))
+    entry.write_tests_report(collector)
+    records = json.loads((tmp_path / "rig-errors.json").read_text(encoding="utf-8"))
+    assert records == [
+        {"nodeid": "tests/rig/test_x.py::test_a", "kind": "SafeModeError", "message": "in safe mode"},
+        {"nodeid": "tests/rig/test_x.py::test_a", "kind": "ResetBudgetExhausted", "message": "8/8"},
+        {"nodeid": "tests/rig/test_x.py::test_a", "kind": "RigError", "message": "plain"},
+    ]
+
+
+def test_a_run_with_no_rig_error_writes_an_empty_list(tmp_path, monkeypatch):
+    monkeypatch.setenv("HIL_REPORTS_DIR", str(tmp_path))
+    entry.write_tests_report(Collector())
+    assert json.loads((tmp_path / "rig-errors.json").read_text(encoding="utf-8")) == []
+
+
+def test_a_run_that_fails_before_any_test_clears_the_last_runs_files_and_records_the_error(tmp_path, monkeypatch):
+    from hil import RigError
+
+    monkeypatch.setenv("HIL_REPORTS_DIR", str(tmp_path))
+    monkeypatch.setenv("HIL_EXPECTED_COMMIT", "a" * 40)
+    stale = [
+        "tests.json", "timings.json", "canary-dut-a.json", "budget-dut-a.json", "flash-dut-a.json",
+        "raw/uart-dut-a.log", "raw/uart-dut-a.marks.json", "raw/api-dut-a.log", "raw/junit.xml", "raw/summary.md",
+    ]
+    for name in stale:
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("from an earlier run", encoding="utf-8")
+
+    def refuse():
+        raise RigError("manifest: schema must be 2")
+
+    monkeypatch.setattr(entry, "load_rig", refuse)
+    assert entry._run({}) == 3
+    assert [name for name in stale if (tmp_path / name).exists()] == []
+    assert json.loads((tmp_path / "rig-errors.json").read_text(encoding="utf-8")) == [
+        {"nodeid": None, "kind": "RigError", "message": "manifest: schema must be 2"}
+    ]
+    assert json.loads((tmp_path / "verdict.json").read_text(encoding="utf-8"))["verdict"] == "RIG ERROR"

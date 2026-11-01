@@ -16,7 +16,7 @@ from pathlib import Path
 
 from aioesphomeapi import APIClient, APIConnectionError
 
-from . import FirmwareFailure, RigError, bootlog, config, contract, entities, manifest
+from . import FirmwareFailure, RigError, bootlog, config, contract, entities, manifest, summary
 from .budget import ResetBudget, SafeModeError
 from .flasher import FLASH_ATTEMPT_S
 from .ota import Ota
@@ -97,6 +97,8 @@ class Dut:
         self.budget = ResetBudget(label="DUT %s" % dut_id)
         self._marks = 0  # unique mark names: bootloader_<n>, reset_<n>
         self._in_bootloader = False
+        self._time_boot = False  # True only inside the run's own flash (not the teardown's, not a read)
+        self._flash_reset_at = None  # monotonic() of the press that leaves the bootloader after a timed flash
 
     def _mark(self, name):
         if self.tap is not None:
@@ -160,9 +162,17 @@ class Dut:
         self._mark(mark)
         self._mark("reset_pressed")
         self._supervisor.press(contract.BUTTON[self.id]["reset"])
+        if cause == "flash_reset" and self._time_boot:
+            self._flash_reset_at = time.monotonic()
         self._in_bootloader = False
         self.budget.record(cause)
         return mark
+
+    def _record_boot(self):
+        """Timing `boot`: the press that left the bootloader after the run's flash to the first API answer."""
+        if self._flash_reset_at is not None:
+            summary.record_timing("boot", time.monotonic() - self._flash_reset_at)
+            self._flash_reset_at = None
 
     def _announce_retry(self, reason):
         label = "DUT %s" % self.id
@@ -209,7 +219,13 @@ class Dut:
                 reasons.append(result.reason)
             self._mark("flash_end")
         finally:
-            self.reset()
+            self._time_boot = report_name is None  # the teardown's flash (its own report name) is not the run's flash
+            try:
+                self.reset()
+            finally:
+                self._time_boot = False
+        if report_name is None and durations:
+            summary.record_timing("flash", sum(durations))
         retry_reason = reasons[0] if reasons else None
         report = FlashReport(
             attempts=len(durations),
@@ -263,6 +279,7 @@ class Dut:
             try:
                 info = self.probe(noise_psk)
                 self._mark("api_ready")
+                self._record_boot()
                 return info
             except RigError:
                 last = "attempt timed out"
@@ -317,6 +334,7 @@ class Dut:
                 try:
                     info = self.probe(noise_psk)
                     self._mark("api_ready")
+                    self._record_boot()
                     return info
                 except RigError:
                     last = "attempt timed out"
@@ -461,4 +479,6 @@ class Dut:
             self._record_ota(image, result.duration_s, boot_s, False, "no reboot seen")
             raise FirmwareFailure("no reboot seen after OTA to %s" % role)
         self._record_ota(image, result.duration_s, boot_s, True, "")
+        summary.record_timing("ota_%s" % role, result.duration_s)
+        summary.record_timing("ota_%s_boot" % role, boot_s)
         print("ota %s: ok transfer=%.1fs boot=%.1fs build_id=%s" % (role, result.duration_s, boot_s, image.build_id))

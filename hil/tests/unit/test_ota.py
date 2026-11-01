@@ -470,3 +470,22 @@ def test_a_serial_flash_ends_the_window(rig):
 
 def test_timing_constants_cover_boot_is_good_after():
     assert dut_module.OTA_CONFIRM_WINDOW_S >= 60 + 15
+
+
+def read_timings(rig_):
+    return json.loads((rig_.reports / "timings.json").read_text(encoding="utf-8"))
+
+
+def test_a_successful_ota_records_its_transfer_and_its_boot_time(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY)
+    timings = read_timings(rig)
+    assert timings["ota_qc-auto"] == 12.3
+    assert set(timings) == {"ota_qc-auto", "ota_qc-auto_boot"} and timings["ota_qc-auto_boot"] >= 0
+
+
+def test_a_failed_ota_records_no_timing(rig):
+    device, *_ = rig.build(fail_result("deadline"), [OLD_ID])
+    with pytest.raises(FirmwareFailure):
+        device.ota(rig.image, noise_psk=KEY)
+    assert not (rig.reports / "timings.json").exists()

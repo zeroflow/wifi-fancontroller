@@ -12,11 +12,36 @@ import os
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-from . import redact
+from . import config, redact
 
 BASELINE_LINE = "Baseline: commit image over serial (no release baseline in this run)"
 VERDICTS = ("PASS", "FAIL", "RIG ERROR", "INTERRUPTED")
 NOT_RECORDED = "not recorded"
+TIMINGS = "timings.json"
+# Fixed row order of the Timings table (CI-05); an OTA's boot time follows its transfer.
+TIMING_ORDER = ("flash", "boot", "ota_qc-auto", "ota_qc-auto_boot", "ota_canary", "ota_canary_boot", "ota_commit", "ota_commit_boot")
+RIG_ERROR_LABELS = {"SafeModeError": "SAFE MODE", "ResetBudgetExhausted": "RESET BUDGET"}
+MESSAGE_CHARS = 300
+
+
+def record_timing(name, seconds):
+    """Merge one timing (seconds, one decimal) into reports/timings.json; a second value for a name replaces the first.
+
+    Timings are a report, never a reason to fail a run: an unwritable file is ignored, a corrupt one is started over.
+    """
+    path = config.reports_dir() / TIMINGS
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            data = {}
+    except (OSError, ValueError):
+        data = {}
+    data[name] = round(float(seconds), 1)
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        pass
 
 
 def _read_json(path):
@@ -80,6 +105,11 @@ def _dut_heading(manifest):
     return "### DUT A (Rev %s, %s)" % (first.get("rev", "?"), first.get("chip", "?"))
 
 
+def _first_line(text):
+    line = str(text).strip().splitlines()[0] if str(text).strip() else ""
+    return line if len(line) <= MESSAGE_CHARS else line[: MESSAGE_CHARS - 3] + "..."
+
+
 def _dut_table(reports):
     cases = _junit_cases(reports / "raw" / "junit.xml")
     if cases is None:
@@ -87,6 +117,10 @@ def _dut_table(reports):
     lines = ["| Test | Result | Duration |", "|---|---|---|"]
     for key, result, seconds, _message in cases:
         lines.append("| %s | %s | %.1f s |" % (_cell(key), result, seconds))
+    bad = [(key, message) for key, result, _s, message in cases if result in ("failed", "error")]
+    if bad:
+        lines += ["", "### Failures", ""]
+        lines += ["- %s: %s" % (key, _first_line(message) or "no message") for key, message in bad]
     return lines
 
 
@@ -99,6 +133,86 @@ def _canary_line(reports):
     return "**Canary:** NOT detected: %s" % (canary.get("text") or "no text recorded")
 
 
+def _images(manifest):
+    images = (manifest or {}).get("images")
+    if not isinstance(images, list) or not images:
+        return ["Images: %s" % NOT_RECORDED]
+    lines = ["| Role | Build ID | Final |", "|---|---|---|"]
+    for image in images:
+        if isinstance(image, dict):
+            lines.append("| %s | %s | %s |" % (_cell(image.get("role", "?")), _cell(image.get("build_id", "?")), "yes" if image.get("final") is True else "no"))
+    return lines
+
+
+def _timings(reports):
+    data = _read_json(reports / TIMINGS)
+    if not isinstance(data, dict):
+        return ["Timings: %s" % NOT_RECORDED]
+    rows = [(name, data[name]) for name in TIMING_ORDER if isinstance(data.get(name), (int, float))]
+    rows += [(name, data[name]) for name in sorted(data) if name not in TIMING_ORDER and isinstance(data[name], (int, float))]
+    if not rows:
+        return ["Timings: %s" % NOT_RECORDED]
+    return ["| Step | Seconds |", "|---|---|"] + ["| %s | %.1f s |" % (_cell(name), value) for name, value in rows]
+
+
+def _flash_and_ota(reports):
+    lines = []
+    flash = _read_json(reports / "flash-dut-a.json")
+    if isinstance(flash, dict):
+        attempts = flash.get("attempts", "?")
+        retry = flash.get("retry_reason")
+        lines.append(
+            "Flash: %s attempt%s, %s%s"
+            % (attempts, "" if attempts == 1 else "s", "verified" if flash.get("verified") else "NOT verified", " (retry: %s)" % retry if retry else "")
+        )
+    else:
+        lines.append("Flash: %s" % NOT_RECORDED)
+    ota = _read_json(reports / "ota-dut-a.json")
+    if isinstance(ota, list) and ota:
+        for entry in ota:
+            if not isinstance(entry, dict):
+                continue
+            role = entry.get("role", "?")
+            if entry.get("ok") is True:
+                lines.append("OTA %s: ok" % role)
+            else:
+                lines.append("OTA %s: FAILED (%s)" % (role, entry.get("reason") or "no reason recorded"))
+    else:
+        lines.append("OTA: %s" % NOT_RECORDED)
+    return lines
+
+
+def _skipped(reports):
+    tests = _read_json(reports / "tests.json")
+    if not isinstance(tests, dict) or not isinstance(tests.get("skipped"), list):
+        return ["Skipped: %s" % NOT_RECORDED]
+    skipped = [s for s in tests["skipped"] if isinstance(s, dict)]
+    if not skipped:
+        return ["none"]
+    return ["- %s: %s" % (s.get("nodeid", "?"), _first_line(s.get("reason", "")) or "no reason recorded") for s in skipped]
+
+
+def _rig_conditions(reports):
+    errors = _read_json(reports / "rig-errors.json")
+    if not isinstance(errors, list):
+        return ["Rig conditions: %s" % NOT_RECORDED]
+    rows = []
+    for entry in errors:
+        if not isinstance(entry, dict):
+            continue
+        label = RIG_ERROR_LABELS.get(entry.get("kind"), "RIG ERROR")
+        where = " (%s)" % entry["nodeid"] if entry.get("nodeid") else ""
+        rows.append("- %s: %s%s" % (label, _first_line(entry.get("message", "")), where))
+    return rows or ["none"]
+
+
+def _budget_line(reports):
+    budget = _read_json(reports / "budget-dut-a.json")
+    if not isinstance(budget, dict):
+        return "Reset budget: %s" % NOT_RECORDED
+    return "Reset budget: %s boots, streak %s/%s" % (budget.get("used", "?"), budget.get("streak", "?"), budget.get("limit", "?"))
+
+
 def _final_image_line(reports):
     final = _read_json(reports / "final-image.json")
     if not isinstance(final, dict):
@@ -108,12 +222,20 @@ def _final_image_line(reports):
 
 
 def render(reports_dir, manifest):
-    """The job summary as Markdown. Pure: reads files, writes nothing, never raises for a missing report."""
+    """The job summary as Markdown. Pure: reads files, writes nothing, never raises for a missing report.
+
+    Order: verdict, commit/ESPHome/baseline line, DUT A table (JUnit order) and failures, Canary, Images, Timings,
+    Flash and OTA, Skipped, Rig conditions, Reset budget, Final image.
+    """
     reports = Path(reports_dir)
     lines = _head(reports, manifest)
-    lines += ["", _dut_heading(manifest), ""]
-    lines += _dut_table(reports)
-    lines += ["", _canary_line(reports), "", _final_image_line(reports)]
+    lines += ["", _dut_heading(manifest), ""] + _dut_table(reports)
+    lines += ["", _canary_line(reports)]
+    lines += ["", "### Images", ""] + _images(manifest)
+    lines += ["", "### Timings", ""] + _timings(reports) + [""] + _flash_and_ota(reports)
+    lines += ["", "### Skipped", ""] + _skipped(reports)
+    lines += ["", "### Rig conditions", ""] + _rig_conditions(reports)
+    lines += ["", _budget_line(reports), "", _final_image_line(reports)]
     return "\n".join(lines) + "\n"
 
 
