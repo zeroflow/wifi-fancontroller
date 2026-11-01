@@ -452,3 +452,104 @@ def test_a_silent_sensor_gives_a_short_list_and_a_problem_not_a_value():
     temps, hums = qc.measure_climate(link)
     assert hums == []
     assert qc.evaluate_climate(temps, hums) == ["humidity: 0 fresh reading(s), need 2"]
+
+
+# ---------------------------------------------------------------- framework (QC-05, D-34)
+
+INFO_ARDUINO = "ESPHome 2026.10.1|Board: lolin_s2_mini|Framework: Arduino|Reset: Power-on"
+INFO_IDF = "ESPHome 2026.10.1|Framework: ESP-IDF|Reset: Software"
+
+
+def test_framework_names_map_exactly_two_spellings():
+    assert qc.FRAMEWORK_NAMES == {"Arduino": "arduino", "ESP-IDF": "esp-idf"}
+    assert qc.TEXT_SENSOR_WAIT_S == 10
+
+
+def test_device_info_with_arduino_reads_arduino():
+    assert qc.framework_from_device_info(INFO_ARDUINO) == "arduino"
+
+
+def test_device_info_with_esp_idf_reads_esp_idf():
+    assert qc.framework_from_device_info(INFO_IDF) == "esp-idf"
+
+
+def test_the_field_at_the_end_of_the_text_reads_too():
+    assert qc.framework_from_device_info("x|Framework: Arduino") == "arduino"
+
+
+@pytest.mark.parametrize(
+    "text, word",
+    [
+        ("", "empty"),
+        (None, "missing"),
+        (float("nan"), "missing"),
+        ("ESPHome 2026.10.1|Reset: Power-on", "no Framework field"),
+        ("|Framework: arduino|", "not a known framework"),
+        ("|Framework: ARDUINO|", "not a known framework"),
+        ("|Framework: esp-idf|", "not a known framework"),
+        ("|Framework: Arduino |", "not a known framework"),
+        ("|Framework: |", "not a known framework"),
+        ("|Framework: PlatformIO|", "not a known framework"),
+    ],
+)
+def test_a_missing_empty_or_malformed_report_is_a_value_error_naming_the_problem(text, word):
+    with pytest.raises(ValueError, match=word):
+        qc.framework_from_device_info(text)
+
+
+def test_four_equal_values_are_no_problem():
+    assert qc.evaluate_framework("arduino", "arduino", "arduino", "arduino") == []
+    assert qc.evaluate_framework("esp-idf", "esp-idf", "esp-idf", "esp-idf") == []
+
+
+def test_one_disagreeing_value_gives_one_problem_in_the_fixed_order():
+    assert qc.evaluate_framework("arduino", "arduino", "esp-idf", "arduino") == [
+        "table=arduino rig.toml=arduino device=esp-idf manifest=arduino"
+    ]
+
+
+@pytest.mark.parametrize("position", range(4))
+def test_each_of_the_four_values_can_be_the_odd_one_out(position):
+    values = ["arduino"] * 4
+    values[position] = "esp-idf"
+    (problem,) = qc.evaluate_framework(*values)
+    assert problem == "table=%s rig.toml=%s device=%s manifest=%s" % tuple(values)
+
+
+@pytest.mark.parametrize("wrong", ["Arduino", "ESP-IDF", "esp_idf", "espidf", "", None])
+def test_any_other_spelling_is_a_mismatch(wrong):
+    assert len(qc.evaluate_framework("arduino", "arduino", wrong, "arduino")) == 1
+    assert len(qc.evaluate_framework(wrong, "arduino", "arduino", "arduino")) == 1
+
+
+def test_four_equal_but_unknown_names_are_still_a_problem():
+    assert qc.evaluate_framework("Arduino", "Arduino", "Arduino", "Arduino") == [
+        "table=Arduino rig.toml=Arduino device=Arduino manifest=Arduino"
+    ]
+
+
+def test_the_committed_table_has_rev_3_2_as_arduino_and_rev_4_0_as_esp_idf():
+    table = qc.framework_table()
+    assert table["3.2"] == "arduino" and table["4.0"] == "esp-idf"
+    assert table["1.0"] == "esp-idf"
+
+
+def test_a_revision_missing_from_the_table_is_a_key_error():
+    with pytest.raises(KeyError):
+        qc.framework_table()["9.9"]
+
+
+def test_framework_table_reads_the_given_file(tmp_path):
+    path = tmp_path / "frameworks.toml"
+    path.write_text('schema = 1\n[revisions]\n"3.2" = "arduino"\n')
+    assert qc.framework_table(path) == {"3.2": "arduino"}
+
+
+def test_a_table_without_revisions_or_with_an_unknown_framework_is_refused(tmp_path):
+    path = tmp_path / "frameworks.toml"
+    path.write_text("schema = 1\n")
+    with pytest.raises(KeyError):
+        qc.framework_table(path)
+    path.write_text('schema = 1\n[revisions]\n"3.2" = "Arduino"\n')
+    with pytest.raises(ValueError, match="3.2"):
+        qc.framework_table(path)

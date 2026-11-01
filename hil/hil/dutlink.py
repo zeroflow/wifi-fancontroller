@@ -210,6 +210,28 @@ class DutLink:
                 raise RigError("DUT API link is down; waiting for '%s' ended after %ss" % (name, deadline_s))
             return fresh
 
+    def wait_value(self, name, predicate, deadline_s):
+        """The current value of `name` as soon as `predicate(value)` holds, else None at the deadline.
+
+        Judges the last reported value, so an older value that once matched cannot satisfy it, and
+        wakes on each state message (no sleeping poll). A missing reading (NaN) is never offered to
+        the predicate: NaN is truthy and must not count as a value. Raises RigError when the link
+        is down at the deadline; returns None when it is up but the predicate never held.
+        """
+        end = time.monotonic() + max(0.0, deadline_s)
+        with self._cond:
+            while True:
+                value = self._latest.get(name)
+                if value is not None and value == value and predicate(value):
+                    return value
+                left = end - time.monotonic()
+                if left <= 0:
+                    break
+                self._cond.wait(left)
+            if not self._connected:
+                raise RigError("DUT API link is down; waiting for '%s' ended after %ss" % (name, deadline_s))
+            return None
+
     def _command_target(self, name, kind):
         with self._cond:
             found = self._entities.get(name)

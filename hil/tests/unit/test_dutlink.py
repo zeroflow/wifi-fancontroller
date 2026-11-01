@@ -222,3 +222,59 @@ def test_close_while_never_connected_does_not_hang(monkeypatch):
     assert time.monotonic() - started < 3
     assert all(c.disconnected for c in FakeClient.instances)
     assert not made.connected()
+
+
+
+
+def test_wait_value_returns_a_value_that_already_satisfies(link):
+    link.wait_connected(5)
+    name = entities.FAN_SPEED[1]
+    current().publish(name, 4.0)
+    assert link.wait_value(name, lambda v: v == 4.0, 1) == 4.0
+
+
+def test_wait_value_wakes_on_the_message_not_on_a_timer(link):
+    link.wait_connected(5)
+    name = entities.FAN_SPEED[1]
+    current().publish(name, 0.0)
+    threading.Timer(0.1, lambda: current().publish(name, 9.0)).start()
+    started = time.monotonic()
+    assert link.wait_value(name, lambda v: v > 5, 5) == 9.0
+    assert time.monotonic() - started < 2
+
+
+def test_wait_value_judges_the_current_value_not_an_older_one(link):
+    link.wait_connected(5)
+    name = entities.FAN_SPEED[1]
+    current().publish(name, 9.0)
+    current().publish(name, 0.0)
+    assert link.wait_value(name, lambda v: v > 5, 0.2) is None
+
+
+def test_wait_value_connected_but_never_satisfied_returns_none_at_the_deadline(link):
+    link.wait_connected(5)
+    name = entities.FAN_SPEED[1]
+    current().publish(name, 1.0)
+    started = time.monotonic()
+    assert link.wait_value(name, lambda v: v > 5, 0.3) is None
+    assert time.monotonic() - started >= 0.25
+
+
+def test_wait_value_without_any_message_returns_none(link):
+    link.wait_connected(5)
+    assert link.wait_value(entities.FAN_SPEED[1], lambda v: True, 0.1) is None
+
+
+def test_wait_value_never_offers_a_missing_reading_to_the_predicate(link):
+    link.wait_connected(5)
+    name = entities.FAN_SPEED[1]
+    current().publish(name, 0.0, missing=True)
+    assert link.wait_value(name, bool, 0.1) is None  # NaN is truthy; a missing reading must not satisfy
+
+
+def test_wait_value_with_the_link_down_at_the_deadline_is_a_rig_error(link):
+    link.wait_connected(5)
+    FakeClient.refuse = 10**6
+    drop_on_loop(link, current())
+    with pytest.raises(RigError, match="link is down"):
+        link.wait_value(entities.FAN_SPEED[1], lambda v: True, 0.5)

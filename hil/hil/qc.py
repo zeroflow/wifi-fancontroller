@@ -9,7 +9,10 @@ failed. A reading that never arrives is a problem, never a 0.
 """
 
 import math
+import re
 import time
+import tomllib
+from pathlib import Path
 
 from . import RigError, entities
 
@@ -28,6 +31,16 @@ HDC_WINDOW_S = 30
 TEMP_RANGE_C = (5.0, 45.0)
 HUMIDITY_RANGE = (10.0, 90.0)
 HDC_READINGS = 2
+
+# Framework (D-34, QC-05). The DUT's `QC Device Info` text sensor carries `|Framework: Arduino`
+# or `|Framework: ESP-IDF`; only these two spellings map, every other one is a problem.
+TEXT_SENSOR_WAIT_S = 10
+FRAMEWORK_NAMES = {"Arduino": "arduino", "ESP-IDF": "esp-idf"}
+FRAMEWORKS_TOML = Path(__file__).resolve().parents[1] / "frameworks.toml"
+_FRAMEWORK_FIELD = re.compile(r"\|Framework: ([^|]*)")
+
+# USR buttons (D-30, QC-04): the wait for each state the supervisor's line causes on the DUT.
+USR_WAIT_S = 5
 
 NO_FRESH = "no fresh reading"
 CANARY_SWAP = (1, 2)  # the canary image swaps the PWM pins of these two fans (hil/rev3.2.canary.yaml)
@@ -225,3 +238,46 @@ def measure_climate(link, window_s=HDC_WINDOW_S):
     temps = link.wait_fresh(entities.TEMPERATURE, after_t, HDC_READINGS, end - time.monotonic())
     hums = link.wait_fresh(entities.HUMIDITY, after_h, HDC_READINGS, max(0.0, end - time.monotonic()))
     return temps, hums
+
+
+def framework_from_device_info(text):
+    """The framework a DUT reports in `QC Device Info`, as "arduino" or "esp-idf".
+
+    ValueError, never a skip or a guess, for a missing or empty report, one without the
+    `|Framework: ` field, or one whose value is not exactly "Arduino" or "ESP-IDF" (QC-05).
+    """
+    if not isinstance(text, str) or not text:
+        raise ValueError("QC Device Info is missing or empty")
+    found = _FRAMEWORK_FIELD.search(text)
+    if found is None:
+        raise ValueError("QC Device Info has no Framework field")
+    name = found.group(1)
+    if name not in FRAMEWORK_NAMES:
+        raise ValueError("QC Device Info Framework value %r is not a known framework" % name)
+    return FRAMEWORK_NAMES[name]
+
+
+def framework_table(path=FRAMEWORKS_TOML):
+    """The committed framework per board revision, e.g. {"3.2": "arduino", "4.0": "esp-idf", ...}.
+
+    Indexing a revision that is not listed raises KeyError. A value other than the two framework
+    names is refused here so a typo in the table cannot pass a matching typo elsewhere.
+    """
+    with open(path, "rb") as handle:
+        revisions = tomllib.load(handle)["revisions"]
+    for rev, framework in revisions.items():
+        if framework not in FRAMEWORK_NAMES.values():
+            raise ValueError("frameworks.toml: revision %s has an unknown framework" % rev)
+    return dict(revisions)
+
+
+def evaluate_framework(table, rig, device, manifest):
+    """Problems of the four-way framework check; [] means all four are the same known name.
+
+    Names compare exactly. The problem text lists the values in the fixed order table, rig.toml,
+    device, manifest, so two failing runs read alike.
+    """
+    values = (table, rig, device, manifest)
+    if len(set(values)) == 1 and table in FRAMEWORK_NAMES.values():
+        return []
+    return ["table=%s rig.toml=%s device=%s manifest=%s" % values]
