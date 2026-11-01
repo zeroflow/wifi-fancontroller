@@ -21,8 +21,10 @@ name: HIL
 # indirection, see the comment there); it is the one job whose run script
 # interpolates an expression, copied verbatim.
 #
-# Only two files go into the hil-firmware artifact: the build directory holds
-# generated sources and caches that have no business in a public artifact.
+# The hil-firmware artifact carries the firmware images and the manifest only, never
+# the build directory (generated sources and caches have no business in a public
+# artifact). The qc-auto and canary OTA images carry the published HIL values like
+# the factory image does (D-01).
 on:
   push:
     branches:
@@ -73,7 +75,7 @@ jobs:
     name: Build the HIL image
     runs-on: ubuntu-latest
     needs: release-version
-    timeout-minutes: 30
+    timeout-minutes: 40
     container:
       image: ghcr.io/esphome/esphome:${{ needs.release-version.outputs.version }}
     steps:
@@ -92,7 +94,7 @@ jobs:
         shell: bash
         env:
           HIL_COMMIT: ${{ github.sha }}
-        run: python3 hil/tools/build_image.py --out hil-out --commit "$HIL_COMMIT"
+        run: python3 hil/tools/build_image.py --all --out hil-out --commit "$HIL_COMMIT"
 
       - name: Upload firmware and manifest
         uses: actions/upload-artifact@v7
@@ -100,6 +102,9 @@ jobs:
           name: hil-firmware
           path: |
             hil-out/firmware.factory.bin
+            hil-out/firmware.ota.bin
+            hil-out/qc-auto-3.2.ota.bin
+            hil-out/canary-3.2.ota.bin
             hil-out/manifest.json
           if-no-files-found: error
           retention-days: 7
