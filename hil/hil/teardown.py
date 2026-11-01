@@ -129,13 +129,30 @@ def confirm(dut, psk):
 
 
 def load_commit_manifest(fw_dir, dutcfg):
-    """The verified commit manifest, or None when there is no firmware directory or it does not verify."""
+    """The verified commit manifest, or None when there is no firmware directory or it does not verify.
+
+    Also None when the commit entry is not final (D-25): nothing but a final image may be kept on
+    DUT A or flashed back to it.
+    """
     if not fw_dir:
         return None
     try:
-        return manifest.load_verified(fw_dir, config.expected_commit(), dutcfg)
+        verified = manifest.load_verified(fw_dir, config.expected_commit(), dutcfg)
+        if verified.image("commit").final is not True:
+            return None
     except RigError:
         return None
+    return verified
+
+
+def non_final_image_reporting(verified, version):
+    """The manifest's non-final image (qc-auto, canary) whose build ID DUT A reports, or None."""
+    if verified is None or version is None:
+        return None
+    for image in verified.images.values():
+        if not image.final and image.build_id == version:
+            return image
+    return None
 
 
 def flash_commit_image(dut, fw_dir, dutcfg, dut_key, state):
@@ -213,6 +230,9 @@ def keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
     state["steps"].append("commit image: %s" % ("confirmed" if matched else "not confirmed"))
     update_store(dutcfg, verified, matched, state)
     if not matched:
+        other = non_final_image_reporting(verified, version)
+        if other is not None:
+            say("RIG ERROR: DUT A runs the %s image (%s), not a final image" % (other.role, other.build_id))
         say("RIG ERROR: the commit image on DUT A could not be confirmed after a green run")
         rewrite_verdict(reports_dir, verdict)
         return 3

@@ -30,15 +30,21 @@ def dut(store):
     return SimpleNamespace(chip="esp32s2", flash_offset="0x0", last_green_dir=str(store))
 
 
-def make_manifest(tmp_path, build_id=BUILD_ID, payload=None, name="fw"):
+def make_manifest(tmp_path, build_id=BUILD_ID, payload=None, name="fw", final=True, role="commit"):
+    """A verified schema-2 manifest with one image; `final=False` models a qc-auto or canary image."""
     payload = payload if payload is not None else (build_id.encode() + b"-image-bytes") * 64
     folder = tmp_path / name
     folder.mkdir(exist_ok=True)
     path = folder / "firmware.factory.bin"
     path.write_bytes(payload)
+    ota = folder / "firmware.ota.bin"
+    ota.write_bytes(b"ota " + payload)
     digest = hashlib.sha256(payload).hexdigest()
-    image = ManifestImage(path=path, sha256=digest, chip="esp32s2", offset="0x0")
-    return Manifest(commit="d" * 40, build_id=build_id, images={"commit": image})
+    image = ManifestImage(
+        path=path, sha256=digest, chip="esp32s2", offset="0x0", role=role, rev="3.2", build_id=build_id,
+        final=final, framework="arduino", ota_path=ota, ota_sha256=hashlib.sha256(ota.read_bytes()).hexdigest(),
+    )
+    return Manifest(commit="d" * 40, build_id=build_id, images={(role, "3.2"): image})
 
 
 def snapshot(store):
@@ -90,6 +96,31 @@ def test_promote_refuses_a_local_build_and_leaves_no_store_behind(tmp_path, dut,
     ok, reason = last_green.promote(dut, make_manifest(tmp_path, BUILD_ID + ".local"), MAIN, "1", NET_SHA)
     assert ok is False and "local build" in reason
     assert not store.exists()
+
+
+def test_promote_refuses_an_image_that_is_not_final_and_writes_nothing(tmp_path, dut, store):
+    ok, reason = last_green.promote(dut, make_manifest(tmp_path, final=False), MAIN, "1", NET_SHA)
+    assert (ok, reason) == (False, "image is not a final image")
+    assert not store.exists()
+
+
+def test_a_non_final_image_cannot_replace_an_existing_store(tmp_path, dut, store):
+    last_green.promote(dut, make_manifest(tmp_path, OTHER_ID, name="old"), MAIN, "1", NET_SHA)
+    before = snapshot(store)
+    ok, reason = last_green.promote(dut, make_manifest(tmp_path, final=False, name="new"), MAIN, "2", NET_SHA)
+    assert (ok, reason) == (False, "image is not a final image")
+    assert snapshot(store) == before
+
+
+@pytest.mark.parametrize("build_id", ["3.2+qc." + "a" * 12, "3.2+canary." + "a" * 12])
+def test_a_qc_or_canary_build_id_never_enters_the_store(tmp_path, dut, store, build_id):
+    ok, reason = last_green.promote(dut, make_manifest(tmp_path, build_id, final=False), MAIN, "1", NET_SHA)
+    assert ok is False and not store.exists()
+
+
+def test_the_ref_guard_still_comes_first_for_a_non_final_image(tmp_path, dut, store):
+    ok, reason = last_green.promote(dut, make_manifest(tmp_path, final=False), CLAUDE_MAIN, "1", NET_SHA)
+    assert (ok, reason) == (False, "ref is not refs/heads/main")
 
 
 def test_promote_twice_with_the_same_image_says_already(tmp_path, dut, store):

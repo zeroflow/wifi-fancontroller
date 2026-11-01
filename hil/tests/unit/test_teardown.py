@@ -22,6 +22,8 @@ from hil.flasher import Flasher
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 COMMIT = "a" * 40
 BUILD_ID = "3.2+hil." + "a" * 12
+QC_ID = "3.2+qc." + "a" * 12
+CANARY_ID = "3.2+canary." + "a" * 12
 NVS_SIZE = 0x60000
 
 # Records every esptool argv; prints one hash line per written region.
@@ -72,6 +74,45 @@ class ScriptedDut(Dut):
         return SimpleNamespace(project_version=answer)
 
 
+def _entry(role, build_id, final, ota_file, ota_bytes, **extra):
+    entry = {
+        "role": role,
+        "rev": "3.2",
+        "chip": "esp32s2",
+        "offset": "0x0",
+        "framework": "arduino",
+        "build_id": build_id,
+        "final": final,
+        "esphome_name": "fancontroller-%s-r3-2" % role,
+        "ota_file": ota_file,
+        "ota_sha256": hashlib.sha256(ota_bytes).hexdigest(),
+    }
+    entry.update(extra)
+    return entry
+
+
+def write_firmware_dir(fw, commit_final=True):
+    """A schema-2 firmware directory: the commit image plus a qc-auto and a canary entry."""
+    files = {
+        "firmware.factory.bin": b"commit image",
+        "firmware.ota.bin": b"commit ota image",
+        "qc-auto-3.2.ota.bin": b"qc-auto ota image",
+        "canary-3.2.ota.bin": b"canary ota image",
+    }
+    for name, data in files.items():
+        (fw / name).write_bytes(data)
+    images = [
+        _entry("commit", BUILD_ID, commit_final, "firmware.ota.bin", files["firmware.ota.bin"],
+               file="firmware.factory.bin", sha256=hashlib.sha256(files["firmware.factory.bin"]).hexdigest()),
+        _entry("qc-auto", QC_ID, False, "qc-auto-3.2.ota.bin", files["qc-auto-3.2.ota.bin"], fan_hz=25000),
+        _entry("canary", CANARY_ID, False, "canary-3.2.ota.bin", files["canary-3.2.ota.bin"], fan_hz=25000),
+    ]
+    (fw / "manifest.json").write_text(
+        json.dumps({"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "2026.10.1", "images": images}),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def rig(tmp_path, monkeypatch):
     monkeypatch.setattr(dut_module, "BOOTLOADER_SETTLE_S", 0)
@@ -88,26 +129,7 @@ def rig(tmp_path, monkeypatch):
     nvs_file.write_bytes(b"\x01" * NVS_SIZE)
     fw = tmp_path / "fw"
     fw.mkdir()
-    (fw / "firmware.factory.bin").write_bytes(b"commit image")
-    (fw / "manifest.json").write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "commit": COMMIT,
-                "build_id": BUILD_ID,
-                "images": [
-                    {
-                        "role": "commit",
-                        "file": "firmware.factory.bin",
-                        "sha256": hashlib.sha256(b"commit image").hexdigest(),
-                        "chip": "esp32s2",
-                        "offset": "0x0",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+    write_firmware_dir(fw)
     dutcfg = SimpleNamespace(
         id="A",
         rev="3.2",
@@ -594,3 +616,59 @@ def test_a_confirmed_green_run_keeps_its_pass_verdict(rig):
     out = go(rig, [BUILD_ID], job_status="success")
     assert out.code == 0
     assert written_verdict(rig) == "PASS"
+
+
+# ---- D-25: a qc-auto or canary image is never a final image --------------------------------
+
+
+@pytest.mark.parametrize("role,build_id", [("qc-auto", QC_ID), ("canary", CANARY_ID)])
+def test_green_run_that_ends_on_a_non_final_image_is_a_rig_error(rig, capsys, role, build_id):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", MAIN)
+    calls = count_promotes(rig)
+    out = go(rig, [build_id], job_status="success")
+    text = capsys.readouterr().out
+    assert out.code == 3
+    assert out.final["confirmed"] is False
+    assert written_verdict(rig) == "RIG ERROR"
+    assert "RIG ERROR: %s runs the %s image (%s), not a final image" % (LABEL, role, build_id) in text
+    assert calls == []
+    assert not Path(rig.dutcfg.last_green_dir).exists()
+
+
+def test_a_wrong_but_unlisted_build_id_does_not_claim_a_non_final_image(rig, capsys):
+    verdict(rig, "PASS")
+    out = go(rig, ["3.2+qc." + "f" * 12], job_status="success")
+    assert out.code == 3
+    assert "not a final image" not in capsys.readouterr().out
+
+
+def test_load_commit_manifest_returns_none_when_the_commit_entry_is_not_final(rig):
+    final_image = manifest_module.load_verified(rig.fw, COMMIT, rig.dutcfg).image("commit")
+    not_final = manifest_module.ManifestImage(**{**final_image.__dict__, "final": False})
+    bad = manifest_module.Manifest(commit=COMMIT, build_id=BUILD_ID, images={("commit", "3.2"): not_final})
+    rig.monkeypatch.setattr(manifest_module, "load_verified", lambda *a, **k: bad)
+    assert teardown.load_commit_manifest(str(rig.fw), rig.dutcfg) is None
+
+
+def test_a_non_final_commit_entry_takes_the_not_confirmed_path_after_a_green_run(rig):
+    verdict(rig, "PASS")
+    final_image = manifest_module.load_verified(rig.fw, COMMIT, rig.dutcfg).image("commit")
+    not_final = manifest_module.ManifestImage(**{**final_image.__dict__, "final": False})
+    bad = manifest_module.Manifest(commit=COMMIT, build_id=BUILD_ID, images={("commit", "3.2"): not_final})
+    rig.monkeypatch.setattr(manifest_module, "load_verified", lambda *a, **k: bad)
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 3
+    assert written_verdict(rig) == "RIG ERROR"
+
+
+def test_the_flash_commit_image_fallback_refuses_a_non_final_commit_entry(rig):
+    verdict(rig, "FAIL")
+    final_image = manifest_module.load_verified(rig.fw, COMMIT, rig.dutcfg).image("commit")
+    not_final = manifest_module.ManifestImage(**{**final_image.__dict__, "final": False})
+    bad = manifest_module.Manifest(commit=COMMIT, build_id=BUILD_ID, images={("commit", "3.2"): not_final})
+    rig.monkeypatch.setattr(manifest_module, "load_verified", lambda *a, **k: bad)
+    out = go(rig, [None, None], job_status="failure")
+    assert out.code == 3
+    flashed = [r for call in out.calls for r in regions(call)]
+    assert all(str(rig.fw / "firmware.factory.bin") != path for _offset, path in flashed)
