@@ -364,3 +364,91 @@ def test_the_canary_test_passes_only_through_canary_detected():
 
     source = (Path(__file__).resolve().parents[1] / "rig" / "test_30_canary.py").read_text(encoding="utf-8")
     assert "qc.canary_detected(" in source and "assert detected" in source
+
+
+# ---- HDC1080 (QC-03, D-29) ----
+
+T = [22.5, 22.6]
+H = [40.0, 41.0]
+
+
+def test_hdc_constants_are_the_decided_ones():
+    assert qc.HDC_WINDOW_S == 30
+    assert qc.TEMP_RANGE_C == (5.0, 45.0)
+    assert qc.HUMIDITY_RANGE == (10.0, 90.0)
+
+
+def test_plausible_climate_has_no_problems():
+    assert qc.evaluate_climate(T, H) == []
+
+
+@pytest.mark.parametrize("temps", [[5.0, 5.0], [45.0, 45.0], [5.0, 45.0]])
+def test_temperature_bounds_are_inclusive(temps):
+    assert qc.evaluate_climate(temps, H) == []
+
+
+@pytest.mark.parametrize("hums", [[10.0, 10.0], [90.0, 90.0], [10.0, 90.0]])
+def test_humidity_bounds_are_inclusive(hums):
+    assert qc.evaluate_climate(T, hums) == []
+
+
+@pytest.mark.parametrize("value", [4.9, 45.1])
+def test_temperature_just_outside_fails(value):
+    problems = qc.evaluate_climate([22.0, value], H)
+    assert len(problems) == 1 and problems[0].startswith("temperature:")
+
+
+@pytest.mark.parametrize("value", [9.9, 90.1])
+def test_humidity_just_outside_fails(value):
+    problems = qc.evaluate_climate(T, [50.0, value])
+    assert len(problems) == 1 and problems[0].startswith("humidity:")
+
+
+def test_nan_fails_for_either_sensor():
+    assert any("NaN" in p for p in qc.evaluate_climate([22.0, float("nan")], H))
+    assert any("NaN" in p for p in qc.evaluate_climate(T, [float("nan"), 50.0]))
+
+
+@pytest.mark.parametrize("temps,hums", [([], H), ([22.0], H), (T, []), (T, [50.0]), ([], [])])
+def test_fewer_than_two_readings_of_either_sensor_fails(temps, hums):
+    assert any("need 2" in p for p in qc.evaluate_climate(temps, hums))
+
+
+def test_reading_order_does_not_change_the_result():
+    bad = [22.0, 4.9, float("nan")]
+    forward = qc.evaluate_climate(bad, [95.0, 50.0])
+    backward = qc.evaluate_climate(list(reversed(bad)), [50.0, 95.0])
+    assert forward == backward and forward == sorted(forward) and forward
+
+
+class ClimateLink:
+    def __init__(self, temps=None, hums=None, clock=None):
+        self.temps = T if temps is None else temps
+        self.hums = H if hums is None else hums
+        self.counted = []
+        self.waits = []
+
+    def count(self, name):
+        self.counted.append(name)
+        return 7
+
+    def wait_fresh(self, name, after, n, deadline_s):
+        self.waits.append((name, after, n, deadline_s))
+        return list(self.temps if name == entities.TEMPERATURE else self.hums)[:n]
+
+
+def test_measure_climate_counts_first_and_asks_for_two_of_each_inside_one_window():
+    link = ClimateLink()
+    temps, hums = qc.measure_climate(link)
+    assert (temps, hums) == (T, H)
+    assert set(link.counted) == {entities.TEMPERATURE, entities.HUMIDITY}
+    assert [w[:3] for w in link.waits] == [(entities.TEMPERATURE, 7, 2), (entities.HUMIDITY, 7, 2)]
+    first, second = link.waits[0][3], link.waits[1][3]
+    assert 0 < second <= first <= qc.HDC_WINDOW_S  # one shared deadline, never a second full window
+
+
+def test_a_silent_sensor_gives_a_short_list_and_a_problem_not_a_value():
+    link = ClimateLink(hums=[])
+    temps, hums = qc.measure_climate(link)
+    assert hums == []
+    assert qc.evaluate_climate(temps, hums) == ["humidity: 0 fresh reading(s), need 2"]

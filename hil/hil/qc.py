@@ -8,6 +8,7 @@ Not widened, not retried: the band is D-28's +-10 % and a channel that fails sta
 failed. A reading that never arrives is a problem, never a 0.
 """
 
+import math
 import time
 
 from . import RigError, entities
@@ -21,6 +22,12 @@ READINGS_PER_CHECK = 2
 DISCARD_READINGS = 2
 DUTIES = (50, 100, 0)
 CHANNELS = entities.CHANNELS
+
+# HDC1080 (D-29, QC-03): bounds are inclusive; two fresh readings of each sensor in one window.
+HDC_WINDOW_S = 30
+TEMP_RANGE_C = (5.0, 45.0)
+HUMIDITY_RANGE = (10.0, 90.0)
+HDC_READINGS = 2
 
 NO_FRESH = "no fresh reading"
 CANARY_SWAP = (1, 2)  # the canary image swaps the PWM pins of these two fans (hil/rev3.2.canary.yaml)
@@ -177,3 +184,44 @@ def measure_mapping(link, fan_hz, channels=CHANNELS, trace=None):
         raise
     _fans_off(link, channels, strict=True)
     return readings
+
+
+def _climate_problems(label, unit, values, bounds):
+    problems = []
+    if len(values) < HDC_READINGS:
+        problems.append("%s: %d fresh reading(s), need %d" % (label, len(values), HDC_READINGS))
+    low, high = bounds
+    for value in values:
+        if math.isnan(value):
+            problems.append("%s: NaN" % label)
+        elif not low <= value <= high:
+            problems.append("%s: %g %s outside %g-%g" % (label, value, unit, low, high))
+    return problems
+
+
+def evaluate_climate(temps, hums):
+    """Problems of an HDC1080 measurement (D-29); [] means plausible.
+
+    At least two values of each sensor, none NaN, temperature inside TEMP_RANGE_C and humidity
+    inside HUMIDITY_RANGE, bounds included. The result does not depend on the order in which the
+    readings arrived: the problems are returned sorted.
+    """
+    problems = _climate_problems("temperature", "C", list(temps), TEMP_RANGE_C)
+    problems += _climate_problems("humidity", "%RH", list(hums), HUMIDITY_RANGE)
+    return sorted(problems)
+
+
+def measure_climate(link, window_s=HDC_WINDOW_S):
+    """Two fresh Temperature and two fresh Humidity readings under one overall deadline.
+
+    The counters are taken first, so only messages that arrive from now on count. The two sensors
+    publish on their own schedule, so the deadline is shared: whichever reading is late takes the
+    time the other left over. Returns (temps, hums); a sensor that stayed silent gives a shorter
+    list (never a made-up value), which evaluate_climate turns into a problem.
+    """
+    after_t = link.count(entities.TEMPERATURE)
+    after_h = link.count(entities.HUMIDITY)
+    end = time.monotonic() + window_s
+    temps = link.wait_fresh(entities.TEMPERATURE, after_t, HDC_READINGS, end - time.monotonic())
+    hums = link.wait_fresh(entities.HUMIDITY, after_h, HDC_READINGS, max(0.0, end - time.monotonic()))
+    return temps, hums

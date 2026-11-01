@@ -141,3 +141,43 @@ def test_emit_masks_prints_nothing_outside_actions(tmp_path):
     with contextlib.redirect_stdout(out):
         config.emit_masks(cfg, env=env, network_file=net)
     assert out.getvalue() == ""
+
+
+# ---- framework and capabilities of rig.toml (HARN-02, D-33) ----
+
+
+def with_dut_keys(a_extra="", b_extra=""):
+    text = rig_toml()
+    text = text.replace('last_green_dir = "/nonexistent/last-green"\n', 'last_green_dir = "/nonexistent/last-green"\n' + a_extra, 1)
+    return text + b_extra
+
+
+def test_framework_and_capabilities_are_read_for_dut_a(tmp_path):
+    cfg, _env, _net = load(tmp_path, with_dut_keys('framework = "arduino"\ncapabilities = ["hdc1080", "usr1"]\n'))
+    assert cfg.duts["A"].framework == "arduino"
+    assert cfg.duts["A"].capabilities == ("hdc1080", "usr1")
+
+
+def test_dut_b_may_carry_the_keys_too(tmp_path):
+    cfg, _env, _net = load(tmp_path, with_dut_keys(b_extra='framework = "esp-idf"\ncapabilities = []\n'))
+    assert cfg.duts["B"].framework == "esp-idf" and cfg.duts["B"].capabilities == ()
+
+
+@pytest.mark.parametrize(
+    "line,match",
+    [
+        ('capabilities = ["hdc1080", "usr10"]', r"dut\.a\.capabilities has an unknown name"),
+        ('capabilities = ["USR1"]', r"dut\.a\.capabilities has an unknown name"),
+        ('capabilities = [" usr1"]', r"dut\.a\.capabilities has an unknown name"),
+        ('capabilities = ["usr1", "usr1"]', r"dut\.a\.capabilities has a duplicate"),
+        ('capabilities = "usr1"', r"dut\.a\.capabilities must be a list of names"),
+        ("capabilities = [1]", r"dut\.a\.capabilities must be a list of names"),
+        ('framework = "espidf"', r"dut\.a\.framework is not arduino or esp-idf"),
+        ('framework = "Arduino"', r"dut\.a\.framework is not arduino or esp-idf"),
+        ("framework = 3", r"dut\.a\.framework is not arduino or esp-idf"),
+    ],
+)
+def test_bad_framework_or_capabilities_are_refused_naming_the_key_not_the_list(tmp_path, line, match):
+    with pytest.raises(RigError, match=match) as err:
+        load(tmp_path, with_dut_keys(line + "\n"))
+    assert "usr10" not in str(err.value) and "hdc1080" not in str(err.value)

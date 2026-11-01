@@ -31,10 +31,12 @@ requires-dist = ["aioesphomeapi==46.12.0"]
 [tool.pytest.ini_options]
 markers = [
     "image(before=None, after=None): manifest role DUT A must run before and after the test (HARN-03)",
+    "requires(*capabilities): rig.toml capabilities the test needs; missing ones skip with a reason (HARN-02)",
 ]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-p no:cacheprovider"
+# -rs: every skip and its reason appear in the run output, so a capability skip is visible (HARN-02).
+addopts = "-p no:cacheprovider -rs"
 # Deadlines nest: operation (flash 120 s, API 90 s, ...) < per-test < session soft check
 # < "Run hardware check" step (12 min) < job (50 min). The HARD ceilings are the per-test
 # timeout below and the step-level timeout-minutes in hil.yml, which also cap Teardown
