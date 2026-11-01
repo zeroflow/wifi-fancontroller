@@ -13,7 +13,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from hil import RigError, contract, dut, flasher, ota, serial_tap, supervisor, teardown
+from hil import RigError, contract, dut, dutlink, flasher, ota, qc, serial_tap, supervisor, teardown
 
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
@@ -35,6 +35,10 @@ def test_named_deadlines():
     assert ota.OTA_ATTEMPT_S == 180
     assert dut.OTA_BOOT_S == 90
     assert dut.OTA_CONFIRM_WINDOW_S == 75
+    assert qc.FAN_SETTLE_S == 15
+    assert dutlink.API_CONNECT_S == 10
+    assert dutlink.RECONNECT_S == 1
+    assert dutlink.COMMAND_S == 5
 
 
 def test_per_test_timeout_exceeds_sum_of_operation_deadlines():
@@ -53,6 +57,15 @@ def test_per_test_timeout_exceeds_sum_of_operation_deadlines():
 def test_one_ota_test_fits_its_ceiling():
     """The OTA test of D-23: upload, then the new build ID, plus the API connect of the last probe and slack."""
     assert ota.OTA_ATTEMPT_S + dut.OTA_BOOT_S + dut.API_CONNECT_S + 30 < ini()["timeout"]
+
+
+def test_fan_mapping_test_fits_its_ceiling_with_every_step_hitting_its_deadline():
+    """The initial settle plus 4 channels x 3 duty steps, each step at its whole settle deadline,
+    plus the session connect, one command per step and the closing switch-off."""
+    steps = 1 + len(qc.CHANNELS) * len(qc.DUTIES)
+    commands = len(qc.CHANNELS) * (1 + 2) + len(qc.CHANNELS)
+    worst = dut.API_WAIT_S + steps * qc.FAN_SETTLE_S + commands * dutlink.COMMAND_S
+    assert worst < ini()["timeout"]
 
 
 def hil_job():

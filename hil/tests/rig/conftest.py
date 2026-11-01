@@ -5,7 +5,8 @@ finalizer, also when a test is killed by its timeout."""
 import pytest
 
 from hil import RigError, config, contract, manifest
-from hil.dut import Dut
+from hil.dut import API_WAIT_S, Dut
+from hil.dutlink import DutLink
 from hil.flasher import Flasher
 from hil.serial_tap import SerialTap
 from hil.supervisor import Supervisor
@@ -58,3 +59,17 @@ def dut_a(rig_config, supervisor, tap_a):
     cfg = rig_config.duts["A"]
     flasher = Flasher(rig_config.supervisor_host, contract.BRIDGE_PORT["A"], cfg.chip)
     return Dut("A", cfg, supervisor, flasher, tap=tap_a)
+
+
+@pytest.fixture(scope="session")
+def dut_link(request, rig_config, dut_a):
+    """The one persistent API session to DUT A for the whole run (QC reads and fan commands).
+
+    It reconnects by polling after every reboot and OTA and is closed in the finalizer, so
+    no API slot outlives the run. Depends on `dut_a` so it starts after the serial tap.
+    """
+    link = DutLink(rig_config.duts["A"].host, rig_config.dut_api_key)
+    request.addfinalizer(link.close)
+    link.start()
+    link.wait_connected(API_WAIT_S)
+    return link

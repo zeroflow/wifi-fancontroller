@@ -14,6 +14,8 @@ from pathlib import Path
 
 import yaml
 
+from hil import entities
+
 REPO = Path(__file__).resolve().parents[3]
 HIL = REPO / "hil"
 
@@ -91,10 +93,10 @@ def test_qc_module_publishes_the_debug_text_sensors_and_the_safe_mode_button():
     assert "debug" in data
     sensor = [entry for entry in data["text_sensor"] if entry["platform"] == "debug"]
     assert len(sensor) == 1
-    assert sensor[0]["device"]["name"] == "QC Device Info"
-    assert sensor[0]["reset_reason"]["name"] == "QC Reset Reason"
+    assert sensor[0]["device"]["name"] == entities.QC_DEVICE_INFO
+    assert sensor[0]["reset_reason"]["name"] == entities.QC_RESET_REASON
     button = [entry for entry in data["button"] if entry["platform"] == "safe_mode"]
-    assert [entry["name"] for entry in button] == ["QC Safe Mode Boot"]
+    assert [entry["name"] for entry in button] == [entities.QC_SAFE_MODE]
 
 
 def test_qc_module_overrides_no_fan_pwm_frequency():
