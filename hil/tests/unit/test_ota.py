@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import logging
 import os
 import sys
 import time
@@ -128,11 +129,13 @@ def test_output_tail_is_capped(worker, tmp_path, monkeypatch):
 # Worker entry -------------------------------------------------------------------------
 
 
-def stub_espota2(monkeypatch, returns=(0, None)):
+def stub_espota2(monkeypatch, returns=(0, None), log_success=True):
     calls = []
 
     def run_ota(*args, **kwargs):
         calls.append((args, kwargs))
+        if returns[0] == 0 and log_success:
+            logging.getLogger("esphome.espota2").info("OTA successful")
         return returns
 
     package = types.ModuleType("esphome")
@@ -148,7 +151,7 @@ def test_main_passes_the_key_as_noise_psk_and_refuses_plaintext(monkeypatch, tmp
     calls = stub_espota2(monkeypatch)
     monkeypatch.setenv(ota.KEY_ENV, KEY)
     assert ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")]) == ota.EXIT_OK
-    assert capsys.readouterr().out.splitlines() == [ota.DONE_LINE]
+    assert capsys.readouterr().out.splitlines() == ["OTA successful", ota.DONE_LINE]
     (args, kwargs), = calls
     assert args[:3] == ("203.0.113.9", 3232, None)  # no password
     assert str(args[3]) == str(tmp_path / "fw.bin")
@@ -161,6 +164,46 @@ def test_main_without_a_key_exits_3_before_importing_esphome(monkeypatch, tmp_pa
     assert ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")]) == ota.EXIT_SETUP
     assert calls == []
     assert ota.KEY_ENV in capsys.readouterr().out
+
+
+def test_main_prints_no_done_line_when_espota2_never_logs_success(monkeypatch, tmp_path, capsys):
+    stub_espota2(monkeypatch, log_success=False)
+    monkeypatch.setenv(ota.KEY_ENV, KEY)
+    assert ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")]) == ota.EXIT_OK
+    assert ota.DONE_LINE not in capsys.readouterr().out
+
+
+def test_main_leaves_the_espota2_logger_as_it_found_it(monkeypatch, tmp_path):
+    stub_espota2(monkeypatch)
+    monkeypatch.setenv(ota.KEY_ENV, KEY)
+    logger = logging.getLogger("esphome.espota2")
+    before = (list(logger.handlers), logger.level)
+    ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")])
+    assert (list(logger.handlers), logger.level) == before
+
+
+def test_real_worker_process_reports_done_before_it_exits(tmp_path, monkeypatch):
+    """End to end through python -m hil.ota with a stub esphome package: the callback fires at the
+    success log line, well before the worker (which, like espota2, lingers afterwards) exits."""
+    package = tmp_path / "stubs" / "esphome"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("", encoding="utf-8")
+    (package / "espota2.py").write_text(
+        "import logging, time\n"
+        "def run_ota(host, port, password, filename, ota_type=0, noise_psk=None,\n"
+        "            plaintext_fallback=False, allow_plaintext_upload=False):\n"
+        "    logging.getLogger(__name__).info('OTA successful')\n"
+        "    time.sleep(1.5)\n"
+        "    return 0, host\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "stubs"))
+    seen = []
+    result = Ota("203.0.113.9").upload(tmp_path / "fw.bin", KEY, on_done=lambda: seen.append(time.monotonic()))
+    finished = time.monotonic()
+    assert result.ok and len(seen) == 1
+    assert finished - seen[0] > 1.0
+    assert KEY not in result.output_tail and ota.DONE_LINE not in result.output_tail
 
 
 def test_main_failed_upload_exits_1_without_a_done_line(monkeypatch, tmp_path, capsys):
@@ -279,12 +322,13 @@ def test_ota_old_old_new_is_ok_and_reported(rig, capsys):
     assert "ota qc-auto: ok transfer=12.3s" in out and NEW_ID in out
 
 
-def test_end_mark_is_set_once_even_when_the_launcher_never_reports_done(rig):
+def test_without_a_done_report_the_banner_is_looked_for_from_ota_start(rig):
     fake = FakeOta(ok_result(), reports_done=False)
     device, _, _, tap = rig.build(ok_result(), [NEW_ID])
     device._ota = fake
     device.ota(rig.image, noise_psk=KEY)
     assert tap.marks.count("ota_end_qc-auto") == 1
+    assert tap.asked == ["ota_start_qc-auto"]
 
 
 def test_ota_survives_a_rebooting_dut_that_refuses_connections(rig):

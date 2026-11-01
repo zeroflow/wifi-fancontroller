@@ -9,6 +9,7 @@ The DUT API key reaches the worker only through the HIL_OTA_KEY environment vari
 never argv. Plaintext is refused: no fallback and no plaintext upload (D-23, T-02-11).
 """
 
+import logging
 import os
 import signal
 import subprocess
@@ -22,11 +23,14 @@ OTA_PORT = 3232
 OTA_ATTEMPT_S = 180  # run_ota itself retries 3 times, 5 s apart, 20 s connect timeout each
 TAIL_LINES = 40
 KEY_ENV = "HIL_OTA_KEY"
-# The worker prints this line the moment run_ota has returned success. The launcher turns it
-# into the on_done callback, so the caller's "OTA end" mark lands before the DUT's reboot
-# (ESPHome waits 100 ms after the last ack); marking at process exit is too late, because
-# the interpreter needs longer than that to shut down (seen on DUT A, 2026-11-01).
+# The worker prints this line the moment espota2 logs "OTA successful", i.e. right after it
+# sent the end acknowledgement and before the DUT reboots. The launcher turns it into the
+# on_done callback, so the caller's "OTA end" mark lands before the reboot banner. Marking when
+# run_ota returns is too late: espota2 sleeps 1 s after that log line, and the process exit
+# takes longer still (seen on DUT A, 2026-11-01: the banner sat 2 KB before the mark).
 DONE_LINE = "HIL-OTA-DONE"
+SUCCESS_LOG_PREFIX = "OTA successful"
+ESPOTA_LOGGER = "esphome.espota2"
 
 EXIT_OK = 0
 EXIT_OTA_FAILED = 1
@@ -117,6 +121,15 @@ class Ota:
         return OtaResult(ok=reason == "", duration_s=seconds, reason=reason, output_tail="\n".join(tail))
 
 
+class _SuccessMark(logging.Handler):
+    """Print DONE_LINE when espota2 logs that the upload was acknowledged. A missing line only
+    costs the caller its precise end mark (it falls back); it never changes the upload."""
+
+    def emit(self, record):
+        if record.getMessage().startswith(SUCCESS_LOG_PREFIX):
+            print(DONE_LINE, flush=True)
+
+
 def main(argv):
     """Worker entry: python -m hil.ota <host> <port> <firmware path>; the key is in HIL_OTA_KEY."""
     if len(argv) != 3:
@@ -137,19 +150,33 @@ def main(argv):
     except ImportError as exc:
         print("cannot import esphome.espota2 (missing module: %s)" % (exc.name or "unknown"))
         return EXIT_SETUP
-    # Keywords only: ota_type sits before noise_psk in the signature. Both plaintext
-    # keywords are False, so a failed encrypted handshake ends the upload.
-    code, _detail = espota2.run_ota(
-        host,
-        port,
-        None,
-        Path(path),
-        noise_psk=key,
-        plaintext_fallback=False,
-        allow_plaintext_upload=False,
-    )
+    # espota2 reports through logging; show its messages (they end up in the failure tail) and
+    # watch for the success message. Both handlers are removed again so main() can be called twice.
+    logger = logging.getLogger(ESPOTA_LOGGER)
+    shown = logging.StreamHandler(sys.stdout)
+    shown.setFormatter(logging.Formatter("%(message)s"))
+    handlers = [shown, _SuccessMark()]
+    previous_level = logger.level
+    for handler in handlers:
+        logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+    try:
+        # Keywords only: ota_type sits before noise_psk in the signature. Both plaintext
+        # keywords are False, so a failed encrypted handshake ends the upload.
+        code, _detail = espota2.run_ota(
+            host,
+            port,
+            None,
+            Path(path),
+            noise_psk=key,
+            plaintext_fallback=False,
+            allow_plaintext_upload=False,
+        )
+    finally:
+        for handler in handlers:
+            logger.removeHandler(handler)
+        logger.setLevel(previous_level)
     if code == 0:
-        print(DONE_LINE, flush=True)
         return EXIT_OK
     print("OTA upload failed (run_ota returned %s)" % code)
     return EXIT_OTA_FAILED
