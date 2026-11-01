@@ -31,3 +31,13 @@ addopts = "-p no:cacheprovider"
 timeout = 420
 timeout_method = "signal"
 session_timeout = 600
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Not the default set: it adds UP031 (185 findings against the project's deliberate
+# "%" string formatting) and other style rules. This selection is the error-level
+# subset: import and statement syntax problems (E4, E7, E9) and pyflakes (F), which
+# catches unused imports and undefined names, the failures that matter for test code.
+select = ["E4", "E7", "E9", "F"]

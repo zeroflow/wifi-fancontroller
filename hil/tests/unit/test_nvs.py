@@ -1,7 +1,6 @@
 """NVS capture and restore: partition table parsing and the capture ordering rules (no hardware)."""
 
 import hashlib
-import os
 import stat
 import struct
 from types import SimpleNamespace

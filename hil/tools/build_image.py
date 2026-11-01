@@ -1042,7 +1042,7 @@ def self_test():
 
     # 4. CI mode names a missing key, never a value.
     without_ssid = "\n".join(
-        l for l in SELF_TEST_NETWORK_OK.split("\n") if not l.startswith("hil_wifi_ssid"))
+        row for row in SELF_TEST_NETWORK_OK.split("\n") if not row.startswith("hil_wifi_ssid"))
     code, out, err, _reads = self_run(
         ["--commit", SELF_TEST_SHA, "--out", "unused"], {"GITHUB_ACTIONS": "true"}, without_ssid)
     check("CI missing key exits 2 naming the key",
@@ -1140,7 +1140,6 @@ def self_test():
           TARGETS[0]["role"] == "commit"
           and [t["role"] for t in TARGETS if t["final"]] == ["commit"])
 
-    import shutil
     import tempfile
     fan_hz = {(t["role"], t["rev"]): 25000 for t in TARGETS if not t["final"]}
 
@@ -1174,7 +1173,7 @@ def self_test():
             return inner(target)
 
         inner = fake_builder(work, built)
-        manifest = produce(TARGETS, out, SELF_TEST_SHA, SELF_TEST_SHA[:12], "9.9.9", watching, fan_hz)
+        produce(TARGETS, out, SELF_TEST_SHA, SELF_TEST_SHA[:12], "9.9.9", watching, fan_hz)
         check("every target is built in TARGETS order",
               built == [t["role"] for t in TARGETS], str(built))
         check("no manifest.json exists while any target is still building",
@@ -1274,7 +1273,6 @@ def self_test():
 
     # 11. check_configs: framework table, identity, entities, canary fault (D-34, D-31).
     table = {"schema": 1, "revisions": {"3.2": "arduino", "4.0": "esp-idf"}}
-    placeholders = dict(PLACEHOLDERS)
 
     def good_resolved(target):
         names_fan = ["Fan %d" % n for n in (1, 2, 3, 4)]
