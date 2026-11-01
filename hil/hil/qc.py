@@ -281,3 +281,54 @@ def evaluate_framework(table, rig, device, manifest):
     if len(set(values)) == 1 and table in FRAMEWORK_NAMES.values():
         return []
     return ["table=%s rig.toml=%s device=%s manifest=%s" % values]
+
+
+def _button_state(value):
+    """"ON", "OFF" or "no reading"; only the booleans True and False are readings."""
+    if value is True:
+        return "ON"
+    if value is False:
+        return "OFF"
+    return "no reading"
+
+
+def evaluate_buttons(pressed, states):
+    """Problems of one USR press (D-30); [] means the pressed button is ON and the others OFF.
+
+    `states` maps the button number (1..3) to the reported value. Anything but the booleans True
+    and False, and a button missing from `states`, is "no reading", never OFF. One problem per
+    wrong button, ordered by button number.
+    """
+    problems = []
+    for n in sorted(entities.BUTTON_USR):
+        state = _button_state(states.get(n))
+        want = "ON" if n == pressed else "OFF"
+        if state != want:
+            problems.append("USR%d is %s, expected %s while USR%d is pressed" % (n, state, want, pressed))
+    return problems
+
+
+def measure_usr(supervisor, switch, link, n):
+    """Hold the supervisor line `switch` for button USR`n` and read the DUT API (D-30).
+
+    Returns {"before", "states", "released"}: `before` is False when the button reported OFF
+    before the press, `states` the three buttons' values while the line is held, `released` the
+    pressed button's value after the release. Every wait is a signal wait with USR_WAIT_S. When
+    the button is not seen OFF first, nothing is pressed (a stale ON could not tell a press from
+    the old state) and `before` is None. The line is released in a finally block, so a test
+    stopped by its timeout never leaves it held; this function holds at most this one line.
+    """
+    name = entities.BUTTON_USR[n]
+    result = {"before": link.wait_value(name, lambda v: v is False, USR_WAIT_S), "states": {}, "released": None}
+    if result["before"] is None:
+        return result
+    try:
+        supervisor.set_switch(switch, True)
+        pressed = link.wait_value(name, lambda v: v is True, USR_WAIT_S)
+        result["states"] = {m: link.value(entities.BUTTON_USR[m]) for m in sorted(entities.BUTTON_USR)}
+        result["states"][n] = pressed
+        supervisor.set_switch(switch, False)
+        result["released"] = link.wait_value(name, lambda v: v is False, USR_WAIT_S)
+    finally:
+        supervisor.set_switch(switch, False)
+    return result

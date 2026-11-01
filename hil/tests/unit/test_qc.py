@@ -553,3 +553,130 @@ def test_a_table_without_revisions_or_with_an_unknown_framework_is_refused(tmp_p
     path.write_text('schema = 1\n[revisions]\n"3.2" = "Arduino"\n')
     with pytest.raises(ValueError, match="3.2"):
         qc.framework_table(path)
+
+
+# ---------------------------------------------------------------- USR buttons (QC-04, D-30)
+
+
+def test_usr_wait_is_five_seconds():
+    assert qc.USR_WAIT_S == 5
+
+
+@pytest.mark.parametrize("pressed", [1, 2, 3])
+def test_only_the_pressed_button_on_is_no_problem(pressed):
+    states = {n: n == pressed for n in (1, 2, 3)}
+    assert qc.evaluate_buttons(pressed, states) == []
+
+
+def test_the_pressed_button_off_is_one_problem():
+    (problem,) = qc.evaluate_buttons(2, {1: False, 2: False, 3: False})
+    assert "USR2" in problem and "OFF" in problem
+
+
+def test_another_button_on_is_one_problem_for_each():
+    problems = qc.evaluate_buttons(2, {1: True, 2: True, 3: True})
+    assert len(problems) == 2
+    assert "USR1" in problems[0] and "USR3" in problems[1]
+
+
+def test_the_pressed_one_off_and_another_on_are_two_problems():
+    assert len(qc.evaluate_buttons(1, {1: False, 2: True, 3: False})) == 2
+
+
+@pytest.mark.parametrize("missing", [None, float("nan")])
+def test_a_button_without_a_reading_is_a_problem_never_off(missing):
+    assert len(qc.evaluate_buttons(2, {1: False, 2: True, 3: missing})) == 1
+    assert len(qc.evaluate_buttons(2, {1: False, 2: missing, 3: False})) == 1
+
+
+def test_an_absent_button_is_a_problem():
+    assert len(qc.evaluate_buttons(2, {1: False, 2: True})) == 1
+
+
+def test_a_value_that_is_not_a_boolean_is_not_on_or_off():
+    assert len(qc.evaluate_buttons(2, {1: 0, 2: 1, 3: False})) == 2
+
+
+class UsrRig:
+    """A supervisor and a DUT link in one fake: holding a line makes that button ON on the DUT."""
+
+    def __init__(self, stuck_on=(), silent=(), fail_wait_on=None):
+        self.values = {n: (n in stuck_on) for n in (1, 2, 3)}
+        self.held = set()
+        self.max_held = 0
+        self.calls = []
+        self.silent = set(silent)
+        self.fail_wait_on = fail_wait_on
+        self.lines = {"line%d" % n: n for n in (1, 2, 3)}
+
+    # supervisor
+    def set_switch(self, name, on):
+        self.calls.append((name, bool(on)))
+        n = self.lines[name]
+        if on:
+            self.held.add(name)
+            self.max_held = max(self.max_held, len(self.held))
+            if n not in self.silent:
+                self.values[n] = True
+        else:
+            self.held.discard(name)
+            if n not in self.silent:
+                self.values[n] = False
+
+    # DUT link
+    def value(self, name):
+        return self.values[_number(name)]
+
+    def wait_value(self, name, predicate, deadline_s):
+        if self.fail_wait_on is not None and self.fail_wait_on(self):
+            raise TimeoutError("test timeout")
+        value = self.values[_number(name)]
+        return value if value is not None and predicate(value) else None
+
+
+def _number(name):
+    return {v: k for k, v in entities.BUTTON_USR.items()}[name]
+
+
+def test_measure_usr_presses_reads_the_others_and_releases():
+    rig = UsrRig()
+    result = qc.measure_usr(rig, "line2", rig, 2)
+    assert result == {"before": False, "states": {1: False, 2: True, 3: False}, "released": False}
+    assert rig.calls == [("line2", True), ("line2", False), ("line2", False)]
+    assert qc.evaluate_buttons(2, result["states"]) == []
+
+
+def test_measure_usr_never_holds_two_lines_across_the_three_buttons():
+    rig = UsrRig()
+    for n in (1, 2, 3):
+        qc.measure_usr(rig, "line%d" % n, rig, n)
+    assert rig.max_held == 1 and rig.held == set()
+
+
+def test_measure_usr_releases_the_line_when_a_wait_is_cut_short():
+    rig = UsrRig(fail_wait_on=lambda r: bool(r.held))  # the timeout lands while the line is held
+    with pytest.raises(TimeoutError):
+        qc.measure_usr(rig, "line1", rig, 1)
+    assert rig.held == set() and rig.calls[-1] == ("line1", False)
+
+
+def test_measure_usr_releases_the_line_when_the_dut_never_reports_the_press():
+    rig = UsrRig(silent={3})
+    result = qc.measure_usr(rig, "line3", rig, 3)
+    assert result["states"][3] is None and result["released"] is False
+    assert rig.held == set()
+    assert qc.evaluate_buttons(3, result["states"])
+
+
+def test_measure_usr_does_not_press_when_the_button_is_not_off_before():
+    rig = UsrRig(stuck_on={2})
+    result = qc.measure_usr(rig, "line2", rig, 2)
+    assert result["before"] is None and result["states"] == {} and result["released"] is None
+    assert rig.calls == []  # a stale ON could not tell a press from the old state
+
+
+def test_measure_usr_reports_another_button_on_while_one_is_pressed():
+    rig = UsrRig(stuck_on={3})
+    result = qc.measure_usr(rig, "line1", rig, 1)
+    assert result["states"] == {1: True, 2: False, 3: True}
+    assert len(qc.evaluate_buttons(1, result["states"])) == 1
