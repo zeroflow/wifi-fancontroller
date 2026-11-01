@@ -6,6 +6,9 @@ requires-python = ">=3.12"
 dependencies = [
     "aioesphomeapi==46.12.0",
     "esptool==5.4.0",
+    # OTA client only (hil/ota.py runs esphome.espota2 in a worker subprocess); the same
+    # ESPHome release the firmware is built with. See dependency-metadata below.
+    "esphome==2026.10.1",
     "pytest==9.2.0",
     "pytest-timeout==2.4.0",
 ]
@@ -16,7 +19,19 @@ package = false
 # transitive packages (colorama, and similar) out of the reviewed set.
 environments = ["sys_platform == 'linux'"]
 
+# esphome declares about 50 runtime requirements (a source-only paho-mqtt among them) that
+# the OTA client never imports. Declaring only what espota2 needs keeps the lock to one new
+# hash-locked wheel on the LAN runner. If an esphome bump makes `import esphome.espota2`
+# need another package, the import fails loudly and that package gets its own review.
+[[tool.uv.dependency-metadata]]
+name = "esphome"
+version = "2026.10.1"
+requires-dist = ["aioesphomeapi==46.12.0"]
+
 [tool.pytest.ini_options]
+markers = [
+    "image(before=None, after=None): manifest role DUT A must run before and after the test (HARN-03)",
+]
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-p no:cacheprovider"

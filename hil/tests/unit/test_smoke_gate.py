@@ -8,7 +8,7 @@ import pytest
 
 from hil import RigError
 
-SMOKE = Path(__file__).resolve().parents[1] / "rig" / "test_smoke_dut_a.py"
+SMOKE = Path(__file__).resolve().parents[1] / "rig" / "test_10_smoke_dut_a.py"
 BANNER = "rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)\r\n"
 BUILD_ID = "3.2+hil." + "a" * 12
 

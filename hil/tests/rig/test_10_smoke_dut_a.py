@@ -5,8 +5,13 @@ and its UART0 boot log from reset to API-ready plus a settle time has no [E] lin
 import json
 import time
 
+import pytest
+
 from hil import RigError, bootlog, config
 from hil.dut import BOOT_SETTLE_S
+
+# D-23: the run starts with one serial flash of the commit image; the OTAs follow in later files.
+pytestmark = pytest.mark.image(after="commit")
 
 
 def test_commit_image_boots_and_reports_build_id(dut_a, tap_a, fw_manifest, rig_config):
