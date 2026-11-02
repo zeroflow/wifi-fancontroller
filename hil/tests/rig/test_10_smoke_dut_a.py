@@ -1,9 +1,10 @@
 """Smoke test: the commit image boots on DUT A, reports the manifest's build ID,
 and its UART0 boot log from reset to API-ready plus a settle time has no [E] line
-(D-14: no allowlist)."""
+(D-14: no allowlist, except the one expiring entry in bootlog.ALLOWED_ERRORS, always reported)."""
 
 import json
 import time
+import warnings
 
 import pytest
 
@@ -53,9 +54,16 @@ def test_commit_image_boots_and_reports_build_id(dut_a, tap_a, fw_manifest, rig_
     if not bootlog.has_boot_banner(window, rig_config.duts["A"].chip):
         raise RigError("no ROM boot banner captured after reset; boot log gate would be vacuous")
 
-    errors = bootlog.error_lines(window)
+    errors, allowed = bootlog.classify_errors(window)
+    for line in allowed:
+        message = "ALLOWLISTED boot-log line (D-14 amendment, expires with the ESPHome 2026.10.1 pin): %s" % line
+        print("WARNING: " + message)
+        warnings.warn(message, stacklevel=1)
+    (reports / "allowlisted-errors.json").write_text(
+        json.dumps({"lines": allowed}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     if errors:
         problems.append("%d [E] line(s) in the UART0 boot log:\n%s" % (len(errors), "\n".join(errors)))
     else:
-        print("boot log clean: 0 [E] lines")
+        print("boot log clean: 0 [E] lines (%d allowlisted)" % len(allowed))
     assert not problems, "\n".join(problems)

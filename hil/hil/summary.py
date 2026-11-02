@@ -206,6 +206,14 @@ def _rig_conditions(reports):
     return rows or ["none"]
 
 
+def _allowlisted(reports):
+    data = _read_json(reports / "allowlisted-errors.json")
+    if not isinstance(data, dict) or not isinstance(data.get("lines"), list):
+        return ["Allowlisted boot-log lines: %s" % NOT_RECORDED]
+    lines = [str(line) for line in data["lines"]]
+    return ["- WARNING %s" % _cell(line) for line in lines] or ["none"]
+
+
 def _budget_line(reports):
     budget = _read_json(reports / "budget-dut-a.json")
     if not isinstance(budget, dict):
@@ -235,6 +243,7 @@ def render(reports_dir, manifest):
     lines += ["", "### Timings", ""] + _timings(reports) + [""] + _flash_and_ota(reports)
     lines += ["", "### Skipped", ""] + _skipped(reports)
     lines += ["", "### Rig conditions", ""] + _rig_conditions(reports)
+    lines += ["", "### Allowlisted boot-log lines", ""] + _allowlisted(reports)
     lines += ["", _budget_line(reports), "", _final_image_line(reports)]
     return "\n".join(lines) + "\n"
 

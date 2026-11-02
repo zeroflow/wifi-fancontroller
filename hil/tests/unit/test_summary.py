@@ -141,6 +141,7 @@ def full(reports):
         "canary_passed": True, "not_run": 0, "session_cut": None,
     })
     put(reports, "rig-errors.json", [])
+    put(reports, "allowlisted-errors.json", {"lines": []})
     put(reports, "budget-dut-a.json", {"limit": 8, "used": 6, "streak": 1, "decay_s": 70, "boots": []})
     return reports
 
@@ -157,6 +158,7 @@ def test_every_section_shows_in_the_documented_order(full):
         "### Timings",
         "### Skipped",
         "### Rig conditions",
+        "### Allowlisted boot-log lines",
         "Reset budget: 6 boots, streak 1/8",
         "**Final image:**",
     ]
@@ -230,6 +232,7 @@ def test_a_fail_summary_has_no_pass_anywhere(full):
         ("tests.json", "Skipped: not recorded"),
         ("budget-dut-a.json", "Reset budget: not recorded"),
         ("rig-errors.json", "Rig conditions: not recorded"),
+        ("allowlisted-errors.json", "Allowlisted boot-log lines: not recorded"),
         ("final-image.json", "**Final image:** not recorded"),
     ],
 )
@@ -278,6 +281,16 @@ def test_a_rig_error_before_any_test_has_no_node_id(full):
 
 def test_no_rig_errors_say_none(full):
     assert "### Rig conditions\n\nnone" in summary.render(full, FULL_MANIFEST)
+
+
+def test_allowlisted_boot_log_lines_are_listed_as_warnings(full):
+    put(full, "allowlisted-errors.json", {"lines": ["E (1234) task_wdt: esp_task_wdt_reset(707): task not found"]})
+    text = summary.render(full, FULL_MANIFEST)
+    assert "### Allowlisted boot-log lines\n\n- WARNING E (1234) task_wdt: esp_task_wdt_reset(707): task not found" in text
+
+
+def test_no_allowlisted_lines_say_none(full):
+    assert "### Allowlisted boot-log lines\n\nnone" in summary.render(full, FULL_MANIFEST)
 
 
 def test_the_final_image_line_says_when_it_is_not_confirmed(full):
