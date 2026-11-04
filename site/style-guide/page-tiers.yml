@@ -1,0 +1,63 @@
+# Page to tier map for the docs prose lint (single source, read by prose-lint.py).
+#
+# One line per content file below site/src/content/docs: <path>: <tier>
+# The tier is strict, moderate or free. The language is de when the path starts
+# with de/, otherwise en. Blank lines and comment lines are allowed, anything
+# else is a parse error.
+#
+# STATUS: the tiers are proposals until the maintainer approves them at the
+# Phase 22 checkpoint (plan 22-02).
+#
+# Numbered steps and caution or danger asides are strict on every page,
+# whatever the page tier (decision D-01). The lint applies that per element.
+#
+# A new content file needs an entry here, or verify-prose.sh --map fails.
+# After editing this file run: bash site/scripts/verify-prose.sh --write-config
+
+blog/server-rack-cooling-esp32-home-assistant.md: free
+de/getting-started/first-setup.mdx: strict
+de/index.mdx: free
+de/reference/compliance.md: strict
+de/reference/datasheet.md: moderate
+de/reference/hardware/index.md: moderate
+de/reference/hardware/rev-1-0.mdx: moderate
+de/reference/hardware/rev-2-0.mdx: moderate
+de/reference/hardware/rev-3-0.mdx: moderate
+de/reference/hardware/rev-3-x.mdx: moderate
+getting-started/firmware-updates.mdx: strict
+getting-started/first-setup.mdx: strict
+getting-started/home-assistant.mdx: strict
+getting-started/index.mdx: moderate
+getting-started/troubleshooting.md: strict
+index.mdx: free
+reference/compliance.md: strict
+reference/datasheet.md: moderate
+reference/fan-compatibility.md: moderate
+reference/hardware/index.md: moderate
+reference/hardware/rev-1-0.mdx: moderate
+reference/hardware/rev-2-0.mdx: moderate
+reference/hardware/rev-3-0.mdx: moderate
+reference/hardware/rev-3-x.mdx: moderate
+reference/index.md: moderate
+reference/modules/fallback-mode.md: moderate
+reference/modules/index.md: moderate
+reference/modules/rpm-pi-control.md: moderate
+reference/modules/rpm-status-leds.md: moderate
+reference/modules/stall-guard.md: moderate
+reference/modules/temperature-curve-dual.md: moderate
+reference/modules/temperature-curve-triple-independent.md: moderate
+reference/modules/temperature-curve-triple.md: moderate
+reference/modules/temperature-curve.md: moderate
+reference/modules/temperature-linear.md: moderate
+reference/modules/temperature-pid.md: moderate
+reference/modules/usr-buttons-mode.md: moderate
+reference/modules/usr-buttons.md: moderate
+reference/qwiic/combining.md: moderate
+reference/qwiic/examples/bme680-bsec2.md: moderate
+reference/qwiic/examples/bme680.md: moderate
+reference/qwiic/examples/ds2484.md: moderate
+reference/qwiic/examples/scd41.md: moderate
+reference/qwiic/examples/ssd1306.md: moderate
+reference/qwiic/index.md: moderate
+reference/standalone.mdx: strict
+reference/web-server.mdx: strict

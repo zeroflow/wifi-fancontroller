@@ -1,0 +1,83 @@
+- name: flags an em-dash with spaces
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait \u2014 then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags an em-dash between two words
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait\u2014then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags an en-dash with spaces around it
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait \u2013 then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags an en-dash with a space before it only
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait \u2013then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags an en-dash with a space after it only
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait\u2013 then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: ignores an en-dash range between two characters
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Values from 0\u2013255 are valid.</p></div></main>"
+  absent: "DocsDE.Dashes"
+
+- name: flags a spaced single hyphen
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait - then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags a spaced double hyphen
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait -- then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags an unspaced double hyphen between digits
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Connect fan 1--4 to the board.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: ignores a hyphenated compound
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Use a four-pin, well-known fan.</p></div></main>"
+  absent: "DocsDE.Dashes"
+
+- name: ignores a double-hyphen flag inside inline code
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Run <code>esphome --dashboard run</code> now.</p></div></main>"
+  absent: "DocsDE.Dashes"
+
+- name: ignores a dash inside the navigation chrome
+  rule: Dashes.yml
+  format: html
+  input: "<nav><p>Menu \u2014 here</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Dashes"
+
+- name: ignores an em-dash on an English fallback page
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Wait \u2014 then go.</p></div></main>"
+  absent: "DocsDE.Dashes"
+
+- name: flags a spaced hyphen in a sentence with umlauts
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Schließen Sie den Lüfter an - danach prüfen Sie die Drehzahl.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"

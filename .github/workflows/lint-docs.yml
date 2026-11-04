@@ -1,0 +1,50 @@
+name: Lint Docs
+
+on:
+  pull_request:
+    paths:
+      - 'site/**'
+      - '.github/workflows/lint-docs.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'site/**'
+      - '.github/workflows/lint-docs.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prose:
+    name: Prose lint on built site
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Install site dependencies
+        working-directory: site
+        run: npm ci
+
+      - name: Build site
+        working-directory: site
+        run: npm run build
+
+      # The same script a developer runs locally. It pulls the pinned Vale image
+      # (see VALE_IMAGE in the script), lints the built pages and fails only on
+      # error level alerts, a ratchet gap, a stale generated config or a failing
+      # rule test. All other findings are warnings in the log and job summary.
+      - name: Prose lint (pinned Vale in Docker)
+        run: bash site/scripts/verify-prose.sh

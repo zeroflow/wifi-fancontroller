@@ -1,0 +1,40 @@
+# Ratchet list for the docs prose lint (decision D-09), read by prose-lint.py.
+#
+# A page listed under a rule is blocking for that rule: an alert of that rule on
+# that page fails the CI job (level error). All other pages only warn.
+# A page that has zero alerts of a rule but is not listed makes the lint fail
+# with a RATCHET line that names the exact line to add. So a page becomes
+# blocking in the same commit that cleans it, and a clean page can never get
+# dirty again unnoticed.
+#
+# Grammar: '<Style>.<Rule>:' headers, each followed by '  - <path>' items. The
+# paths are relative to site/src/content/docs. After editing run:
+#   bash site/scripts/verify-prose.sh --write-config
+
+DocsEN.Dashes:
+  - getting-started/first-setup.mdx
+  - getting-started/index.mdx
+  - reference/compliance.md
+  - reference/datasheet.md
+  - reference/index.md
+  - reference/modules/fallback-mode.md
+  - reference/modules/temperature-curve-triple-independent.md
+  - reference/modules/usr-buttons-mode.md
+  - reference/qwiic/examples/bme680-bsec2.md
+  - reference/qwiic/examples/bme680.md
+  - reference/qwiic/examples/ds2484.md
+  - reference/qwiic/examples/scd41.md
+  - reference/qwiic/examples/ssd1306.md
+  - reference/qwiic/index.md
+  - reference/standalone.mdx
+
+DocsDE.Dashes:
+  - de/getting-started/first-setup.mdx
+  - de/index.mdx
+  - de/reference/compliance.md
+  - de/reference/datasheet.md
+  - de/reference/hardware/index.md
+  - de/reference/hardware/rev-1-0.mdx
+  - de/reference/hardware/rev-2-0.mdx
+  - de/reference/hardware/rev-3-0.mdx
+  - de/reference/hardware/rev-3-x.mdx
