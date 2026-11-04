@@ -20,7 +20,11 @@ esphome:
   min_version: 2026.8.0
   project:
     name: zeroflow.fancontroller-rev3-2
-    version: "3.2"
+    # Release version, CalVer YEAR.MONTH.PATCH, not the hardware revision.
+    # Home Assistant offers an update only when this number goes up. It must
+    # equal the release tag without the leading "v": publish-firmware.yml
+    # checks that before it builds.
+    version: "2026.11.0"
 
 dashboard_import:
   package_import_url: github://zeroflow/wifi-fancontroller/fancontroller-rev3.2-esp32s2.yaml@main
