@@ -10,8 +10,9 @@ permissions:
 jobs:
   # Home Assistant offers a firmware update only when the version goes up. The
   # shipped configs carry the release version in `esphome: project: version:`,
-  # and this job fails the release when any file built below does not match
-  # the release tag without its leading "v".
+  # and this job fails the release when any file built below, or any other
+  # fancontroller-rev*.yaml at the repo root, does not match the release tag
+  # without its leading "v".
   check-version:
     name: Check Release Version
     runs-on: ubuntu-latest
@@ -49,6 +50,14 @@ jobs:
           if not files:
               print("::error::No files found in the files input of build-firmware in %s." % WORKFLOW)
               sys.exit(1)
+          # The non-factory configs are not built here, but customers compile
+          # them through dashboard_import. A stale version there would make
+          # Home Assistant offer an update that is not one, so check them too.
+          files += sorted(
+              name
+              for name in os.listdir(".")
+              if name.startswith("fancontroller-rev") and name.endswith(".yaml") and name not in files
+          )
 
 
           class ConfigLoader(yaml.SafeLoader):
@@ -82,11 +91,11 @@ jobs:
 
           if failures:
               print(
-                  "::error::%d of %d built configs do not match release version %s."
+                  "::error::%d of %d configs do not match release version %s."
                   % (failures, len(files), expected)
               )
               sys.exit(1)
-          print("All %d built configs carry release version %s." % (len(files), expected))
+          print("All %d configs carry release version %s." % (len(files), expected))
           PY
 
   # Two independent version lines meet in this file. The @tag on each `uses:`
