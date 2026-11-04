@@ -3,7 +3,7 @@
 import ast
 from pathlib import Path
 
-from hil import contract
+from hil import contract, entities
 from hil.supervisor import Supervisor
 
 TESTS = Path(__file__).resolve().parents[1]
@@ -12,6 +12,10 @@ PREFIXES = tuple(contract.SERIAL_CONNECTED[d].removesuffix("Serial Connected") f
     contract.SUPERVISOR_RESTART,
 )
 USR3 = contract.SWITCH["A"]["usr3"]
+# The DUT's own entity names (hil/entities.py) are a second contract with the same rule.
+DUT_NAMES = frozenset(entities.QC_ENTITIES) | set(entities.FAN.values()) | set(entities.FAN_SPEED.values()) | set(
+    entities.BUTTON_USR.values()
+)
 
 
 def all_contract_names():
@@ -79,3 +83,32 @@ def test_a_contract_name_reported_twice_is_a_contract_error_naming_it():
 def test_extra_non_contract_entities_are_allowed():
     names = sorted(contract.REQUIRED_ENTITIES) + ["Uptime", "WiFi Signal"]
     assert Supervisor.contract_problems(names) == []
+
+
+def literal_offenders(source, forbidden):
+    return [
+        node.lineno
+        for node in ast.walk(ast.parse(source))
+        if isinstance(node, ast.Constant) and isinstance(node.value, str) and node.value in forbidden
+    ]
+
+
+def test_no_test_file_contains_a_dut_entity_name_literal():
+    offenders = []
+    for path in sorted(TESTS.rglob("*.py")):
+        for line in literal_offenders(path.read_text(encoding="utf-8"), DUT_NAMES):
+            offenders.append("%s:%d" % (path.relative_to(TESTS), line))
+    assert not offenders, "DUT entity names must come from hil.entities: " + ", ".join(offenders)
+
+
+def test_the_dut_name_scan_flags_every_kind_of_name():
+    for name in sorted(DUT_NAMES):
+        assert literal_offenders("x = %r" % name, DUT_NAMES) == [1]
+    assert literal_offenders("x = 'Fan 1 Speed '", DUT_NAMES) == []
+    assert literal_offenders("x = 'fan 1'", DUT_NAMES) == []
+
+
+def test_dut_name_set_covers_four_fans_four_tachs_climate_buttons_and_qc_entities():
+    assert len(entities.FAN) == len(entities.FAN_SPEED) == 4 and len(entities.BUTTON_USR) == 3
+    assert len(DUT_NAMES) == 4 + 4 + 2 + 3 + 3
+    assert not DUT_NAMES & contract.REQUIRED_ENTITIES

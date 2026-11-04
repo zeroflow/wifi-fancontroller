@@ -10,7 +10,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import RigError
+from . import RigError, caps
 
 NETWORK_FILE = Path(__file__).resolve().parent.parent / "hil-network.yaml"
 DUT_KEY_NAME = "hil_dut_api_key"
@@ -34,6 +34,8 @@ DUT_REQUIRED = (
     "nvs_offset",
     "nvs_size",
     "last_green_dir",
+    "framework",
+    "capabilities",
 )
 DUT_B_REQUIRED = ("rev", "chip", "host", "mac")
 HEX_FIELDS = ("flash_offset", "nvs_offset", "nvs_size")
@@ -54,6 +56,8 @@ class DutConfig:
     nvs_offset: str = ""
     nvs_size: str = ""
     last_green_dir: str = ""
+    framework: str = ""
+    capabilities: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -103,6 +107,17 @@ def _host(table, name, key="host"):
         raise RigError("rig.toml: %s.%s is not an IPv4 address" % (name, key)) from None
 
 
+def _capabilities(name, raw):
+    """Capability names as a tuple. Errors name the key, never the list."""
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise RigError("rig.toml: %s.capabilities must be a list of names" % name)
+    if caps.unknown(raw):
+        raise RigError("rig.toml: %s.capabilities has an unknown name" % name)
+    if len(set(raw)) != len(raw):
+        raise RigError("rig.toml: %s.capabilities has a duplicate" % name)
+    return tuple(raw)
+
+
 def _dut(dut_id, table, required):
     name = "dut." + dut_id.lower()
     for key in required:
@@ -132,7 +147,14 @@ def _dut(dut_id, table, required):
         # The directory itself may be missing: last_green.load() reports that and the caller falls back.
         if not isinstance(table["last_green_dir"], str) or not os.path.isabs(table["last_green_dir"]):
             raise RigError("rig.toml: %s.last_green_dir must be an absolute path" % name)
-        extra = {k: table[k] for k in DUT_REQUIRED if k not in ("rev", "chip", "host", "mac")}
+        extra = {k: table[k] for k in DUT_REQUIRED if k not in ("rev", "chip", "host", "mac", "framework", "capabilities")}
+    # Optional for either DUT here; DUT_REQUIRED makes them mandatory for DUT A (HARN-02).
+    if "framework" in table:
+        if not isinstance(table["framework"], str) or table["framework"] not in caps.FRAMEWORKS:
+            raise RigError("rig.toml: %s.framework is not arduino or esp-idf" % name)
+        extra["framework"] = table["framework"]
+    if "capabilities" in table:
+        extra["capabilities"] = _capabilities(name, table["capabilities"])
     return DutConfig(id=dut_id, rev=table["rev"], chip=table["chip"], host=host, mac=mac, **extra)
 
 

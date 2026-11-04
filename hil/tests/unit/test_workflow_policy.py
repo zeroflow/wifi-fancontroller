@@ -15,7 +15,13 @@ import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "hil.yml"
 EXPECTED_BRANCHES = ("main", "claude/main")  # D-17
-FIRMWARE_FILES = ["hil-out/firmware.factory.bin", "hil-out/manifest.json"]
+FIRMWARE_FILES = [
+    "hil-out/firmware.factory.bin",
+    "hil-out/firmware.ota.bin",
+    "hil-out/qc-auto-3.2.ota.bin",
+    "hil-out/canary-3.2.ota.bin",
+    "hil-out/manifest.json",
+]
 CANARY_RUN = "python3 -I hil/hil/canary.py"
 LOG_PATH = "hil/reports/redacted/"
 # validate.yml's pin reader, copied verbatim on purpose, interpolates an expression in a
@@ -121,7 +127,7 @@ def violations(data):
     if len(uploads) != 1:
         found.append("build job must have exactly one upload-artifact step")
     elif [line.strip() for line in str(uploads[0].get("with", {}).get("path", "")).splitlines() if line.strip()] != FIRMWARE_FILES:
-        found.append("build upload path must be exactly the two firmware files")
+        found.append("build upload path must be exactly the five firmware files")
 
     last = steps[-1] if steps else {}
     if last.get("name") != "Upload masked logs":
@@ -148,7 +154,10 @@ def test_the_real_workflow_has_the_expected_shape():
     assert set(data["jobs"]) == {"release-version", "build", "hil"}
     assert data["on"]["push"]["branches"] == list(EXPECTED_BRANCHES)
     assert data["jobs"]["hil"]["needs"] == "build"
-    assert data["jobs"]["hil"]["timeout-minutes"] == 50
+    assert data["jobs"]["build"]["timeout-minutes"] == 40
+    build_run = next(s for s in steps_of(data, "build") if s.get("name") == "Build image and manifest")["run"]
+    assert "build_image.py --all --out hil-out" in build_run
+    assert data["jobs"]["hil"]["timeout-minutes"] == 60
     names = [s["name"] for s in steps_of(data, "hil")]
     assert names.index("Runner credential canary") < names.index("Sync environment")
 
@@ -295,6 +304,16 @@ def teardown_timeout_too_short(d):
 def job_timeout_below_the_step_sum(d):
     d["jobs"]["hil"]["timeout-minutes"] = 25
 
+
+@mutate
+def job_timeout_equal_to_the_step_sum(d):
+    d["jobs"]["hil"]["timeout-minutes"] = sum(s["timeout-minutes"] for s in hil_steps(d))
+
+
+@mutate
+def job_timeout_one_above_the_cap(d):
+    d["jobs"]["hil"]["timeout-minutes"] = 61
+
 @mutate
 def drop_canary(d):
     d["jobs"]["hil"]["steps"] = [s for s in d["jobs"]["hil"]["steps"] if s.get("name") != "Runner credential canary"]
@@ -392,7 +411,7 @@ MUTATIONS = [
     add_job_concurrency, widen_permissions, drop_permissions, widen_firmware_upload,
     add_a_third_firmware_file, drop_environment, other_environment, hosted_runner, drop_timeout,
     huge_timeout, step_without_timeout, teardown_without_own_timeout, teardown_timeout_too_short,
-    job_timeout_below_the_step_sum, drop_canary, canary_behind_sync, canary_runs_something_else,
+    job_timeout_below_the_step_sum, job_timeout_equal_to_the_step_sum, job_timeout_one_above_the_cap, drop_canary, canary_behind_sync, canary_runs_something_else,
     third_party_action_in_hil_job, expression_in_hil_run, expression_in_build_run,
     teardown_without_always, teardown_only_on_failure, teardown_without_working_directory,
     run_check_without_working_directory, logs_only_on_failure, logs_only_on_failure_or_cancelled,

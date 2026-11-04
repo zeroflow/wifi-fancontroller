@@ -152,6 +152,8 @@ def promote(dut, manifest, ref, run_id, net_sha):
     if not BUILD_ID_RE.match(manifest.build_id):
         return False, "build ID is a local build or has an unexpected form"
     image = manifest.image("commit")
+    if not image.final:
+        return False, "image is not a final image"  # D-25: qc-auto and canary never enter the store
     store = Path(dut.last_green_dir)
     try:
         current, _reason = load(dut, net_sha)

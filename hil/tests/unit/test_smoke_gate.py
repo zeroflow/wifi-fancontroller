@@ -1,6 +1,7 @@
 """The smoke test's verdict logic, driven with fakes: a gate that cannot see a boot is a rig error."""
 
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -8,7 +9,7 @@ import pytest
 
 from hil import RigError
 
-SMOKE = Path(__file__).resolve().parents[1] / "rig" / "test_smoke_dut_a.py"
+SMOKE = Path(__file__).resolve().parents[1] / "rig" / "test_10_smoke_dut_a.py"
 BANNER = "rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)\r\n"
 BUILD_ID = "3.2+hil." + "a" * 12
 
@@ -67,3 +68,27 @@ def test_error_lines_and_build_id_mismatch_are_reported_together(tmp_path, monke
     assert "[E][synthetic:9]: first" in message and "E (5) boot: second" in message
     assert "project_version" in message
     assert "build ID matches manifest" not in capsys.readouterr().out
+
+
+WDT = "E (4321) task_wdt: esp_task_wdt_reset(707): task not found"
+
+
+def test_one_allowlisted_task_wdt_line_passes_with_a_visible_warning(tmp_path, monkeypatch, capsys):
+    tap = FakeTap(BANNER + WDT + "\r\n")
+    with pytest.warns(UserWarning, match="ALLOWLISTED boot-log line"):
+        run_smoke(tmp_path, monkeypatch, tap)
+    out = capsys.readouterr().out
+    assert "WARNING: ALLOWLISTED boot-log line" in out and WDT in out
+    assert "boot log clean: 0 [E] lines (1 allowlisted)" in out
+    assert json.loads((tmp_path / "allowlisted-errors.json").read_text()) == {"lines": [WDT]}
+
+
+def test_a_clean_boot_records_an_empty_allowlist_report(tmp_path, monkeypatch):
+    run_smoke(tmp_path, monkeypatch, FakeTap(BANNER))
+    assert json.loads((tmp_path / "allowlisted-errors.json").read_text()) == {"lines": []}
+
+
+def test_two_task_wdt_lines_fail_the_smoke_test(tmp_path, monkeypatch):
+    tap = FakeTap(BANNER + WDT + "\r\n" + WDT.replace("4321", "5000") + "\r\n")
+    with pytest.raises(AssertionError, match=r"2 \[E\] line\(s\)"):
+        run_smoke(tmp_path, monkeypatch, tap)

@@ -1,0 +1,26 @@
+# HIL qc-auto image for Rev 3.2 (ESP32-S2, arduino framework).
+#
+# The HIL wrapper (HIL WiFi, HIL API key, encrypted OTA, UART0 logger, build ID)
+# plus the shared QC module (hil/qc-overrides.yaml). Layered through packages
+# only: no customer config is edited (D-05, D-24).
+#
+# Rev 3.2 keeps the arduino framework forever. The literal block below makes it
+# explicit (QC-01); hil/tools/build_image.py checks the resolved value against
+# hil/frameworks.toml before anything compiles (D-34).
+#
+# This image is never a final image and never enters the last-green store
+# (D-25). It has its own esphome.name so its build directory is not shared with
+# the commit image.
+
+packages:
+  hil: !include rev3.2.hil.yaml
+  qc: !include qc-overrides.yaml
+
+esphome:
+  name: fancontroller-qc-r3-2
+  project:
+    version: "3.2+qc.${hil_commit}"
+
+esp32:
+  framework:
+    type: arduino

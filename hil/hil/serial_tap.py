@@ -3,6 +3,12 @@
 The tap only reads. It connects before any button press (the bridge needs about
 0.3 s to register a client), keeps everything in memory and in a raw log under
 reports/raw/, and lets callers cut the stream into windows with named marks.
+
+boundary() puts a "[HIL] ===== ... =====" line into the raw log only, under the same lock
+as the pump's writes, so it never splits a received chunk and never touches the in-memory
+stream: buffer offsets (marks, boot-log windows) stay what they were. A mark therefore
+keeps two offsets, one in the stream ("buffer") and one in the log file ("file"); the file
+offset addresses the same bytes in the artifact although boundary lines shifted it.
 """
 
 import json
@@ -26,7 +32,10 @@ class SerialTap:
         self._raw_path = Path(raw_path)
         self._marks_path = self._raw_path.with_suffix(".marks.json")
         self._buf = bytearray()
-        self._marks = {}
+        self._marks = {}  # name -> offset in the in-memory stream
+        self._file_marks = {}  # name -> byte offset in the raw log file
+        self._file_pos = 0  # bytes written to the raw log so far (received chunks and boundary lines)
+        self._raw = None
         self._lock = threading.Lock()
         self._sock = None
         self._thread = None
@@ -41,33 +50,51 @@ class SerialTap:
         sock.settimeout(RECV_TIMEOUT_S)
         self._sock = sock
         self._raw_path.parent.mkdir(parents=True, exist_ok=True)
-        self._raw_path.write_bytes(b"")
+        self._raw = self._raw_path.open("wb")
         self._marks_path.write_text("{}\n", encoding="utf-8")
         time.sleep(REGISTER_S)
         self._thread = threading.Thread(target=self._pump, name="hil-serial-tap", daemon=True)
         self._thread.start()
 
     def _pump(self):
-        with self._raw_path.open("ab") as raw:
-            while not self._stop.is_set():
-                try:
-                    chunk = self._sock.recv(4096)
-                except socket.timeout:
-                    continue
-                except OSError:
-                    chunk = b""
-                if not chunk:
-                    self.closed = True
-                    return
-                with self._lock:
-                    self._buf.extend(chunk)
-                raw.write(chunk)
-                raw.flush()
+        while not self._stop.is_set():
+            try:
+                chunk = self._sock.recv(4096)
+            except socket.timeout:
+                continue
+            except OSError:
+                chunk = b""
+            if not chunk:
+                self.closed = True
+                return
+            with self._lock:
+                self._buf.extend(chunk)
+                self._write_raw(chunk)
+
+    def _write_raw(self, data):
+        """Append to the raw log and count the bytes. The caller holds self._lock."""
+        if self._raw is None:
+            return
+        self._raw.write(data)
+        self._raw.flush()
+        self._file_pos += len(data)
+
+    def boundary(self, text):
+        """Write one `[HIL] ===== text =====` line to the raw log only (HARN-08).
+
+        Under the pump's lock, so it lands between two received chunks; the in-memory stream and
+        every mark's buffer offset are untouched. A tap that is not started or already stopped
+        ignores it.
+        """
+        line = b"\n[HIL] ===== " + str(text).replace("\n", " ").encode("utf-8", "replace") + b" =====\n"
+        with self._lock:
+            self._write_raw(line)
 
     def mark(self, name):
         with self._lock:
             self._marks[name] = len(self._buf)
-            snapshot = dict(self._marks)
+            self._file_marks[name] = self._file_pos
+            snapshot = {n: {"buffer": off, "file": self._file_marks[n]} for n, off in self._marks.items()}
         self._marks_path.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     def has_mark(self, name):
@@ -102,3 +129,7 @@ class SerialTap:
                 pass
         if self._thread is not None:
             self._thread.join(2)
+        with self._lock:
+            raw, self._raw = self._raw, None
+        if raw is not None:
+            raw.close()
