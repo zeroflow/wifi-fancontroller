@@ -18,9 +18,16 @@
 # the flash over USB.
 #
 # Zigbee2MQTT: install zigbee2mqtt/fancontroller-zigbee.mjs from this folder as
-# an external converter. Without it Zigbee2MQTT generates a definition that
-# lists every light expose four times (a generator bug with several dimmable
-# endpoints) and names the entities by endpoint number only.
+# an external converter (data directory, external_converters/, then restart).
+# It matches the model identifier and manufacturer set below. Without it
+# Zigbee2MQTT falls back to an automatically generated definition: fan control
+# and sensors work, but every light expose (state, brightness, effect,
+# power-on behavior) is listed four times, the entities are named by endpoint
+# number only, and the RPM shows up as generic analog inputs. The repetition is
+# a bug in the generator of zigbee-herdsman-converters (extenderOnOffLight adds
+# one light extend per dimmable endpoint, each covering all endpoints).
+# After changing the model identifier or manufacturer, re-interview or re-pair
+# the board so Zigbee2MQTT reads the basic cluster again.
 #
 # Status LED: blue pulse until joined, green on join and dim after 60 s. There
 # is no red state because the component exposes no leave event (connected stays
@@ -35,12 +42,13 @@
 # - Default: C-sample with the 8MB H8 module.
 # - C-sample with the 4MB N4 module: uncomment the esp32 block below.
 #   The generated table plus zb_fct fits 4MB: the app slot shrinks to 0x1B0000
-#   (1.69 MB) and the image uses about 41% of it (725452 of 1769472 bytes,
-#   ESPHome 2026.7.4). On 8MB it is about 19% of the 3.69 MB slot.
+#   (1.69 MB) and the image uses about 41% of it (724180 of 1769472 bytes,
+#   ESPHome 2026.10.1). On 8MB it was about 19% of the 3.69 MB slot
+#   (ESPHome 2026.7.4).
 # - A/B samples (4MB N4): swap the package below to hardware-rev-4.0a.yaml@dev
 #   and uncomment the `wifi: !remove` line below it. That package already sets
 #   4MB and carries its own pinout; the !remove drops its WiFi block (status
-#   LED callbacks). Same size as the 4MB C-sample build (ESPHome 2026.7.4).
+#   LED callbacks). Same size as the 4MB C-sample build (ESPHome 2026.10.1).
 
 packages:
   # Everything of Rev 4.0 that is not network-specific, no WiFi callbacks
@@ -67,6 +75,10 @@ external_components:
 
 zigbee:
   id: zb
+  # Basic cluster identity, the Zigbee2MQTT converter matches on these.
+  # ZCL limits both strings to 32 characters.
+  name: "WiFi Fan Controller Rev 4.0"
+  manufacturer: "Arthofer Engineering"
   # Mains powered, so a router that extends the mesh
   router: true
   # Basic cluster power source: 1 = mains

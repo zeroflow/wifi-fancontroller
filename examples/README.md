@@ -27,7 +27,7 @@ These configs try the alternative network modes of the ESP32-C6 on Rev 4.0 devel
 
 - **`network-wifi-ble-rev-4.0.yaml`** - WiFi with Improv BLE and Improv Serial provisioning, Home Assistant API and OTA, no credentials compiled in
 - **`network-thread-rev-4.0.yaml`** - Thread only (openthread FTD, no WiFi), Home Assistant API and OTA over Thread, status LED follows the Thread attach state; needs a `thread_tlv` secret with the active dataset of your border router
-- **`network-zigbee-rev-4.0.yaml`** - EXPERIMENTAL Zigbee router for Zigbee2MQTT (external component luar123/zigbee_esphome, pinned), fans as dimmable lights with RPM plus a temperature/humidity endpoint, Zigbee2MQTT external converter in `zigbee2mqtt/fancontroller-zigbee.mjs`, no WiFi, API or OTA; USB flash only because the partition table differs from the standard Rev 4.0 image
+- **`network-zigbee-rev-4.0.yaml`** - EXPERIMENTAL Zigbee router for Zigbee2MQTT (external component luar123/zigbee_esphome, pinned), fans as dimmable lights with RPM plus a temperature/humidity endpoint, Zigbee2MQTT external converter in `zigbee2mqtt/fancontroller-zigbee.mjs` (without it the automatically generated definition lists every light expose four times and names entities by endpoint number only), no WiFi, API or OTA; USB flash only because the partition table differs from the standard Rev 4.0 image
 
 ## Usage
 

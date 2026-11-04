@@ -26,12 +26,12 @@
 # - Default: C-sample with the 8MB H8 module.
 # - C-sample with the 4MB N4 module: uncomment the esp32 block below. Do not
 #   use hardware-rev-4.0-c-4m.yaml, it includes the WiFi wrapper.
-#   It fits on 4MB, about 45% of the 1.75 MB app slot (818286 of 1835008
-#   bytes, ESPHome 2026.7.4).
+#   It fits on 4MB, about 45% of the 1.75 MB app slot (817166 of 1835008
+#   bytes, ESPHome 2026.10.1).
 # - A/B samples (4MB N4): swap the package below to hardware-rev-4.0a.yaml@dev
 #   and uncomment the `wifi: !remove` line below it. That package already sets
 #   4MB and carries its own pinout; the !remove drops its WiFi block (status
-#   LED callbacks). Same size as the 4MB C-sample build (ESPHome 2026.7.4).
+#   LED callbacks). Same size as the 4MB C-sample build (ESPHome 2026.10.1).
 
 packages:
   # Everything of Rev 4.0 that is not network-specific, no WiFi callbacks
@@ -94,7 +94,7 @@ script:
           call.set_effect("none");
           call.perform();
 
-# openthread has no connect trigger in ESPHome 2026.7.4, so the attach state is
+# openthread has no connect trigger (still none in ESPHome 2026.10.1), so the attach state is
 # polled and only changes drive the LED
 interval:
   - interval: 1s
