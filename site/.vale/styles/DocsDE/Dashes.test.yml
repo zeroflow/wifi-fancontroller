@@ -81,3 +81,27 @@
   format: html
   input: "<main lang='de'><div class='sl-markdown-content'><p>Schließen Sie den Lüfter an - danach prüfen Sie die Drehzahl.</p></div></main>"
   contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags a table cell that holds only a double hyphen
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><table><tr><td>Fan</td><td>--</td></tr></table></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags a double hyphen between two inline code spans
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Use <code>a</code>--<code>b</code> now.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: flags a double hyphen that follows a word and precedes a space
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wait-- then go.</p></div></main>"
+  contains: "Verwenden Sie keinen Gedankenstrich"
+
+- name: ignores a command line flag written in plain text
+  rule: Dashes.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Start it with --dashboard when needed.</p></div></main>"
+  absent: "DocsDE.Dashes"
