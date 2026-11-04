@@ -304,6 +304,7 @@ def test_broken_logs_its_ota_state_once_per_boot_on_uart0_under_tag_hil():
     lambdas = [step["lambda"] for step in on_boot[0]["then"]]
     assert len(lambdas) == 1
     code = lambdas[0]
+    assert data["esphome"]["includes"] == ["<esp_ota_ops.h>"]  # the declarations are not pulled in otherwise
     assert "esp_ota_get_running_partition()" in code and "esp_ota_get_state_partition(" in code
     assert 'ESP_LOGI("hil", "HIL broken image OTA state: %s", name);' in code
     for state, name in (("NEW", "new"), ("PENDING_VERIFY", "pending verify"), ("VALID", "valid"),

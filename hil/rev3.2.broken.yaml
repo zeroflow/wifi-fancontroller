@@ -25,6 +25,10 @@ esphome:
   name: fancontroller-brk-r3-2
   project:
     version: "3.2+broken.${hil_commit}"
+  # The lambda below needs the ESP-IDF OTA declarations, which the generated main.cpp does not
+  # pull in once the ota component is gone (the first build failed with "not declared").
+  includes:
+    - <esp_ota_ops.h>
   on_boot:
     # A one-item list, so an on_boot of the base config is extended and not replaced.
     - priority: -100
