@@ -9,6 +9,7 @@ Subcommands
   pages                    print the built page (dist path) of every mapped content file
   dist <source-path>       print the built page (dist path) of one content file
   report <vale-json>       readable report, ratchet check, exit code
+  map                      integrity checks of the tier map, generated config and ratchet list
   inject <in> <out> <kind> copy a built page and plant a dash (kind: em-dash or hyphens)
 
 Data files (grammars are fixed, anything else is a parse error)
@@ -298,6 +299,92 @@ def cmd_report(args):
 
 
 # ---------------------------------------------------------------------------
+# map
+# ---------------------------------------------------------------------------
+
+MAIN_LANG = re.compile(r"<main\b[^>]*?\blang=\"([^\"]*)\"")
+
+
+def cmd_map(args):
+    """Print one PASS or FAIL line per check, exit 1 when any check fails."""
+    tiers = parse_tiers(args.tiers)
+    blocking = parse_blocking(args.blocking)
+    mapped = [path for path, _ in tiers]
+    failures = 0
+
+    def verdict(label, problems, ok_text):
+        nonlocal failures
+        if problems:
+            failures += 1
+            print("FAIL: map %s: %d problem(s)" % (label, len(problems)))
+            for problem in problems:
+                print("  %s" % problem)
+        else:
+            print("PASS: map %s: %s" % (label, ok_text))
+
+    on_disk = sorted(
+        str(p.relative_to(DOCS)).replace(os.sep, "/")
+        for p in DOCS.rglob("*")
+        if p.is_file() and p.suffix in (".md", ".mdx")
+    )
+    counts = {}
+    for path in mapped:
+        counts[path] = counts.get(path, 0) + 1
+    problems = ["no entry for %s" % f for f in on_disk if f not in counts]
+    problems += ["duplicate entry for %s" % f for f in sorted(counts) if counts[f] > 1]
+    verdict("(a) coverage", problems, "%d content files, each with exactly one entry" % len(on_disk))
+
+    problems = ["source file missing for entry %s" % f for f in sorted(counts) if not (DOCS / f).is_file()]
+    verdict("(b) sources", problems, "every entry has a source file")
+
+    problems = []
+    for f in sorted(counts):
+        if not (SITE / dist_of(f)).is_file():
+            problems.append("built page %s missing for entry %s (run the site build)" % (dist_of(f), f))
+    verdict("(c) built pages", problems, "every entry has a built page")
+
+    problems = []
+    for f in sorted(counts):
+        built = SITE / dist_of(f)
+        if not built.is_file():
+            continue
+        found = MAIN_LANG.search(built.read_text(encoding="utf-8", errors="replace"))
+        actual = found.group(1) if found else "<none>"
+        if actual != lang_of(f):
+            problems.append("%s: <main lang=%s> but the entry says %s" % (f, actual, lang_of(f)))
+    verdict("(d) language", problems, "main[lang] of every built page matches its entry")
+
+    ini = Path(args.ini)
+    try:
+        _, current, _ = split_ini(ini.read_text(encoding="utf-8"))
+        stale = current.strip("\n") != generate_block(tiers, blocking).strip("\n")
+        problems = ["generated block of %s is stale; run --write-config" % ini] if stale else []
+    except DataError as error:
+        problems = [str(error)]
+    verdict("(e) generated config", problems, "generated block of .vale.ini is current")
+
+    problems = []
+    known = set(counts)
+    for rule, pages in blocking.items():
+        style, _, name = rule.partition(".")
+        if style not in STYLE_LANG:
+            problems.append("%s: unknown style %s" % (rule, style))
+            continue
+        if not (SITE / ".vale" / "styles" / style / (name + ".yml")).is_file():
+            problems.append("%s: rule file site/.vale/styles/%s/%s.yml missing" % (rule, style, name))
+        for page in pages:
+            if page not in known:
+                problems.append("%s: %s is not in page-tiers.yml" % (rule, page))
+            elif lang_of(page) != STYLE_LANG[style]:
+                problems.append("%s: %s has the wrong language for this rule" % (rule, page))
+    verdict("(f) ratchet list", problems, "every blocking page is mapped, matches its rule language, rule file exists")
+
+    problems = ["%s: Rev 4.0 pages are out of scope (D-12)" % f for f in sorted(counts) if "rev-4" in f]
+    verdict("(g) scope", problems, "no Rev 4.0 page is mapped")
+    return 1 if failures else 0
+
+
+# ---------------------------------------------------------------------------
 # inject
 # ---------------------------------------------------------------------------
 
@@ -359,6 +446,11 @@ def build_parser():
     p.add_argument("--only", action="append", default=None, help="restrict the ratchet to this dist path (repeatable)")
     paths(p)
     p.set_defaults(func=cmd_report)
+
+    p = sub.add_parser("map")
+    p.add_argument("--ini", default=str(INI_FILE))
+    paths(p)
+    p.set_defaults(func=cmd_map)
 
     p = sub.add_parser("inject")
     p.add_argument("input")

@@ -222,11 +222,66 @@ run_selftest() {
   done
 }
 
+# ─── --map ───────────────────────────────────────────────────────────────────
+
+run_map() {
+  need_dist
+  local out rc=0 passes fails
+  out=$("${PY[@]}" map) || rc=$?
+  echo "$out"
+  passes=$(echo "$out" | grep -c '^PASS:' || true)
+  fails=$(echo "$out" | grep -c '^FAIL:' || true)
+  PASS_COUNT=$((PASS_COUNT + passes))
+  FAIL_COUNT=$((FAIL_COUNT + fails))
+  if [[ "$rc" -ne 0 && "$fails" -eq 0 ]]; then
+    fail "map: prose-lint.py map exited $rc without a FAIL line"
+  fi
+}
+
+# ─── --pin ───────────────────────────────────────────────────────────────────
+
+# Supply chain checks (T-22-01, T-22-02): one pinned image, no style packages,
+# no runtime fetch of third party rules.
+run_pin() {
+  local tags count
+  # git grep --untracked covers tracked plus untracked, non-ignored files.
+  tags=$(git grep --untracked -h -o -E 'jdkato/vale:[A-Za-z0-9._-]+' | sort -u || true)
+  count=$(echo "$tags" | grep -c . || true)
+  if [[ "$count" -ne 1 ]]; then
+    fail "pin: expected exactly one distinct Vale image tag in the repository, found $count: $(echo "$tags" | tr '\n' ' ')"
+  elif [[ ! "${tags#*:}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    fail "pin: Vale image tag is not an exact version (found: $tags)"
+  elif [[ "$tags" != "$VALE_IMAGE" ]]; then
+    fail "pin: repository tag ($tags) differs from VALE_IMAGE ($VALE_IMAGE)"
+  else
+    pass "pin: single exact Vale image tag $tags"
+  fi
+
+  if grep -qiE '^[[:space:]]*Packages[[:space:]]*=' site/.vale.ini; then
+    fail "pin: site/.vale.ini has a Packages key (third party styles are not allowed)"
+  else
+    pass "pin: site/.vale.ini has no Packages key"
+  fi
+
+  # verify-prose.sh holds the search pattern itself, so it is excluded.
+  local hits
+  hits=$(grep -rnEi 'vale[[:space:]]+sync|vale-action|errata-ai/vale' .github/workflows site/scripts \
+    --exclude=verify-prose.sh || true)
+  if [[ -n "$hits" ]]; then
+    echo "$hits"
+    fail "pin: a Vale sync command or marketplace Vale action was found"
+  else
+    pass "pin: no Vale sync command and no marketplace Vale action"
+  fi
+}
+
 # ─── Run ─────────────────────────────────────────────────────────────────────
 
 [[ "$RUN_TEST" == "true" ]] && run_test
 [[ "$RUN_LINT" == "true" ]] && run_lint
 [[ "$RUN_SELFTEST" == "true" ]] && run_selftest
+[[ "$RUN_MAP" == "true" ]] && run_map
+[[ "$RUN_PIN" == "true" ]] && run_pin
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 
