@@ -62,6 +62,7 @@ Usage:
     python3 tools/localize-examples.py --self-test  run the built-in fixtures
 """
 
+import fnmatch
 import json
 import os
 import re
@@ -77,6 +78,14 @@ BUILD_DIR = os.path.join(REPO_ROOT, ".test-build")
 EXPECTED_OWNER = "zeroflow"
 EXPECTED_REPO = "wifi-fancontroller"
 EXPECTED_URL = "https://github.com/zeroflow/wifi-fancontroller"
+
+# Developer test configs for the Rev 4.0 network modes (WiFi + BLE, Thread,
+# Zigbee). Thread needs a thread_tlv secret, Zigbee pulls an external component
+# from GitHub and changes the partition table, so these are verified by hand
+# and must never enter .test-build/, test-examples.sh, validate.yml or
+# compile-matrix.yml. The glob only applies to the generated set and the CI path
+# map; passing a file explicitly still checks its package forms.
+DEV_ONLY_EXAMPLES = "network-*-rev-4.0.yaml"
 
 PACKAGES_START_RE = re.compile(r"^packages:\s*$")
 COMMENT_RE = re.compile(r"^\s*#")
@@ -442,13 +451,19 @@ def example_files(explicit=None):
     The explicit form exists so a single file can be checked ad hoc, which is
     how the hard-fail behaviour is exercised against fixtures that must not be
     added to examples/.
+
+    Without an explicit list, files matching DEV_ONLY_EXAMPLES are skipped, so
+    neither generate() nor build_map() (and with them test-examples.sh and the
+    CI workflows) ever see them.
     """
     if explicit:
         return [os.path.abspath(p) for p in explicit]
     names = sorted(
         f
         for f in os.listdir(EXAMPLES_DIR)
-        if f.endswith(".yaml") and f != "secrets.yaml"
+        if f.endswith(".yaml")
+        and f != "secrets.yaml"
+        and not fnmatch.fnmatch(f, DEV_ONLY_EXAMPLES)
     )
     return [os.path.join(EXAMPLES_DIR, name) for name in names]
 

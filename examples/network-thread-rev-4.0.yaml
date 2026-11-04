@@ -1,0 +1,120 @@
+# Example: Rev 4.0 network mode Thread (ESP32-C6)
+#
+# Developer test config for the Rev 4.0 boards, not a customer feature. It is
+# not validated by test-examples.sh or CI and references the dev branch.
+#
+# Thread only, no WiFi: the C6 has one 2.4 GHz radio. The board joins the
+# Thread network of a border router (for example an OTBR on an SLZB-06MG24U).
+# Home Assistant reaches the API over IPv6 through the border router, and OTA
+# (platform esphome) runs over Thread as well.
+#
+# The first flash is over USB, there is no Improv without WiFi. Put the active
+# dataset TLV of the border router into secrets.yaml as thread_tlv, for example
+# from `ot-ctl dataset active -x` on the border router or from the Home
+# Assistant Thread integration:
+#   thread_tlv: "0e08..."
+#
+# FTD because the board is mains powered and should help route, not sleep as an
+# end device. Each board on the mesh needs its own esphome name below, without
+# name_add_mac_suffix, because openthread derives use_address from the name at
+# build time. The partition table is the standard one, unchanged.
+#
+# Status LED: blue pulse until attached, green on attach and dim after 60 s,
+# red pulse after losing the network.
+#
+# Board variants:
+# - Default: C-sample with the 8MB H8 module.
+# - C-sample with the 4MB N4 module: uncomment the esp32 block below. Do not
+#   use hardware-rev-4.0-c-4m.yaml, it includes the WiFi wrapper.
+#   It fits on 4MB, about 45% of the 1.75 MB app slot (817166 of 1835008
+#   bytes, ESPHome 2026.10.1).
+# - A/B samples (4MB N4): swap the package below to hardware-rev-4.0a.yaml@dev
+#   and uncomment the `wifi: !remove` line below it. That package already sets
+#   4MB and carries its own pinout; the !remove drops its WiFi block (status
+#   LED callbacks). Same size as the 4MB C-sample build (ESPHome 2026.10.1).
+
+packages:
+  # Everything of Rev 4.0 that is not network-specific, no WiFi callbacks
+  hardware: github://zeroflow/wifi-fancontroller/hardware-rev-4.0-base.yaml@dev
+
+# 4MB N4 module: overrides only flash_size, board and framework stay from the base
+# esp32:
+#   flash_size: 4MB
+
+# A/B samples only: remove the WiFi block of hardware-rev-4.0a.yaml
+# wifi: !remove
+
+esphome:
+  name: fancontroller-thread
+  friendly_name: "Fancontroller Thread"
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API (reached over IPv6 through the border router)
+api:
+
+# Enable OTA updates (over Thread)
+ota:
+  - platform: esphome
+
+# openthread requires IPv6
+network:
+  enable_ipv6: true
+
+openthread:
+  # Mains powered, so a full thread device that can route
+  device_type: FTD
+  # Active dataset of the border router as a hex string, kept in secrets.yaml
+  tlv: !secret thread_tlv
+
+# Last seen Thread attach state, used to detect changes for the status LED
+globals:
+  - id: thread_connected_prev
+    type: bool
+    restore_value: no
+    initial_value: 'false'
+
+script:
+  # Green on attach, dim after 60 s, same as the WiFi on_connect callback
+  - id: thread_led_connected
+    mode: restart
+    then:
+      - lambda: |-
+          auto call = id(status_led).turn_on();
+          call.set_rgb(0.0, 1.0, 0.0); // green
+          call.set_brightness(0.5);
+          call.set_effect("none");
+          call.perform();
+      - delay: 60s
+      - lambda: |-
+          auto call = id(status_led).turn_on();
+          call.set_rgb(0.0, 1.0, 0.0); // green
+          call.set_brightness(0.1);
+          call.set_effect("none");
+          call.perform();
+
+# openthread has no connect trigger (still none in ESPHome 2026.10.1), so the attach state is
+# polled and only changes drive the LED
+interval:
+  - interval: 1s
+    then:
+      - if:
+          condition:
+            lambda: 'return openthread::global_openthread_component->is_connected() && !id(thread_connected_prev);'
+          then:
+            - lambda: 'id(thread_connected_prev) = true;'
+            - script.execute: thread_led_connected
+      - if:
+          condition:
+            lambda: 'return !openthread::global_openthread_component->is_connected() && id(thread_connected_prev);'
+          then:
+            - lambda: 'id(thread_connected_prev) = false;'
+            - script.stop: thread_led_connected
+            # Red pulse, same as the WiFi on_disconnect callback
+            - lambda: |-
+                auto call = id(status_led).turn_on();
+                call.set_rgb(1.0, 0.0, 0.0); // red
+                call.set_brightness(0.25);
+                call.set_effect("pulse");
+                call.perform();
