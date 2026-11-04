@@ -4,7 +4,8 @@
 // Install: copy this file to the external_converters folder in the
 // Zigbee2MQTT data directory and restart Zigbee2MQTT. A board that is already
 // paired picks it up after the restart; if the old exposes stay, remove the
-// device in Zigbee2MQTT and pair it again.
+// device in Zigbee2MQTT and pair it again. After an update of this file,
+// press Reconfigure on the device page so the reporting setup runs again.
 //
 // Why: without a converter Zigbee2MQTT uses an automatically generated
 // definition. Fan control and sensors work with it, but the generator adds one
@@ -27,8 +28,12 @@ export default {
     description: "4 channel PWM fan controller, Zigbee router (experimental)",
     extend: [
         m.deviceEndpoints({endpoints: {fan1: 1, fan2: 2, fan3: 3, fan4: 4, sensor: 5}}),
-        // The firmware implements neither identify effects nor StartUpOnOff
-        m.light({endpointNames: fans, effect: false, powerOnBehavior: false}),
+        // The firmware implements neither identify effects nor StartUpOnOff.
+        // configureReporting binds onOff/currentLevel, sets up reporting and
+        // reads the current values. Without it Zigbee2MQTT never learns
+        // state_fanN, the per-endpoint topics carry only {"rpm": ...}, and the
+        // Home Assistant JSON light fails with KeyError 'state'.
+        m.light({endpointNames: fans, effect: false, powerOnBehavior: false, configureReporting: true}),
         m.numeric({
             name: "rpm",
             cluster: "genAnalogInput",
