@@ -47,6 +47,11 @@ packages:
 esphome:
   name: fancontroller-thread
   friendly_name: "Fancontroller Thread"
+  # Shown in Home Assistant as model "wifi-fan-controller-rev4-0" by
+  # "Arthofer Engineering" instead of the ESP32 board name
+  project:
+    name: "Arthofer Engineering.wifi-fan-controller-rev4-0"
+    version: "4.0"
 
 # Enable logging
 logger:
@@ -67,6 +72,24 @@ openthread:
   device_type: FTD
   # Active dataset of the border router as a hex string, kept in secrets.yaml
   tlv: !secret thread_tlv
+
+# Thread diagnostics, shown under Diagnostic in Home Assistant. Role tells
+# whether the board routes (router/leader) or only attached as a child, the
+# extended address matches the border router tables (ot-ctl router table,
+# Matter overview). network_key is left out on purpose, it would publish the
+# Thread network key to Home Assistant.
+text_sensor:
+  - platform: openthread_info
+    role:
+      name: "Thread Role"
+    ip_address:
+      name: "Thread IP Address"
+    rloc16:
+      name: "Thread RLOC16"
+    ext_addr:
+      name: "Thread Extended Address"
+    channel:
+      name: "Thread Channel"
 
 # Last seen Thread attach state, used to detect changes for the status LED
 globals:

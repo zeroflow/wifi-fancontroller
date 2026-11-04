@@ -26,6 +26,8 @@ export default {
     model: "WiFi Fan Controller Rev 4.0",
     vendor: "Arthofer Engineering",
     description: "4 channel PWM fan controller, Zigbee router (experimental)",
+    // Board picture for the Zigbee2MQTT frontend
+    icon: "https://raw.githubusercontent.com/zeroflow/wifi-fancontroller/dev/examples/zigbee2mqtt/fancontroller-rev4.0.png",
     extend: [
         m.deviceEndpoints({endpoints: {fan1: 1, fan2: 2, fan3: 3, fan4: 4, sensor: 5}}),
         // The firmware implements neither identify effects nor StartUpOnOff.

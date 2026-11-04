@@ -23,6 +23,11 @@ packages:
 esphome:
   name: fancontroller-wifi-ble
   friendly_name: "Fancontroller WiFi BLE"
+  # Shown in Home Assistant as model "wifi-fan-controller-rev4-0" by
+  # "Arthofer Engineering" instead of the ESP32 board name
+  project:
+    name: "Arthofer Engineering.wifi-fan-controller-rev4-0"
+    version: "4.0"
   # Several test boards on one network must not collide on the hostname
   name_add_mac_suffix: true
 
