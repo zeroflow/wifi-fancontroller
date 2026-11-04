@@ -6,6 +6,12 @@ import tailwindcss from '@tailwindcss/vite';
 export default defineConfig({
   site: 'https://fancontroller.arthofer.dev',
   vite: { plugins: [tailwindcss()] },
+  markdown: {
+    // D-08 (docs style guide): keep dashes literal so the prose lint can see
+    // them in the built HTML. Quotes, ellipses and backticks keep the
+    // smartypants defaults; German quotation marks are deferred.
+    smartypants: { dashes: false },
+  },
   redirects: {
     '/rev-1-0': '/reference/hardware/rev-1-0/',
     '/rev-2-0': '/reference/hardware/rev-2-0/',
