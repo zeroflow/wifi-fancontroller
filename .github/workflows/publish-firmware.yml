@@ -8,6 +8,96 @@ permissions:
   contents: write
 
 jobs:
+  # Home Assistant offers a firmware update only when the version goes up. The
+  # shipped configs carry the release version in `esphome: project: version:`,
+  # and this job fails the release when any file built below, or any other
+  # fancontroller-rev*.yaml at the repo root, does not match the release tag
+  # without its leading "v".
+  check-version:
+    name: Check Release Version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+
+      - name: Compare project versions with the release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+
+          import yaml
+
+          WORKFLOW = ".github/workflows/publish-firmware.yml"
+
+          tag = os.environ.get("RELEASE_TAG", "")
+          expected = tag[1:] if tag.startswith("v") else tag
+          if not expected:
+              print("::error::The release tag is empty, cannot check project versions.")
+              sys.exit(1)
+
+          with open(WORKFLOW) as handle:
+              data = yaml.safe_load(handle)
+          files = [
+              line.strip()
+              for line in str(data["jobs"]["build-firmware"]["with"]["files"]).splitlines()
+              if line.strip()
+          ]
+          if not files:
+              print("::error::No files found in the files input of build-firmware in %s." % WORKFLOW)
+              sys.exit(1)
+          # The non-factory configs are not built here, but customers compile
+          # them through dashboard_import. A stale version there would make
+          # Home Assistant offer an update that is not one, so check them too.
+          files += sorted(
+              name
+              for name in os.listdir(".")
+              if name.startswith("fancontroller-rev") and name.endswith(".yaml") and name not in files
+          )
+
+
+          class ConfigLoader(yaml.SafeLoader):
+              """SafeLoader that turns every ESPHome tag (!include, !secret, ...) into None."""
+
+
+          ConfigLoader.add_multi_constructor("!", lambda loader, suffix, node: None)
+
+          failures = 0
+          for path in files:
+              if not os.path.isfile(path):
+                  print("::error file=%s::%s is listed in build-firmware but does not exist." % (path, path))
+                  failures += 1
+                  continue
+              with open(path) as handle:
+                  config = yaml.load(handle, Loader=ConfigLoader)
+              esphome = config.get("esphome") if isinstance(config, dict) else None
+              project = esphome.get("project") if isinstance(esphome, dict) else None
+              version = project.get("version") if isinstance(project, dict) else None
+              if version is None:
+                  print("::error file=%s::%s has no esphome: project: version:." % (path, path))
+                  failures += 1
+              elif str(version) != expected:
+                  print(
+                      "::error file=%s::Project version is %s but the release tag expects %s. "
+                      "Set version: in this file to the tag without its leading v." % (path, version, expected)
+                  )
+                  failures += 1
+              else:
+                  print("ok %s version %s" % (path, version))
+
+          if failures:
+              print(
+                  "::error::%d of %d configs do not match release version %s."
+                  % (failures, len(files), expected)
+              )
+              sys.exit(1)
+          print("All %d configs carry release version %s." % (len(files), expected))
+          PY
+
   # Two independent version lines meet in this file. The @tag on each `uses:`
   # has to be a tag that actually exists in esphome/workflows, which only tags
   # a subset of ESPHome releases, and Dependabot keeps those refs current. The
@@ -16,7 +106,9 @@ jobs:
   # `uses:` tag makes GitHub reject the whole file as invalid.
   build-firmware:
     name: Build Firmware
-    uses: esphome/workflows/.github/workflows/build.yml@2026.10.2
+    uses: esphome/workflows/.github/workflows/build.yml@2026.10.3
+    needs:
+      - check-version
     with:
       files: |
         fancontroller-rev1.0-esp32.factory.yaml
@@ -34,7 +126,7 @@ jobs:
 
   upload-to-release:
     name: Upload to Release
-    uses: esphome/workflows/.github/workflows/upload-to-gh-release.yml@2026.10.2
+    uses: esphome/workflows/.github/workflows/upload-to-gh-release.yml@2026.10.3
     needs:
       - build-firmware
     with:
