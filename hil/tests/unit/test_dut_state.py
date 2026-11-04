@@ -15,7 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from hil import RigError, bootlog, contract, entities
+from hil import FirmwareFailure, RigError, bootlog, contract, entities
 from hil import dut as dut_module
 from hil.budget import ResetBudget, ResetBudgetExhausted, SafeModeError
 from hil.dut import STATE_EXEMPT, Dut, state_roles
@@ -275,7 +275,7 @@ def ports(device, open_ports):
     ("open_ports", "safe"),
     [
         ({3232}, True),  # OTA answers, API refuses: safe mode
-        (set(), False),  # nothing answers: a dead DUT
+        (set(), False),  # it booted and nothing answers: the firmware's outcome (D-46)
         ({3232, 6053}, False),  # the API port is open but the probe failed: not safe mode
         ({6053}, False),
     ],
@@ -286,13 +286,13 @@ def test_at_the_deadline_the_ports_tell_safe_mode_from_a_dead_dut(clock, open_po
     tap.feed(BOOT)  # booted, but the API never answers and no safe mode line was printed
     probing(device, [OSError("refused")])
     ports(device, open_ports)
-    expected = SafeModeError if safe else RigError
+    expected = SafeModeError if safe else FirmwareFailure
     with pytest.raises(expected) as caught:
         device.wait_running("key", mark, deadline_s=4)
     if safe:
         assert "port 3232 answers and API port 6053 refuses" in str(caught.value)
     else:
-        assert type(caught.value) is RigError and "API did not answer within 4s (last: OSError)" in str(caught.value)
+        assert type(caught.value) is FirmwareFailure and "API did not answer within 4s (last: OSError)" in str(caught.value)
 
 
 def test_the_port_probe_is_not_asked_when_the_dut_never_booted(clock):

@@ -389,3 +389,67 @@ def test_a_link_without_a_log_path_records_nothing_and_boundary_is_harmless(link
     link.boundary("START x t=0.0")
     current().on_log(log_message(b"ignored"))
     assert list(tmp_path.iterdir()) == []
+
+
+# ---- WR-05: no stale values after a session ends; WR-06: an unexpected error does not end polling ----
+
+
+def wait_until(predicate, deadline_s=5):
+    end = time.monotonic() + deadline_s
+    while time.monotonic() < end:
+        if predicate():
+            return
+        time.sleep(0.02)
+    raise AssertionError("condition not reached within %ss" % deadline_s)
+
+
+def test_a_session_end_clears_the_latest_values_but_keeps_the_counts(link):
+    link.wait_connected(5)
+    name = entities.FAN_SPEED[1]
+    current().publish(name, 1200.0)
+    assert link.value(name) == 1200.0 and link.count(name) == 1
+    FakeClient.refuse = 10**6
+    drop_on_loop(link, current())
+    wait_until(lambda: not link.connected())
+    assert link.value(name) is None  # the old image's reading must not satisfy a later wait
+    assert link.count(name) == 1  # sequence numbers go on, so wait_fresh(after=...) stays valid
+
+
+def test_wait_value_does_not_accept_a_value_from_before_the_session_ended(link):
+    link.wait_connected(5)
+    name = entities.FAN_SPEED[1]
+    current().publish(name, 1200.0)
+    FakeClient.refuse = 10**6
+    drop_on_loop(link, current())
+    wait_until(lambda: not link.connected())
+    with pytest.raises(RigError, match="link is down"):
+        link.wait_value(name, lambda v: v == 1200.0, 0.2)
+
+
+def test_an_unexpected_exception_in_a_session_is_logged_and_polling_goes_on(monkeypatch, tmp_path):
+    FakeClient.instances = []
+    FakeClient.version = "3.2+qc.aaaaaaaaaaaa"
+    FakeClient.refuse = 0
+    monkeypatch.setattr(dutlink, "APIClient", FakeClient)
+    monkeypatch.setattr(dutlink, "RECONNECT_S", 0.05)
+    real_connect = FakeClient.connect
+    calls = {"n": 0}
+
+    async def connect(self, on_stop=None, login=False, log_errors=True):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise ValueError("secret detail that must not reach the log")
+        return await real_connect(self, on_stop=on_stop, login=login, log_errors=log_errors)
+
+    monkeypatch.setattr(FakeClient, "connect", connect)
+    log_path = tmp_path / "api.log"
+    made = dutlink.DutLink("192.0.2.1", "key", log_path=log_path)
+    made.start()
+    try:
+        made.wait_connected(5)
+    finally:
+        made.close()
+    text = log_path.read_text(encoding="utf-8")
+    assert "[HIL] link task error: ValueError" in text
+    assert "secret detail" not in text
+    assert calls["n"] >= 2
