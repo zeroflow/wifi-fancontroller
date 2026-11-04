@@ -20,7 +20,11 @@ esphome:
   min_version: 2026.8.0
   project:
     name: zeroflow.fancontroller-rev3-1
-    version: "3.1"
+    # Release version, CalVer YEAR.MONTH.PATCH, not the hardware revision.
+    # Home Assistant offers an update only when this number goes up. It must
+    # equal the release tag without the leading "v": publish-firmware.yml
+    # checks that before it builds.
+    version: "2026.11.0"
 
 dashboard_import:
   package_import_url: github://zeroflow/wifi-fancontroller/fancontroller-rev3.1-esp32s2.yaml@main
@@ -77,6 +81,10 @@ light:
     pin: GPIO42
     num_leds: 5 # default, increase if needed
     id: neopixel_light
+    # One 64-symbol RMT block, refilled during transmit. The default of 192
+    # takes three of the four S2 blocks, so a second strip finds no free TX
+    # channel. Two strips at 64 leave two blocks free.
+    rmt_symbols: 64
     name: "NeoPixel Light"
     effects:
       - pulse:
