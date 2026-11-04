@@ -5,7 +5,7 @@ timing, sockets and hardware are not involved.
 """
 
 import pytest
-from test_dut_state import BOOT, FakeClock, make_dut
+from test_dut_state import BOOT, LABEL, FakeClock, make_dut
 
 from hil import FirmwareFailure, RigError, dutlink, entities
 from hil import dut as dut_module
@@ -43,7 +43,7 @@ def test_a_booted_dut_whose_api_never_answers_is_a_firmware_failure(clock, monke
 
 def test_no_boot_banner_at_all_stays_a_rig_error_with_the_old_message(clock, monkeypatch):
     device, _tap = silent_dut(clock, monkeypatch)
-    with pytest.raises(RigError, match=r"DUT A API did not answer within 5s \(last: no ROM boot banner since since\)") as caught:
+    with pytest.raises(RigError, match=r"%s API did not answer within 5s \(last: no ROM boot banner since since\)" % LABEL) as caught:
         device.wait_running("k", "since", deadline_s=5)
     assert not isinstance(caught.value, FirmwareFailure)
 

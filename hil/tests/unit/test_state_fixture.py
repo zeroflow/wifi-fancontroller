@@ -98,9 +98,17 @@ def fw_manifest():
     return SimpleNamespace(images=images, image=lambda role, rev=None: images[(role, rev)])
 
 
+class FakeTap:
+    def __init__(self):
+        self.marks = []
+
+    def mark(self, name):
+        self.marks.append(name)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def tap_a():
-    return None
+    return FakeTap()
 
 
 @pytest.fixture(scope="session")

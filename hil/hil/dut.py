@@ -318,7 +318,10 @@ class Dut:
         UART0 text since the mark is scanned for ESPHome safe mode (SafeModeError, never a plain
         timeout), and an answer only counts after the ROM boot banner since the mark, so the old image
         answering for a moment after a press cannot be mistaken for the new boot. At the deadline the
-        ports tell safe mode from a dead DUT: SafeModeError when 3232 answers and 6053 refuses, else RigError.
+        ports tell safe mode from a dead DUT: SafeModeError when 3232 answers and 6053 refuses. A DUT that
+        booted (banner since the mark), is not in safe mode and never answers is the firmware's outcome:
+        FirmwareFailure (D-46). No banner at all is the rig's: RigError. Callers that must treat both as
+        rig-side (preflight, heal, baseline) catch FirmwareFailure themselves; teardown uses wait_api.
         """
         end = time.monotonic() + deadline_s
         last = "no attempt finished"
@@ -345,9 +348,16 @@ class Dut:
             if time.monotonic() >= end:
                 break
             time.sleep(1)
+        message = "DUT %s API did not answer within %ss (last: %s)" % (self.id, deadline_s, last)
         if booted:
             self.check_safe_mode_ports()
-        raise RigError("DUT %s API did not answer within %ss (last: %s)" % (self.id, deadline_s, last))
+            if self.tap is not None:
+                # D-46: it booted (ROM banner since the mark), is not in safe mode, and never answers.
+                raise FirmwareFailure(
+                    "DUT %s booted after %s (ROM boot banner seen) but its API did not answer within %ss (last: %s)"
+                    % (self.id, since_mark, deadline_s, last)
+                )
+        raise RigError(message)
 
     def settle(self, link):
         """Bring DUT A's inputs and outputs to the CLEAN baseline without a reboot; returns the sorted problems.

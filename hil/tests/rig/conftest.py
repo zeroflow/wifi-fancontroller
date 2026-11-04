@@ -181,7 +181,7 @@ def dut_a(request, rig_config, supervisor, tap_a):
 
 
 @pytest.fixture(scope="session", autouse=True)
-def dut_link(request, rig_config, dut_a):
+def dut_link(request, rig_config, dut_a, tap_a):
     """The one persistent API session to DUT A for the whole run (QC reads and fan commands).
 
     Autouse, so the API log covers the whole run. It does not block on the first connect: the link
@@ -189,12 +189,38 @@ def dut_link(request, rig_config, dut_a):
     call `wait_connected`. It is closed in the finalizer, so no API slot outlives the run. Depends
     on `dut_a` so it starts after the serial tap.
     """
-    link = DutLink(rig_config.duts["A"].host, rig_config.dut_api_key, log_path=config.reports_dir() / "raw" / "api-dut-a.log")
+    link = DutLink(
+        rig_config.duts["A"].host,
+        rig_config.dut_api_key,
+        log_path=config.reports_dir() / "raw" / "api-dut-a.log",
+        tap=tap_a,
+        chip=rig_config.duts["A"].chip,
+    )
     request.addfinalizer(link.close)
     link.start()
     add_log_sink(link)
     request.addfinalizer(lambda: remove_log_sink(link))  # runs before link.close
     return link
+
+
+_TEST_STARTS = [0]  # counter of the UART0 marks taken at each test's start
+
+
+@pytest.fixture(autouse=True)
+def crash_mark(tap_a, dut_link, log_boundaries):
+    """D-46, WR-01: a UART0 mark at the test's start; a ROM boot banner after it means the DUT rebooted during the test.
+
+    The DutLink reads it when a wait ends with its API session down: a banner since this mark is a
+    FirmwareFailure (FAIL), no banner stays a RigError. Cleared after the test, so a wait in a
+    session finalizer is never judged against a finished test. `dut_state` depends on this fixture,
+    so the mark exists before the before-check and outlives the after-check.
+    """
+    _TEST_STARTS[0] += 1
+    name = "test_start_%d" % _TEST_STARTS[0]
+    tap_a.mark(name)
+    dut_link.crash_mark = name
+    yield name
+    dut_link.crash_mark = None
 
 
 @pytest.fixture(autouse=True)
@@ -226,7 +252,7 @@ def _clean_problems(dut_a, dut_link, build_id):
 
 
 @pytest.fixture(autouse=True)
-def dut_state(request, log_boundaries):
+def dut_state(request, log_boundaries, crash_mark):
     """HARN-03: a test with an `image` marker starts and ends with DUT A in a confirmed state.
 
     Before: DUT A answers with the build ID of the marker's before-role and is CLEAN. After: the

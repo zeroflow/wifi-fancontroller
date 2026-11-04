@@ -15,6 +15,11 @@ subscribes to the device log at DEBUG level and each message is appended as
 "<seconds since start()> <message>" (ANSI codes stripped). boundary() writes the test
 boundary lines into the same file under the same lock. The file exists from start() on,
 also when no connection is ever made.
+
+With a `tap` (the UART0 capture) and a `chip`, a wait that ends with the link down tells a crash from
+a rig fault (D-46, WR-01): when the owner has set `crash_mark` (a tap mark taken at the test's start)
+and UART0 shows a ROM normal-boot banner since it, the DUT rebooted during the test and the wait
+raises FirmwareFailure; without a banner the link is down for a rig reason and it stays a RigError.
 """
 
 import asyncio
@@ -35,7 +40,7 @@ from aioesphomeapi import (
     TextSensorInfo,
 )
 
-from . import RigError, contract, entities
+from . import FirmwareFailure, RigError, bootlog, contract, entities
 from .redact import ANSI
 
 API_CONNECT_S = 10
@@ -54,9 +59,12 @@ def _value(state):
 
 
 class DutLink:
-    def __init__(self, host, noise_psk, log_path=None):
+    def __init__(self, host, noise_psk, log_path=None, tap=None, chip=None):
         self._host = host
         self._key = noise_psk
+        self._tap = tap
+        self._chip = chip
+        self.crash_mark = None  # tap mark of the current test's start; set by the rig fixtures
         self._log_path = None if log_path is None else Path(log_path)
         self._log = None
         self._log_lock = threading.Lock()
@@ -146,6 +154,7 @@ class DutLink:
         with self._cond:
             self._connected = False
             self._client = None
+            self._latest = {}  # WR-05: a value of the ended session must not satisfy a later wait; the _seq counters stay
             self._entities = {}
             self._names = {}
             self._cond.notify_all()
@@ -186,6 +195,8 @@ class DutLink:
                 await self._session()
             except (APIConnectionError, OSError, TimeoutError):
                 pass  # the DUT is rebooting or not up yet; poll again
+            except Exception as exc:  # noqa: BLE001 - WR-06: keep polling; name the class only, never the message
+                self._write_log("[HIL] link task error: %s" % type(exc).__name__)
             if not self._closed:
                 await asyncio.sleep(RECONNECT_S)
 
@@ -201,6 +212,25 @@ class DutLink:
                 await task
             except asyncio.CancelledError:
                 pass
+
+    def _crashed(self):
+        """True when UART0 shows a ROM normal-boot banner since crash_mark (the DUT rebooted during the test)."""
+        mark = self.crash_mark
+        if self._tap is None or self._chip is None or mark is None:
+            return False
+        try:
+            return bootlog.has_boot_banner(self._tap.text(mark), self._chip)
+        except (KeyError, OSError, RigError):
+            return False  # no such mark or an unreadable tap: no evidence of a crash
+
+    def _link_down_error(self, message):
+        """FirmwareFailure when the DUT rebooted during the test, else a RigError, for a wait that ended with the link down."""
+        if self._crashed():
+            return FirmwareFailure(
+                "DUT A rebooted during the test (ROM boot banner since its START) and the API session did not come back: %s"
+                % message
+            )
+        return RigError(message)
 
     # -------------------------------------------------------------- public
 
@@ -229,8 +259,10 @@ class DutLink:
                 if left <= 0:
                     break
                 self._cond.wait(left)
+            down = not self._connected
             seen = info.project_version if (self._connected and info is not None) else "no session"
-        raise RigError("DUT API session not ready within %ss (last: %s)" % (deadline_s, seen))
+        message = "DUT API session not ready within %ss (last: %s)" % (deadline_s, seen)
+        raise (self._link_down_error(message) if down else RigError(message))
 
     def device_info(self):
         """DeviceInfo of the last connect, or None before the first one."""
@@ -251,7 +283,8 @@ class DutLink:
         """Values of the next `n` state messages of `name` numbered above `after`.
 
         `after` is a count() taken before the command that is being waited for. Raises RigError
-        when the link is down at the deadline; returns the shorter list when the link is up but
+        (FirmwareFailure when the DUT rebooted during the test, see the module docstring) when the
+        link is down at the deadline; returns the shorter list when the link is up but
         the entity stayed silent (a missing reading is never turned into 0).
         """
         end = time.monotonic() + max(0.0, deadline_s)
@@ -264,17 +297,18 @@ class DutLink:
                 if left <= 0:
                     break
                 self._cond.wait(left)
-            if not self._connected:
-                raise RigError("DUT API link is down; waiting for '%s' ended after %ss" % (name, deadline_s))
-            return fresh
+            down = not self._connected
+            if not down:
+                return fresh
+        raise self._link_down_error("DUT API link is down; waiting for '%s' ended after %ss" % (name, deadline_s))
 
     def wait_value(self, name, predicate, deadline_s):
         """The current value of `name` as soon as `predicate(value)` holds, else None at the deadline.
 
         Judges the last reported value, so an older value that once matched cannot satisfy it, and
         wakes on each state message (no sleeping poll). A missing reading (NaN) is never offered to
-        the predicate: NaN is truthy and must not count as a value. Raises RigError when the link
-        is down at the deadline; returns None when it is up but the predicate never held.
+        the predicate: NaN is truthy and must not count as a value. Raises RigError (FirmwareFailure
+        when the DUT rebooted during the test) when the link is down at the deadline; returns None when it is up but the predicate never held.
         """
         end = time.monotonic() + max(0.0, deadline_s)
         with self._cond:
@@ -286,9 +320,10 @@ class DutLink:
                 if left <= 0:
                     break
                 self._cond.wait(left)
-            if not self._connected:
-                raise RigError("DUT API link is down; waiting for '%s' ended after %ss" % (name, deadline_s))
-            return None
+            down = not self._connected
+            if not down:
+                return None
+        raise self._link_down_error("DUT API link is down; waiting for '%s' ended after %ss" % (name, deadline_s))
 
     def _command_target(self, name, kind):
         with self._cond:

@@ -32,6 +32,9 @@ class Sink:
         with open(os.environ["EVENTS"], "a", encoding="utf-8") as handle:
             handle.write("%s|%s\\n" % (self.name, text))
 
+    def mark(self, name):  # the crash_mark fixture marks the tap at each test's start
+        pass
+
 
 @pytest.fixture(scope="session", autouse=True)
 def supervisor():
