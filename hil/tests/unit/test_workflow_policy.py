@@ -15,6 +15,14 @@ import yaml
 
 WORKFLOW = Path(__file__).resolve().parents[3] / ".github" / "workflows" / "hil.yml"
 EXPECTED_BRANCHES = ("main", "claude/main")  # D-17
+# The policy cap on the hil job's timeout-minutes. 03-04 Task 1: the maintainer chose cap-90
+# (session 1500 s, run step 38 min) over the Phase 1 constant 60, which the Phase 3 chain cannot fit.
+HIL_JOB_CAP_MINUTES = 90
+# WR-07: the hil job runs only from these two refs, in the file itself. The refuse job carries
+# exactly the inverse, so a run from any other ref is red instead of silently green.
+HIL_GUARD = "${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/main' }}"
+REFUSE_GUARD = "${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/claude/main' }}"
+REFUSE_ANNOTATION = "::error title=HIL refused::the hardware check runs only on main and claude/main; this run touched no hardware"
 FIRMWARE_FILES = [
     "hil-out/firmware.factory.bin",
     "hil-out/firmware.ota.bin",
@@ -53,6 +61,39 @@ def step_named(data, job, name):
     return matches[0] if len(matches) == 1 else None
 
 
+def refuse_violations(data):
+    """The hosted job that makes a run from any other ref red (T-03-35): exact inverse condition,
+    hosted runner, no environment, no secret, no action, no expression in its script, a failing exit."""
+    job = data["jobs"].get("refuse")
+    if job is None:
+        return ["job refuse is missing: a dispatch from another ref would be green without a hardware check"]
+    found = []
+    if normalized_if(job.get("if", "")) != normalized_if(REFUSE_GUARD):
+        found.append("refuse job must carry exactly the inverse of the hil ref guard %s" % REFUSE_GUARD)
+    runs_on = job.get("runs-on")
+    if not isinstance(runs_on, str) or "self-hosted" in runs_on or not runs_on.startswith("ubuntu-"):
+        found.append("refuse job must run on a GitHub-hosted ubuntu runner, never on the rig")
+    if "environment" in job:
+        found.append("refuse job must have no environment")
+    if "needs" in job:
+        found.append("refuse job must have no needs")
+    if "secrets." in str(job):
+        found.append("refuse job must not touch a secret")
+    runs = []
+    for step in job.get("steps", []):
+        if "uses" in step:
+            found.append("refuse job must not use an action")
+        if "${{" in str(step.get("run", "")):
+            found.append("refuse job must not put an expression inside a run script")
+        runs.append(str(step.get("run", "")))
+    script = "\n".join(runs)
+    if REFUSE_ANNOTATION not in script:
+        found.append("refuse job must print %s" % REFUSE_ANNOTATION)
+    if re.search(r"^\s*exit\s+[1-9]", script, re.MULTILINE) is None:
+        found.append("refuse job must exit non-zero")
+    return found
+
+
 def violations(data):
     """Every policy violation of a parsed workflow, as short messages."""
     found = []
@@ -85,16 +126,24 @@ def violations(data):
     environment = hil.get("environment")
     if (environment.get("name") if isinstance(environment, dict) else environment) != "hil":
         found.append("hil job must use environment hil")
-    if not isinstance(hil.get("timeout-minutes"), int) or hil["timeout-minutes"] > 60:
-        found.append("hil job timeout-minutes must be set and at most 60")
+    if not isinstance(hil.get("timeout-minutes"), int) or hil["timeout-minutes"] > HIL_JOB_CAP_MINUTES:
+        found.append("hil job timeout-minutes must be set and at most %d" % HIL_JOB_CAP_MINUTES)
+    if normalized_if(hil.get("if", "")) != normalized_if(HIL_GUARD):
+        found.append("hil job must carry exactly the ref guard %s (WR-07)" % HIL_GUARD)
     hil_job_steps = hil.get("steps", [])
     if not all(isinstance(s.get("timeout-minutes"), int) for s in hil_job_steps):
         found.append("every hil step must set timeout-minutes")
     elif isinstance(hil.get("timeout-minutes"), int) and sum(s["timeout-minutes"] for s in hil_job_steps) >= hil["timeout-minutes"]:
         found.append("hil step timeouts must sum to less than the job timeout-minutes, or the job deadline can cut Teardown")
 
+    found.extend(refuse_violations(data))
+
     for job_name, job in data["jobs"].items():
+        if "continue-on-error" in job:
+            found.append("job %s must not set continue-on-error (D-45)" % job_name)
         for step in job.get("steps", []):
+            if "continue-on-error" in step:
+                found.append("job %s step %r must not set continue-on-error (D-45)" % (job_name, step.get("name")))
             uses = step.get("uses")
             if uses is not None and not str(uses).startswith("actions/"):
                 found.append("job %s uses a non-actions/ action: %s" % (job_name, uses))
@@ -151,13 +200,16 @@ def test_the_real_workflow_satisfies_the_policy():
 
 def test_the_real_workflow_has_the_expected_shape():
     data = load_workflow()
-    assert set(data["jobs"]) == {"release-version", "build", "hil"}
+    assert set(data["jobs"]) == {"release-version", "build", "hil", "refuse"}
     assert data["on"]["push"]["branches"] == list(EXPECTED_BRANCHES)
     assert data["jobs"]["hil"]["needs"] == "build"
     assert data["jobs"]["build"]["timeout-minutes"] == 40
     build_run = next(s for s in steps_of(data, "build") if s.get("name") == "Build image and manifest")["run"]
     assert "build_image.py --all --out hil-out" in build_run
-    assert data["jobs"]["hil"]["timeout-minutes"] == 60
+    assert data["jobs"]["hil"]["timeout-minutes"] == 72 <= HIL_JOB_CAP_MINUTES
+    assert data["jobs"]["hil"]["if"] == HIL_GUARD
+    assert data["jobs"]["refuse"]["if"] == REFUSE_GUARD
+    assert data["jobs"]["refuse"]["runs-on"] == "ubuntu-latest"
     names = [s["name"] for s in steps_of(data, "hil")]
     assert names.index("Runner credential canary") < names.index("Sync environment")
 
@@ -312,7 +364,78 @@ def job_timeout_equal_to_the_step_sum(d):
 
 @mutate
 def job_timeout_one_above_the_cap(d):
-    d["jobs"]["hil"]["timeout-minutes"] = 61
+    d["jobs"]["hil"]["timeout-minutes"] = HIL_JOB_CAP_MINUTES + 1
+
+
+@mutate
+def remove_the_ref_guard(d):
+    del d["jobs"]["hil"]["if"]
+
+
+@mutate
+def widen_the_ref_guard(d):
+    d["jobs"]["hil"]["if"] = "${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/dev' }}"
+
+
+@mutate
+def ref_guard_always(d):
+    d["jobs"]["hil"]["if"] = "${{ always() }}"
+
+
+@mutate
+def remove_the_refuse_job(d):
+    del d["jobs"]["refuse"]
+
+
+@mutate
+def refuse_condition_false(d):
+    d["jobs"]["refuse"]["if"] = False
+
+
+@mutate
+def refuse_condition_not_the_inverse(d):
+    d["jobs"]["refuse"]["if"] = "${{ github.ref != 'refs/heads/main' }}"
+
+
+@mutate
+def refuse_on_the_rig(d):
+    d["jobs"]["refuse"]["runs-on"] = ["self-hosted", "hil"]
+
+
+@mutate
+def refuse_gains_the_environment(d):
+    d["jobs"]["refuse"]["environment"] = "hil"
+
+
+@mutate
+def refuse_gains_a_secret(d):
+    d["jobs"]["refuse"]["steps"][0]["env"] = {"HIL_SUPERVISOR_KEY": "${{ secrets.HIL_SUPERVISOR_KEY }}"}
+
+
+@mutate
+def refuse_gains_an_action(d):
+    d["jobs"]["refuse"]["steps"].insert(0, {"name": "Checkout", "uses": "actions/checkout@v7"})
+
+
+@mutate
+def refuse_exits_green(d):
+    d["jobs"]["refuse"]["steps"][0]["run"] = "echo \"%s\"\nexit 0\n" % REFUSE_ANNOTATION
+
+
+@mutate
+def continue_on_error_on_the_run_step(d):
+    next(s for s in hil_steps(d) if s.get("name") == "Run hardware check")["continue-on-error"] = True
+
+
+@mutate
+def continue_on_error_on_the_hil_job(d):
+    d["jobs"]["hil"]["continue-on-error"] = True
+
+
+@mutate
+def continue_on_error_on_the_refuse_job(d):
+    d["jobs"]["refuse"]["continue-on-error"] = True
+
 
 @mutate
 def drop_canary(d):
@@ -411,7 +534,13 @@ MUTATIONS = [
     add_job_concurrency, widen_permissions, drop_permissions, widen_firmware_upload,
     add_a_third_firmware_file, drop_environment, other_environment, hosted_runner, drop_timeout,
     huge_timeout, step_without_timeout, teardown_without_own_timeout, teardown_timeout_too_short,
-    job_timeout_below_the_step_sum, job_timeout_equal_to_the_step_sum, job_timeout_one_above_the_cap, drop_canary, canary_behind_sync, canary_runs_something_else,
+    job_timeout_below_the_step_sum, job_timeout_equal_to_the_step_sum, job_timeout_one_above_the_cap,
+    remove_the_ref_guard, widen_the_ref_guard, ref_guard_always, remove_the_refuse_job,
+    refuse_condition_false, refuse_condition_not_the_inverse, refuse_on_the_rig,
+    refuse_gains_the_environment, refuse_gains_a_secret, refuse_gains_an_action, refuse_exits_green,
+    continue_on_error_on_the_run_step, continue_on_error_on_the_hil_job,
+    continue_on_error_on_the_refuse_job,
+    drop_canary, canary_behind_sync, canary_runs_something_else,
     third_party_action_in_hil_job, expression_in_hil_run, expression_in_build_run,
     teardown_without_always, teardown_only_on_failure, teardown_without_working_directory,
     run_check_without_working_directory, logs_only_on_failure, logs_only_on_failure_or_cancelled,

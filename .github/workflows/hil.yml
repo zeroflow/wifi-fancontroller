@@ -114,16 +114,23 @@ jobs:
     runs-on: [self-hosted, hil]
     needs: build
     environment: hil
-    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + run 26 +
-    # teardown 15 + upload 3 = 59, so the job deadline can never fall inside Teardown
-    # and cut a flash mid-write. The run step holds the session deadline (13 min), one test
+    # Only main and claude/main may reach the LAN runner. The environment's branch rule lives in
+    # the repository settings, outside this file; this condition keeps a workflow_dispatch from any
+    # other branch off the rig even if that rule were loosened (WR-07). The refuse job below turns
+    # such a run red.
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/main' }}
+    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + run 38 +
+    # teardown 15 + upload 3 = 71, so the job deadline can never fall inside Teardown
+    # and cut a flash mid-write. The run step holds the session deadline (25 min), one test
     # started just before it (10 min) and the connect and release phases around them
-    # (25.3 min). Teardown's own worst case (every deadline hit, known-good attempt plus
+    # (37.3 min). Teardown's own worst case (every deadline hit, known-good attempt plus
     # the commit-image fallback) is about 14 minutes; test_timeouts.py
     # computes both sums from the code and fails if they drift. A user cancel is
     # different: GitHub gives always() steps a fixed 5 minutes and the job syntax has no
-    # key to change it; a nominal teardown needs about 2 minutes.
-    timeout-minutes: 60
+    # key to change it; a nominal teardown needs about 2 minutes. The 72 minute job deadline
+    # sits under the 90 minute policy cap the maintainer chose in 03-04; later steps (Preflight,
+    # baseline download) raise the step sum and the job deadline with it, never past the cap.
+    timeout-minutes: 72
     steps:
       - name: Checkout harness
         uses: actions/checkout@v7
@@ -152,7 +159,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run hardware check
-        timeout-minutes: 26
+        timeout-minutes: 38
         working-directory: hil
         env:
           HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
@@ -182,3 +189,18 @@ jobs:
           path: hil/reports/redacted/
           if-no-files-found: ignore
           retention-days: 14
+
+  refuse:
+    name: Refuse the hardware check on this ref
+    # A skipped hil job alone would leave a dispatch from another branch green without any
+    # hardware check having run. This hosted job makes such a run red. Its condition is exactly
+    # the inverse of the hil job's; it has no environment, no secret and no action, and it
+    # touches no hardware. On main and claude/main it is skipped.
+    if: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/claude/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail the run
+        run: |
+          echo "::error title=HIL refused::the hardware check runs only on main and claude/main; this run touched no hardware"
+          exit 1

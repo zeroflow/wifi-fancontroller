@@ -133,23 +133,26 @@ def run_step_worst_case_s():
 
 
 def test_run_step_ceiling_exceeds_the_session_deadline_plus_one_overshooting_test():
-    """20 + 55 + 780 + 620 + 55 + 10 = 1540 s < 1560 s: the step ceiling is never the cut, the
+    """20 + 55 + 1500 + 620 + 55 + 10 = 2260 s < 2280 s: the step ceiling is never the cut, the
     session deadline (RIG ERROR, Task 2 of 02-11) is."""
-    assert run_step_worst_case_s() == 1540
+    assert run_step_worst_case_s() == 2260
     assert run_step_worst_case_s() < step_minutes("Run hardware check") * 60
 
 
-def test_phase_2_budgets_are_the_documented_numbers():
+def test_phase_3_budgets_are_the_documented_numbers():
+    """03-04, maintainer decision cap-90: session 1500 s, run step 38 min, policy cap 90. Later plans add
+    a Preflight step (03-08) and a baseline download (03-14); they change the step list and the job
+    deadline (always step sum + 1) in the same commit, never the cap."""
     options = ini()
-    assert (options["timeout"], options["session_timeout"]) == (620, 780)
-    assert step_minutes("Run hardware check") == 26
-    assert hil_job()["timeout-minutes"] == 60
+    assert (options["timeout"], options["session_timeout"]) == (620, 1500)
+    assert step_minutes("Run hardware check") == 38
     steps = [s["timeout-minutes"] for s in hil_job()["steps"]]
-    assert steps == [3, 5, 3, 4, 26, 15, 3] and sum(steps) == 59
+    assert steps == [3, 5, 3, 4, 38, 15, 3] and sum(steps) == 71
+    assert hil_job()["timeout-minutes"] == sum(steps) + 1 == 72
 
 
 def test_the_job_deadline_is_one_minute_above_the_step_budgets():
-    """The job deadline can never fall inside Teardown: 59 < 60, and 60 is the Phase 1 policy cap."""
+    """The job deadline can never fall inside Teardown: the step sum 71 < 72, and 72 is under the 90 minute policy cap."""
     assert sum(s["timeout-minutes"] for s in hil_job()["steps"]) == hil_job()["timeout-minutes"] - 1
 
 

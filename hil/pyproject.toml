@@ -39,12 +39,14 @@ pythonpath = ["."]
 # -rs: every skip and its reason appear in the run output, so a capability skip is visible (HARN-02).
 addopts = "-p no:cacheprovider -rs"
 # Deadlines nest: operation (flash 120 s, API 90 s, OTA 180 s, ...) < per-test 620 s < session
-# 780 s < "Run hardware check" step (26 min = 1560 s) < job (60 min, the policy cap).
+# 1500 s < "Run hardware check" step (38 min = 2280 s) < job (72 min, under the 90 min policy cap).
+# The maintainer chose this budget in 03-04 (cap-90): Phase 3 adds a second serial flash, the
+# upgrade OTA with its soak, two rollback OTAs and the broken-image OTA with its dark window.
 # The HARD ceilings are the per-test timeout below and the step-level timeout-minutes in
 # hil.yml, which also cap Teardown (15 min, longer than its all-deadlines-hit worst case); the step budgets sum
-# to 59 min so the job deadline can never fall inside Teardown. tests/unit/test_timeouts.py
+# to 71 min so the job deadline can never fall inside Teardown. tests/unit/test_timeouts.py
 # computes the sums and the run-step bound (connect + release + session + one overshooting test
-# + release + API connect = 1540 s < 1560 s) from the code and fails if they drift.
+# + release + API connect = 2260 s < 2280 s) from the code and fails if they drift.
 # session_timeout is cooperative only: pytest-timeout checks it after a test has finished and
 # cannot interrupt a running one, so a test started just before it may run its whole timeout.
 # A run it ends is RIG ERROR ("run cut by the session deadline"), never PASS or FAIL
@@ -54,7 +56,7 @@ addopts = "-p no:cacheprovider -rs"
 # Signal mode raises inside the test so fixture finalizers (switches off) still run.
 timeout = 620
 timeout_method = "signal"
-session_timeout = 780
+session_timeout = 1500
 
 [tool.ruff]
 target-version = "py312"
