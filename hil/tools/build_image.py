@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build the Rev 3.2 HIL images (commit, qc-auto, canary) from the working tree.
+"""Build the Rev 3.2 HIL images (commit, qc-auto, canary, broken) from the working tree.
 
 Runs inside the pinned ESPHome container (ghcr.io/esphome/esphome:<pin>), stdlib
 plus the image's PyYAML, from the repository root:
@@ -14,6 +14,8 @@ Output, and nothing else, in --out:
     firmware.ota.bin       the commit image as an OTA binary
     qc-auto-3.2.ota.bin    the qc-auto image (OTA only, never a final image)
     canary-3.2.ota.bin     the canary image (OTA only, never a final image)
+    broken-3.2.ota.bin     the broken image: no network at all, OTA file only, never final
+                           and never a heal image (D-40)
     manifest.json          schema 2: one entry per image with role, rev, chip, offset,
                            framework, build_id, final, sha256 of every file, ...
 
@@ -39,7 +41,8 @@ What it does:
 
 --check-configs resolves every target with placeholder values (no compile) and checks
 each resolved config against hil/frameworks.toml, the entity names the tests drive, the
-UART0 logger, one fan PWM frequency and, for the canary, its deliberate pin swap. It
+UART0 logger, one fan PWM frequency and, for the canary, its deliberate pin swap and, for
+the broken image, the absence of wifi, api, ota and safe_mode (D-40, D-41). It
 prints one line per problem and "checked <n> configs: <k> problem(s)", and exits 2 on any
 problem. --all and the default build run the same check on the real-value configs before
 the first compile, so a config with the wrong framework can never be built (D-34).
@@ -86,8 +89,9 @@ MANIFEST_NAME = "manifest.json"
 
 CUSTOMER_REV32 = "fancontroller-rev3.2-esp32s2.yaml"
 
-# Build order is manifest order. The commit image comes first; qc-auto and canary are
-# never final (D-25) and carry no factory file: they only ever travel by OTA (D-23).
+# Build order is manifest order. The commit image comes first; qc-auto, canary and broken
+# are never final (D-25) and carry no factory file: they only ever travel by OTA (D-23).
+# The broken image has no network at all (D-40): the runner delivers it over UART.
 TARGETS = (
     {
         "role": "commit", "rev": "3.2", "customer_config": CUSTOMER_REV32,
@@ -110,9 +114,16 @@ TARGETS = (
         "esphome_name": "fancontroller-can-r3-2", "final": False, "factory": False,
         "ota_out": "canary-3.2.ota.bin", "factory_out": None,
     },
+    {
+        "role": "broken", "rev": "3.2", "customer_config": CUSTOMER_REV32,
+        "wrapper": os.path.join("hil", "rev3.2.broken.yaml"),
+        "chip": "esp32s2", "offset": "0x0", "framework": "arduino",
+        "esphome_name": "fancontroller-brk-r3-2", "final": False, "factory": False,
+        "ota_out": "broken-3.2.ota.bin", "factory_out": None,
+    },
 )
 # The tag between "<rev>+" and ".<hil_commit>" in each role's build ID.
-BUILD_ID_TAG = {"commit": "hil", "qc-auto": "qc", "canary": "canary"}
+BUILD_ID_TAG = {"commit": "hil", "qc-auto": "qc", "canary": "canary", "broken": "broken"}
 FAN_OUTPUT_IDS = ("pwm_fan1", "pwm_fan2", "pwm_fan3", "pwm_fan4")
 
 NETWORK_KEYS = ("hil_wifi_ssid", "hil_wifi_password", "hil_dut_api_key")
@@ -653,6 +664,12 @@ REQUIRED_ENTITIES = (
     + tuple("Button USR%d" % n for n in (1, 2, 3))
 )
 QC_ENTITIES = ("QC Device Info", "QC Safe Mode Boot")
+# Roles that must not carry the QC entities: the commit image is the shipped configuration and
+# the broken image is the commit wrapper without its network (D-40).
+NO_QC_ROLES = ("commit", "broken")
+# Top-level keys a broken image must not have (D-40): any of them would make it reachable.
+BROKEN_FORBIDDEN_KEYS = ("wifi", "api", "ota", "safe_mode", "captive_portal", "improv_serial",
+                         "http_request", "update")
 ENTITY_DOMAINS = ("fan", "sensor", "binary_sensor", "text_sensor", "button", "switch", "light")
 
 
@@ -746,7 +763,7 @@ def check_configs(resolved_by_target, table, network_values, placeholders=None):
         if not isinstance(version, str) or not version.startswith(prefix):
             problems.append("%s: esphome.project.version does not start with %s" % (who, prefix))
         names = entity_names(resolved)
-        wanted = REQUIRED_ENTITIES + (QC_ENTITIES if target["role"] != "commit" else ())
+        wanted = REQUIRED_ENTITIES + (QC_ENTITIES if target["role"] not in NO_QC_ROLES else ())
         for name in wanted:
             if name not in names:
                 problems.append("%s: entity missing: %s" % (who, name))
@@ -754,6 +771,14 @@ def check_configs(resolved_by_target, table, network_values, placeholders=None):
             fan_frequency(resolved)
         except BuildError as err:
             problems.append("%s: %s" % (who, err))
+        if target["role"] == "broken":
+            for forbidden in BROKEN_FORBIDDEN_KEYS:
+                if forbidden in resolved:
+                    problems.append("broken: the resolved config still has %s (D-40)" % forbidden)
+            advanced = esp32.get("advanced") if isinstance(esp32, dict) else None
+            rollback = advanced.get("enable_ota_rollback") if isinstance(advanced, dict) else None
+            if rollback is not None and rollback is not False:
+                problems.append("broken: esp32.advanced.enable_ota_rollback is not false (D-41)")
     canary = resolved_by_target.get(("canary", "3.2"))
     if canary is not None:
         qc = resolved_by_target.get(("qc-auto", "3.2"))
@@ -1251,6 +1276,14 @@ def self_test():
     check("TARGETS order puts the commit image first and only it is final",
           TARGETS[0]["role"] == "commit"
           and [t["role"] for t in TARGETS if t["final"]] == ["commit"])
+    broken_target = [t for t in TARGETS if t["role"] == "broken"]
+    check("the broken target is non-final, has no factory file and ships as broken-3.2.ota.bin (D-40)",
+          len(broken_target) == 1 and broken_target[0]["final"] is False
+          and broken_target[0]["factory"] is False and broken_target[0]["factory_out"] is None
+          and broken_target[0]["ota_out"] == "broken-3.2.ota.bin"
+          and broken_target[0]["framework"] == "arduino"
+          and broken_target[0]["esphome_name"] == "fancontroller-brk-r3-2", str(broken_target))
+    check("every target has a build ID tag", all(t["role"] in BUILD_ID_TAG for t in TARGETS))
 
     import tempfile
     fan_hz = {(t["role"], t["rev"]): 25000 for t in TARGETS if not t["final"]}
@@ -1407,7 +1440,7 @@ def self_test():
                           "humidity": {"name": "Humidity"}}],
             "binary_sensor": [{"platform": "gpio", "name": "Button USR%d" % n} for n in (1, 2, 3)],
         }
-        if target["role"] != "commit":
+        if target["role"] not in NO_QC_ROLES:
             resolved["text_sensor"] = [{"platform": "debug", "device": {"name": "QC Device Info"},
                                         "reset_reason": {"name": "QC Reset Reason"}}]
             resolved["button"] = [{"platform": "safe_mode", "name": "QC Safe Mode Boot"}]
@@ -1498,6 +1531,29 @@ def self_test():
           and not any(p.startswith("commit") for p in problems), str(problems))
     check("the commit image does not need the QC entities",
           check_configs({k: v for k, v in all_good().items() if k[0] == "commit"}, table, network_real) == [])
+    check("the broken image does not need the QC entities (D-40)",
+          check_configs({k: v for k, v in all_good().items() if k[0] == "broken"}, table, network_real) == [])
+    for forbidden in BROKEN_FORBIDDEN_KEYS:
+        networked = all_good()
+        networked[("broken", "3.2")][forbidden] = {}
+        problems = check_configs(networked, table, network_real)
+        check("a broken config that still has %s is reported (D-40)" % forbidden,
+              any(p.startswith("broken: the resolved config still has %s" % forbidden) for p in problems),
+              str(problems))
+    rollback_on = all_good()
+    rollback_on[("broken", "3.2")]["esp32"]["advanced"] = {"enable_ota_rollback": True}
+    problems = check_configs(rollback_on, table, network_real)
+    check("a broken config with esp32.advanced.enable_ota_rollback true is reported (D-41)",
+          any("broken: esp32.advanced.enable_ota_rollback is not false" in p for p in problems), str(problems))
+    rollback_off = all_good()
+    rollback_off[("broken", "3.2")]["esp32"]["advanced"] = {"enable_ota_rollback": False}
+    check("a broken config with enable_ota_rollback false is accepted",
+          check_configs(rollback_off, table, network_real) == [])
+    wrong_broken = all_good()
+    wrong_broken[("broken", "3.2")]["esp32"]["framework"]["type"] = "esp-idf"
+    problems = check_configs(wrong_broken, table, network_real)
+    check("a broken config with another framework is reported",
+          any(p.startswith("broken: rev 3.2: framework esp-idf") for p in problems), str(problems))
     lonely = {k: v for k, v in all_good().items() if k[0] == "canary"}
     problems = check_configs(lonely, table, network_real)
     check("a canary without a qc-auto config to compare against is reported",

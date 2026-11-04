@@ -190,6 +190,123 @@ def test_every_explicit_framework_in_a_hil_yaml_equals_the_table_for_its_revisio
 
 def test_esphome_names_fit_the_hostname_limit_with_the_mac_suffix():
     # The customer config sets name_add_mac_suffix; ESPHome allows 24 characters before the suffix.
-    for filename in ("rev3.2.qc-auto.yaml", "rev3.2.canary.yaml"):
+    for filename in ("rev3.2.qc-auto.yaml", "rev3.2.canary.yaml", "rev3.2.broken.yaml"):
         name = load(HIL / filename)["esphome"]["name"]
         assert len(name) <= 24, "%s: esphome.name %s is %d characters" % (filename, name, len(name))
+
+
+# ---- 03-05: the broken image (D-40, D-41) -------------------------------------------------------
+
+BROKEN_REMOVED_KEYS = ("wifi", "api", "ota", "update", "http_request", "captive_portal", "improv_serial",
+                       "dashboard_import")
+
+
+def load_text(name):
+    return (HIL / name).read_text(encoding="utf-8")
+
+
+def test_broken_layers_on_the_hil_wrapper_and_has_its_own_name_and_version():
+    data = load(HIL / "rev3.2.broken.yaml")
+    assert data["packages"]["hil"] == "rev3.2.hil.yaml"
+    assert data["esphome"]["name"] == "fancontroller-brk-r3-2"
+    assert data["esphome"]["project"]["version"] == "3.2+broken.${hil_commit}"
+
+
+def test_broken_removes_every_network_and_update_component():
+    text = load_text("rev3.2.broken.yaml")
+    data = load(HIL / "rev3.2.broken.yaml")
+    for key in BROKEN_REMOVED_KEYS:
+        assert re.search(r"^%s: !remove\s*$" % key, text, re.MULTILINE), "%s is not removed" % key
+        assert key in data
+    for key in ("safe_mode", "esp32"):
+        assert key not in data
+
+
+def test_broken_does_not_touch_the_framework_or_the_logger():
+    data = load(HIL / "rev3.2.broken.yaml")
+    assert "esp32" not in data  # the arduino framework comes from the base, untouched
+    assert "logger" not in data  # hardware_uart UART0 comes from rev3.2.hil.yaml
+    assert load(HIL / "rev3.2.hil.yaml")["logger"]["hardware_uart"] == "UART0"
+
+
+def test_broken_target_in_the_build_script_matches_the_wrapper():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("build_image", HIL / "tools" / "build_image.py")
+    build_image = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_image)
+    target = next(t for t in build_image.TARGETS if t["role"] == "broken")
+    assert target["wrapper"] == "hil/rev3.2.broken.yaml"
+    assert target["esphome_name"] == load(HIL / "rev3.2.broken.yaml")["esphome"]["name"]
+    assert target["final"] is False and target["factory"] is False and target["factory_out"] is None
+    assert target["ota_out"] == "broken-3.2.ota.bin"
+    assert target["framework"] == framework_table()["revisions"]["3.2"]
+    assert build_image.BUILD_ID_TAG["broken"] == "broken"
+    assert [t["role"] for t in build_image.TARGETS if t["final"]] == ["commit"]
+
+
+def _checked(resolved_broken):
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("build_image", HIL / "tools" / "build_image.py")
+    build_image = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(build_image)
+    resolved = {
+        "esphome": {"name": "fancontroller-brk-r3-2", "project": {"version": "3.2+broken.000000000000"}},
+        "esp32": {"framework": {"type": "arduino"}},
+        "logger": {"hardware_uart": "UART0"},
+        "output": [{"platform": "ledc", "id": "pwm_fan%d" % n, "pin": {"number": 10 + n}, "frequency": 25000.0}
+                   for n in (1, 2, 3, 4)],
+        "fan": [{"platform": "speed", "name": "Fan %d" % n} for n in (1, 2, 3, 4)],
+        "sensor": [{"platform": "pulse_counter", "name": "Fan %d Speed" % n} for n in (1, 2, 3, 4)]
+                  + [{"platform": "hdc1080", "temperature": {"name": "Temperature"},
+                      "humidity": {"name": "Humidity"}}],
+        "binary_sensor": [{"platform": "gpio", "name": "Button USR%d" % n} for n in (1, 2, 3)],
+    }
+    resolved_broken(resolved)
+    table = {"schema": 1, "revisions": {"3.2": "arduino"}}
+    return build_image.check_configs({("broken", "3.2"): resolved}, table, {})
+
+
+def test_check_configs_accepts_a_clean_broken_config_without_qc_entities():
+    assert _checked(lambda resolved: None) == []
+
+
+def test_check_configs_refuses_a_broken_config_that_still_has_api():
+    problems = _checked(lambda resolved: resolved.update(api={"encryption": {"key": "x"}}))
+    assert any("still has api" in p for p in problems), problems
+
+
+def test_check_configs_refuses_a_broken_config_that_still_has_wifi_ota_or_safe_mode():
+    for key in ("wifi", "ota", "safe_mode"):
+        problems = _checked(lambda resolved, key=key: resolved.update({key: {}}))
+        assert any("still has %s" % key in p for p in problems), (key, problems)
+
+
+def test_check_configs_refuses_a_broken_config_with_enable_ota_rollback_true():
+    def rollback(resolved):
+        resolved["esp32"]["advanced"] = {"enable_ota_rollback": True}
+
+    problems = _checked(rollback)
+    assert any("enable_ota_rollback" in p for p in problems), problems
+
+
+def test_check_configs_refuses_a_broken_config_with_another_framework():
+    problems = _checked(lambda resolved: resolved["esp32"]["framework"].update(type="esp-idf"))
+    assert any("framework esp-idf" in p for p in problems), problems
+
+
+def test_broken_logs_its_ota_state_once_per_boot_on_uart0_under_tag_hil():
+    data = load(HIL / "rev3.2.broken.yaml")
+    on_boot = data["esphome"]["on_boot"]
+    assert isinstance(on_boot, list) and len(on_boot) == 1  # a list, so the base on_boot is extended
+    assert on_boot[0]["priority"] == -100
+    lambdas = [step["lambda"] for step in on_boot[0]["then"]]
+    assert len(lambdas) == 1
+    code = lambdas[0]
+    assert "esp_ota_get_running_partition()" in code and "esp_ota_get_state_partition(" in code
+    assert 'ESP_LOGI("hil", "HIL broken image OTA state: %s", name);' in code
+    for state, name in (("NEW", "new"), ("PENDING_VERIFY", "pending verify"), ("VALID", "valid"),
+                        ("INVALID", "invalid"), ("ABORTED", "aborted"), ("UNDEFINED", "undefined")):
+        assert 'case ESP_OTA_IMG_%s: name = "%s"; break;' % (state, name) in code
+    assert 'const char *name = "unknown";' in code

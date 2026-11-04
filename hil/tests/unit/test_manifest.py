@@ -12,11 +12,13 @@ COMMIT = "a" * 40
 BUILD_ID = "3.2+hil." + "a" * 12
 QC_ID = "3.2+qc." + "a" * 12
 CANARY_ID = "3.2+canary." + "a" * 12
+BROKEN_ID = "3.2+broken." + "a" * 12
 DUT = SimpleNamespace(id="A", rev="3.2", chip="esp32s2", flash_offset="0x0")
 IMAGE = b"synthetic image bytes"
 COMMIT_OTA = b"synthetic commit ota bytes"
 QC_OTA = b"synthetic qc-auto ota bytes"
 CANARY_OTA = b"synthetic canary ota bytes"
+BROKEN_OTA = b"synthetic broken ota bytes"
 
 
 def sha(data):
@@ -72,11 +74,28 @@ def canary_entry():
     }
 
 
+def broken_entry():
+    return {
+        "role": "broken",
+        "rev": "3.2",
+        "chip": "esp32s2",
+        "offset": "0x0",
+        "framework": "arduino",
+        "build_id": BROKEN_ID,
+        "final": False,
+        "esphome_name": "fancontroller-brk-r3-2",
+        "ota_file": "broken-3.2.ota.bin",
+        "ota_sha256": sha(BROKEN_OTA),
+        "fan_hz": 25000,
+    }
+
+
 FILES = {
     "firmware.factory.bin": IMAGE,
     "firmware.ota.bin": COMMIT_OTA,
     "qc-auto-3.2.ota.bin": QC_OTA,
     "canary-3.2.ota.bin": CANARY_OTA,
+    "broken-3.2.ota.bin": BROKEN_OTA,
 }
 
 
@@ -346,4 +365,61 @@ def test_a_factory_file_on_a_qc_auto_entry_is_rejected(tmp_path):
         [commit_entry(), dict(qc_entry(), file="firmware.factory.bin", sha256=sha(IMAGE))],
     )
     with pytest.raises(RigError, match="only the commit image has a factory file"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_all_four_roles_are_accepted(tmp_path):
+    verified = manifest.load_verified(make(tmp_path, extra=(qc_entry, canary_entry, broken_entry)), COMMIT, DUT)
+    assert sorted(role for role, _rev in verified.images) == ["broken", "canary", "commit", "qc-auto"]
+
+
+def test_broken_role_is_accepted_as_an_ota_only_non_final_image(tmp_path):
+    image = manifest.load_verified(make(tmp_path, extra=(qc_entry, broken_entry)), COMMIT, DUT).image("broken")
+    assert image.role == "broken" and image.final is False
+    assert image.path is None and image.sha256 == ""
+    assert image.ota_path.name == "broken-3.2.ota.bin" and image.ota_sha256 == sha(BROKEN_OTA)
+    assert image.build_id == BROKEN_ID and image.framework == "arduino"
+
+
+def test_the_broken_image_is_never_the_final_role(tmp_path):
+    assert manifest.FINAL_ROLE == "commit"
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(broken_entry(), final=True)],
+    )
+    with pytest.raises(RigError, match="only the commit image may be final"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_a_factory_file_on_a_broken_entry_is_refused(tmp_path):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(broken_entry(), file="firmware.factory.bin", sha256=sha(IMAGE))],
+    )
+    with pytest.raises(RigError, match="only the commit image has a factory file"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+@pytest.mark.parametrize("build_id", [QC_ID, BUILD_ID, "3.2+broken." + "b" * 12, "3.2+broken.devbuild"])
+def test_a_broken_entry_needs_its_own_build_id_from_the_same_commit(tmp_path, build_id):
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), dict(broken_entry(), build_id=build_id)],
+    )
+    with pytest.raises(RigError, match="build_id"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_a_broken_entry_without_an_ota_file_is_refused(tmp_path):
+    entry = broken_entry()
+    del entry["ota_file"]
+    root = write(
+        tmp_path,
+        {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+        [commit_entry(), entry],
+    )
+    with pytest.raises(RigError, match="ota_file"):
         manifest.load_verified(root, COMMIT, DUT)

@@ -1,8 +1,9 @@
 """Manifest verification: the only route from a build to hardware (CI-01).
 
 load_verified() raises RigError on any mismatch, before any button press. Schema 2
-lists one entry per image (role commit, qc-auto or canary). Only the commit image
+lists one entry per image (role commit, qc-auto, canary or broken). Only the commit image
 is `final`: it is the one that may stay on DUT A or enter the last-green store (D-25).
+The broken image (D-40) is an OTA-only file: no factory file, never final, never a heal image.
 Every error names a field, never a hash value or a path outside the firmware directory.
 """
 
@@ -22,6 +23,7 @@ ROLE_BUILD_ID_RE = {
     "commit": re.compile(r"^3\.2\+hil\.([0-9a-f]{12})(\.local)?$"),
     "qc-auto": re.compile(r"^3\.2\+qc\.([0-9a-f]{12})(\.local)?$"),
     "canary": re.compile(r"^3\.2\+canary\.([0-9a-f]{12})(\.local)?$"),
+    "broken": re.compile(r"^3\.2\+broken\.([0-9a-f]{12})(\.local)?$"),
 }
 BUILD_ID_RE = ROLE_BUILD_ID_RE["commit"]
 BARE_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
