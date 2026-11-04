@@ -33,7 +33,7 @@ from hil.__main__ import Collector, decide_verdict
 collector = Collector()
 code = int(pytest.main(["-p", "no:cacheprovider", "-q", "-c", "pytest.ini", *sys.argv[1:], "."], plugins=[collector]))
 verdict, lines = decide_verdict(code, collector)
-print("%s" + json.dumps({"code": code, "verdict": verdict, "lines": lines, "report": collector.report()}))
+print("%s" + json.dumps({"code": code, "verdict": verdict, "lines": lines, "report": collector.report(), "events": [list(e) for e in collector.events]}))
 """ % MARK
 
 INI = "[pytest]\nmarkers =\n    canary: x\n    requires(*capabilities): x\n"
@@ -178,6 +178,188 @@ def test_a_rig_error_stays_rig_error(tmp_path):
     """
     result = session(tmp_path, {"test_a.py": source})
     assert (result["code"], result["verdict"], result["lines"]) == (1, "RIG ERROR", ["RIG ERROR: the rig is down"])
+
+
+FAIL_THEN_RIG = """
+    from hil import RigError
+
+    def test_a_fails():
+        assert False, "fan reading wrong\\nsecond line"
+
+    def test_b_rig_down():
+        raise RigError("supervisor dropped")
+"""
+
+RIG_THEN_FAIL = """
+    from hil import RigError
+
+    def test_a_rig_down():
+        raise RigError("supervisor dropped")
+
+    def test_b_fails():
+        assert False, "fan reading wrong"
+"""
+
+
+def test_fail_then_rig_error_is_fail_and_the_rig_error_stays_listed(tmp_path):
+    result = session(tmp_path, {"test_a.py": FAIL_THEN_RIG})
+    assert (result["code"], result["verdict"]) == (1, "FAIL")
+    assert result["lines"] == ["RIG ERROR (after the first failure): supervisor dropped"]
+
+
+def test_rig_error_then_fail_is_rig_error_first_class_wins(tmp_path):
+    # Task 1 decision (maintainer): the first recorded failure class decides; the later failure is only listed.
+    result = session(tmp_path, {"test_a.py": RIG_THEN_FAIL})
+    assert (result["code"], result["verdict"]) == (1, "RIG ERROR")
+    assert result["lines"] == ["RIG ERROR: supervisor dropped"]
+    assert result["report"]["failed_tests"] == ["test_a.py::test_a_rig_down", "test_a.py::test_b_fails"]
+
+
+def test_a_failing_call_then_a_rig_error_in_teardown_is_fail(tmp_path):
+    source = """
+        import pytest
+        from hil import RigError
+
+        @pytest.fixture
+        def late():
+            yield
+            raise RigError("lines not released")
+
+        def test_a(late):
+            assert False, "broke in the call phase"
+    """
+    result = session(tmp_path, {"test_a.py": source})
+    assert (result["code"], result["verdict"]) == (1, "FAIL")
+    assert result["lines"] == ["RIG ERROR (after the first failure): lines not released"]
+
+
+def test_a_rig_error_in_setup_then_nothing_else_is_rig_error(tmp_path):
+    source = """
+        import pytest
+        from hil import RigError
+
+        @pytest.fixture
+        def broken():
+            raise RigError("setup down")
+
+        def test_a(broken):
+            pass
+    """
+    result = session(tmp_path, {"test_a.py": source})
+    assert (result["verdict"], result["lines"]) == ("RIG ERROR", ["RIG ERROR: setup down"])
+
+
+def test_a_firmware_failure_is_a_failure_not_a_rig_event(tmp_path):
+    source = """
+        from hil import FirmwareFailure
+
+        def test_a():
+            raise FirmwareFailure("DUT A rebooted")
+    """
+    result = session(tmp_path, {"test_a.py": source})
+    assert (result["code"], result["verdict"], result["lines"]) == (1, "FAIL", [])
+
+
+def test_a_nonzero_exit_without_any_recorded_failure_stays_fail_and_zero_collected_is_rig_error(tmp_path):
+    assert decide_verdict(1, Collector()) == ("FAIL", [])
+    result = session(tmp_path, {"test_a.py": "x = 1\n"})
+    assert result["code"] == 5
+    assert result["verdict"] == "RIG ERROR"
+    assert result["lines"] == ["RIG ERROR: pytest ended with exit code 5"]
+
+
+def test_the_collector_keeps_pytest_report_order_of_failure_events(tmp_path):
+    source = """
+        import pytest
+        from hil import RigError
+
+        @pytest.fixture
+        def late():
+            yield
+            raise RigError("teardown rig")
+
+        def test_a(late):
+            assert False, "call fail"
+
+        def test_b():
+            raise RigError("second rig")
+    """
+    result = session(tmp_path, {"test_a.py": source})
+    assert result["events"] == [
+        ["fail", "test_a.py::test_a", "call", "call fail"],
+        ["rig", "test_a.py::test_a", "teardown", "teardown rig"],
+        ["rig", "test_a.py::test_b", "call", "second rig"],
+    ]
+
+
+def make_collector(*events):
+    collector = Collector()
+    collector.events = [tuple(e) for e in events]
+    collector.rig_errors = [e[3] for e in events if e[0] == "rig"]
+    return collector
+
+
+GITHUB = {"GITHUB_ACTIONS": "true"}
+
+
+def test_annotations_one_line_per_verdict_under_github_actions():
+    fail = make_collector(("fail", "t.py::test_x", "call", "boom\nsecond"), ("rig", "t.py::test_y", "call", "rig down"))
+    assert entry.verdict_annotation("PASS", [], Collector(), "3.2+hil.abc", GITHUB) == [
+        "::notice title=HIL PASS::DUT A passed on 3.2+hil.abc"
+    ]
+    assert entry.verdict_annotation("FAIL", [], fail, "b", GITHUB) == ["::error title=HIL FAIL::t.py::test_x: boom"]
+    assert entry.verdict_annotation("RIG ERROR", ["RIG ERROR: rig down", "RIG ERROR: more"], Collector(), "b", GITHUB) == [
+        "::error title=RIG ERROR::rig down"
+    ]
+    assert entry.verdict_annotation("INTERRUPTED", [], Collector(), "b", GITHUB) == [
+        "::error title=HIL INTERRUPTED::run interrupted"
+    ]
+
+
+def test_annotations_are_off_outside_github_actions():
+    for env in ({}, {"GITHUB_ACTIONS": "false"}):
+        for verdict in ("PASS", "FAIL", "RIG ERROR", "INTERRUPTED"):
+            assert entry.verdict_annotation(verdict, ["RIG ERROR: x"], make_collector(("fail", "t", "call", "m")), "b", env) == []
+
+
+def test_annotation_messages_are_one_line_and_capped():
+    long = make_collector(("fail", "t.py::test_x", "call", "x" * 1000))
+    (line,) = entry.verdict_annotation("FAIL", [], long, "b", GITHUB)
+    assert "\n" not in line and "\r" not in line
+    assert len(line) <= len("::error title=HIL FAIL::") + 300
+    (rig_line,) = entry.verdict_annotation("RIG ERROR", ["RIG ERROR: a\r\nb " + "y" * 1000], Collector(), "b", GITHUB)
+    assert "\n" not in rig_line and len(rig_line) <= len("::error title=RIG ERROR::") + 300
+
+
+def test_run_prints_one_annotation_per_verdict_and_none_outside_actions(run_env, monkeypatch, capsys):
+    def stand_in(args, plugins):
+        plugins[0].pytest_runtest_makereport(
+            SimpleNamespace(nodeid="t::a", get_closest_marker=lambda name: None),
+            SimpleNamespace(when="call", excinfo=SimpleNamespace(value=AssertionError("fan wrong"))),
+        )
+        plugins[0].pytest_runtest_logreport(report("t::a", "call", "failed"))
+        return 1
+
+    monkeypatch.setattr(entry.pytest, "main", stand_in)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert entry._run({}) == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert [x for x in lines if x.startswith("::error title=")] == ["::error title=HIL FAIL::t::a: fan wrong"]
+    monkeypatch.setenv("GITHUB_ACTIONS", "false")
+    assert entry._run({}) == 1
+    assert [x for x in capsys.readouterr().out.splitlines() if x.startswith("::")] == []
+
+
+def test_the_early_rig_error_return_prints_the_rig_error_annotation(run_env, monkeypatch, capsys):
+    from hil import RigError
+
+    def refuse():
+        raise RigError("manifest: schema must be 2")
+
+    monkeypatch.setattr(entry, "load_rig", refuse)
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    assert entry._run({}) == 3
+    assert "::error title=RIG ERROR::manifest: schema must be 2" in capsys.readouterr().out.splitlines()
 
 
 def test_exit_codes_two_and_other_keep_their_classes():

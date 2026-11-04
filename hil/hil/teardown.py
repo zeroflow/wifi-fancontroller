@@ -11,7 +11,8 @@ Only regions are written; nothing in this module erases flash. Safe to run twice
 
 Exit codes: 0 confirmed and the run's verdict stands, 3 verdict.json rewritten to RIG ERROR
 (a green run whose commit image is not confirmed, or a failed known-good attempt) or the
-lines could not be released.
+lines could not be released. A recorded FAIL is never rewritten (D-46): the cause goes to
+rig-errors.json as kind Teardown and the step still exits 3.
 """
 
 import hashlib
@@ -49,10 +50,33 @@ def is_green(verdict, job_status):
     return bool(verdict) and verdict.get("verdict") == "PASS" and job_status in ("", "success")
 
 
-def rewrite_verdict(reports_dir, verdict, new="RIG ERROR"):
+def rewrite_verdict(reports_dir, verdict, new="RIG ERROR", cause=""):
+    """Rewrite verdict.json to `new`, except over a recorded FAIL (D-46).
+
+    A FAIL is the firmware's outcome and a later rig condition never relabels it: verdict.json
+    stays FAIL, the cause is appended to rig-errors.json (kind Teardown) and said in the log.
+    """
+    reports_dir = Path(reports_dir)
+    if (verdict or {}).get("verdict") == "FAIL":
+        record_teardown_condition(reports_dir, cause)
+        return
     data = dict(verdict or {"schema": 1})
     data["verdict"] = new
-    (Path(reports_dir) / "verdict.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (reports_dir / "verdict.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def record_teardown_condition(reports_dir, cause):
+    """Append {"nodeid": null, "kind": "Teardown", "message": cause} to rig-errors.json (created as a list when missing)."""
+    path = Path(reports_dir) / "rig-errors.json"
+    try:
+        records = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        records = []
+    if not isinstance(records, list):
+        records = []
+    records.append({"nodeid": None, "kind": "Teardown", "message": cause})
+    path.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    say("WARNING: rig condition after a FAIL run: %s" % cause)
 
 
 def sha256_file(path):
@@ -234,7 +258,7 @@ def keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
         if other is not None:
             say("RIG ERROR: DUT A runs the %s image (%s), not a final image" % (other.role, other.build_id))
         say("RIG ERROR: the commit image on DUT A could not be confirmed after a green run")
-        rewrite_verdict(reports_dir, verdict)
+        rewrite_verdict(reports_dir, verdict, cause="commit image not confirmed after a green run")
         return 3
     return 0
 
@@ -320,6 +344,6 @@ def restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, st
 def fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
     """D-09: the one known-good attempt failed. RIG ERROR, then the commit image over UART."""
     say("RIG ERROR: DUT A did not come back on the known-good image; flashing the commit image (D-09)")
-    rewrite_verdict(reports_dir, verdict)
+    rewrite_verdict(reports_dir, verdict, cause="known-good image did not come back")
     flash_commit_image(dut, fw_dir, cfg.duts["A"], dut_key, state)
     return 3

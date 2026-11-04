@@ -38,15 +38,20 @@ class Collector:
         self.skipped = []  # {"nodeid", "reason"} in the order pytest reported them
         self.collected = 0
         self.session_cut = None  # pytest's session.shouldfail text when pytest-timeout's session deadline ended the run
+        self.events = []  # (kind, nodeid, when, first_line) in pytest's report order; kind is "rig" or "fail" (D-46)
         self._canary = set()
         self._call_passed = set()
         self._failed = set()
         self._finished = set()  # tests whose whole protocol (setup, call, teardown) was reported
 
     def pytest_runtest_makereport(self, item, call):
-        if call.excinfo is not None and isinstance(call.excinfo.value, RigError):
-            self.rig_errors.append(str(call.excinfo.value))
-            self.rig_error_records.append(rig_error_record(item.nodeid, call.excinfo.value))
+        value = call.excinfo.value if call.excinfo is not None else None
+        if isinstance(value, RigError):
+            self.rig_errors.append(str(value))
+            self.rig_error_records.append(rig_error_record(item.nodeid, value))
+            self.events.append(("rig", item.nodeid, getattr(call, "when", None), first_line(value)))
+        elif value is not None and not isinstance(value, NOT_A_FAILURE):
+            self.events.append(("fail", item.nodeid, getattr(call, "when", None), first_line(value)))
         if item.get_closest_marker("canary") is not None:
             self._canary.add(item.nodeid)
 
@@ -67,6 +72,10 @@ class Collector:
             self.skipped.append({"nodeid": report.nodeid, "reason": skip_reason(report)})
         elif report.passed and report.when == "call":
             self._call_passed.add(report.nodeid)
+
+    def first_failure(self):
+        """The first recorded event (a firmware or test failure, or a RigError), or None."""
+        return self.events[0] if self.events else None
 
     @property
     def passed(self):
@@ -106,6 +115,15 @@ class Collector:
         return "RIG ERROR: run cut by the session deadline (%s); %d test(s) not run" % (self.session_cut, self.not_run)
 
 
+# Not failures: a skip, an operator interrupt and pytest.exit() end a phase without saying anything about the firmware.
+NOT_A_FAILURE = (pytest.skip.Exception, KeyboardInterrupt, pytest.exit.Exception)
+
+
+def first_line(value):
+    """The first non-empty line of an exception's text, as summary._first_line cuts it (MESSAGE_CHARS)."""
+    return summary._first_line(value)
+
+
 def rig_error_record(nodeid, exc):
     """One entry of reports/rig-errors.json: the test, the exception class name and its message."""
     return {"nodeid": nodeid, "kind": type(exc).__name__, "message": str(exc)}
@@ -129,6 +147,10 @@ def decide_verdict(code, collector):
     is taken at face value. A green run contains at least one passed test and a passed
     canary detection (HARN-02, D-31, QC-06); a run cut by the session deadline is RIG ERROR
     whatever ran before the cut.
+
+    Otherwise the first recorded failure class decides (D-46, 03-02 Task 1): a firmware or test
+    failure before any rig error is FAIL and later rig errors are only listed; a rig error before
+    any failure is RIG ERROR even when failures follow, which stay listed in JUnit and the summary.
     """
     if code == 0:
         if collector.passed == 0:
@@ -139,16 +161,44 @@ def decide_verdict(code, collector):
                 % collector.canary_state()
             ]
         return "PASS", []
-    lines = ["RIG ERROR: %s" % message for message in collector.rig_errors]
     if collector.session_cut is not None:
+        lines = ["RIG ERROR: %s" % message for message in collector.rig_errors]
         lines.append(collector.cut_line())
-    if lines:
         return "RIG ERROR", lines
+    first = collector.first_failure()
+    if first is not None and first[0] == "fail":
+        # D-46: a failure recorded first is never relabelled; every later rig error stays listed.
+        return "FAIL", ["RIG ERROR (after the first failure): %s" % message for message in collector.rig_errors]
+    if collector.rig_errors:
+        # Decision of 03-02 Task 1 (RESEARCH A8, first-class-wins): a rig error first makes the run a
+        # RIG ERROR even when failures follow; they stay listed in JUnit and the summary.
+        return "RIG ERROR", ["RIG ERROR: %s" % message for message in collector.rig_errors]
     if code == 1:
         return "FAIL", []
     if code == 2:
         return "INTERRUPTED", []
     return "RIG ERROR", ["RIG ERROR: pytest ended with exit code %d" % code]
+
+
+def verdict_annotation(verdict, lines, collector, build_id, env=None):
+    """The one GitHub Actions annotation line of the verdict (D-45); none outside Actions.
+
+    Messages are one line, at most summary.MESSAGE_CHARS characters, and carry only a test node id
+    and the first line of an assertion or rig message (names, never values).
+    """
+    env = os.environ if env is None else env
+    if env.get("GITHUB_ACTIONS") != "true":
+        return []
+    if verdict == "PASS":
+        return ["::notice title=HIL PASS::DUT A passed on %s" % build_id]
+    if verdict == "FAIL":
+        failure = next((e for e in collector.events if e[0] == "fail"), None)
+        text = "%s: %s" % (failure[1], first_line(failure[3])) if failure else "a test failed"
+        return ["::error title=HIL FAIL::%s" % first_line(text)]
+    if verdict == "INTERRUPTED":
+        return ["::error title=HIL INTERRUPTED::run interrupted"]
+    cause = lines[0].removeprefix("RIG ERROR: ") if lines else "rig error"
+    return ["::error title=RIG ERROR::%s" % first_line(cause)]
 
 
 def warning_lines(collector, env=None):
@@ -275,6 +325,8 @@ def _run(holder):
         build_id = verified.build_id
     except RigError as exc:
         print("RIG ERROR: %s" % exc)
+        for line in verdict_annotation("RIG ERROR", ["RIG ERROR: %s" % exc], Collector(), build_id):
+            print(line)
         write_rig_errors([rig_error_record(None, exc)])
         return write_verdict("RIG ERROR", commit, build_id)
 
@@ -296,7 +348,7 @@ def _run(holder):
     code = int(code)
     write_tests_report(collector)
     verdict, lines = decide_verdict(code, collector)
-    for line in [*warning_lines(collector), *lines]:
+    for line in [*warning_lines(collector), *lines, *verdict_annotation(verdict, lines, collector, build_id)]:
         print(line)
     return write_verdict(verdict, commit, build_id)
 

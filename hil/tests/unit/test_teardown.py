@@ -234,7 +234,7 @@ def test_release_all_precedes_the_first_press(rig):
 
 
 def test_known_good_confirm_timeout_flashes_the_commit_image_and_marks_rig_error(rig, capsys):
-    verdict(rig, "FAIL")
+    verdict(rig, "PASS")  # a red job status makes it not green; a recorded FAIL is covered below (D-46)
     out = go(rig, [None, BUILD_ID], job_status="failure")
     assert out.code == 3
     assert len(out.calls) == 2
@@ -427,7 +427,7 @@ def test_missing_store_uses_v160_and_says_why(rig, capsys):
 
 def test_last_green_confirmation_timeout_goes_to_the_commit_image_never_to_v160(rig):
     store = seed_store(rig)
-    verdict(rig, "FAIL")
+    verdict(rig, "PASS")  # red job status; a recorded FAIL keeps FAIL (D-46)
     out = go(rig, [None, BUILD_ID], job_status="failure")
     assert out.code == 3
     assert [regions(c) for c in out.calls] == [
@@ -670,3 +670,37 @@ def test_the_flash_commit_image_fallback_refuses_a_non_final_commit_entry(rig):
     assert out.code == 3
     flashed = [r for call in out.calls for r in regions(call)]
     assert all(str(rig.fw / "firmware.factory.bin") != path for _offset, path in flashed)
+
+
+def rig_errors(rig):
+    return json.loads((rig.tmp / "reports" / "rig-errors.json").read_text())
+
+
+def test_a_fail_verdict_survives_a_failed_known_good_attempt_and_the_cause_is_recorded(rig, capsys):
+    verdict(rig, "FAIL")
+    reports = rig.tmp / "reports"
+    (reports / "rig-errors.json").write_text(json.dumps([{"nodeid": "t::a", "kind": "RigError", "message": "earlier"}]))
+    out = go(rig, [None, BUILD_ID], job_status="failure")
+    assert out.code == 3  # the Teardown step is still red
+    assert written_verdict(rig) == "FAIL"
+    assert rig_errors(rig) == [
+        {"nodeid": "t::a", "kind": "RigError", "message": "earlier"},
+        {"nodeid": None, "kind": "Teardown", "message": "known-good image did not come back"},
+    ]
+    assert "WARNING: rig condition after a FAIL run: known-good image did not come back" in capsys.readouterr().out
+
+
+def test_a_fail_verdict_without_a_rig_errors_file_gets_one_with_the_teardown_entry(rig):
+    verdict(rig, "FAIL")
+    out = go(rig, [None, None], job_status="failure")
+    assert out.code == 3
+    assert written_verdict(rig) == "FAIL"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+
+
+def test_a_pass_verdict_with_an_unconfirmed_commit_image_still_becomes_rig_error(rig):
+    verdict(rig, "PASS")
+    out = go(rig, ["wrong-build"], job_status="success")
+    assert out.code == 3
+    assert written_verdict(rig) == "RIG ERROR"
+    assert not (rig.tmp / "reports" / "rig-errors.json").exists()
