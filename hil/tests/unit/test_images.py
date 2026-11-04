@@ -259,8 +259,8 @@ def _checked(resolved_broken):
                    for n in (1, 2, 3, 4)],
         "fan": [{"platform": "speed", "name": "Fan %d" % n} for n in (1, 2, 3, 4)],
         "sensor": [{"platform": "pulse_counter", "name": "Fan %d Speed" % n} for n in (1, 2, 3, 4)]
-                  + [{"platform": "hdc1080", "temperature": {"name": "Temperature"},
-                      "humidity": {"name": "Humidity"}}],
+                  + [{"platform": "hdc1080", "temperature": {"name": entities.TEMPERATURE},
+                      "humidity": {"name": entities.HUMIDITY}}],
         "binary_sensor": [{"platform": "gpio", "name": "Button USR%d" % n} for n in (1, 2, 3)],
     }
     resolved_broken(resolved)

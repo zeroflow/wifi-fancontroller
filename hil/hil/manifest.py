@@ -9,6 +9,7 @@ Every error names a field, never a hash value or a path outside the firmware dir
 
 import hashlib
 import json
+import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -109,6 +110,11 @@ def load_verified(fw_dir, expected_commit, dut):
     if not isinstance(build_id, str) or not BUILD_ID_RE.match(build_id):
         raise RigError("manifest: build_id has an unexpected format")
     top_hex, top_local = _build_id_parts("commit", build_id)
+    # IN-01: the 12 hex digits must be the commit under test, and a local build never runs in CI.
+    if top_hex != expected_commit[:12]:
+        raise RigError("manifest: build_id is not from commit %s" % expected_commit[:12])
+    if top_local and os.environ.get("GITHUB_ACTIONS") == "true":
+        raise RigError("manifest: a .local build is refused in CI")
     entries = data.get("images")
     if not isinstance(entries, list) or not entries:
         raise RigError("manifest: images must be a non-empty list")
@@ -148,9 +154,11 @@ def load_verified(fw_dir, expected_commit, dut):
         if rev == dut.rev:
             if entry.get("chip") != dut.chip:
                 raise RigError("manifest: chip %s does not match DUT %s chip %s" % (entry.get("chip"), dut.id, dut.chip))
+            if not isinstance(entry.get("offset"), str):
+                raise RigError("manifest: image offset is missing")
             try:
-                offset_ok = int(entry.get("offset"), 16) == int(dut.flash_offset, 16)
-            except (TypeError, ValueError):
+                offset_ok = int(entry["offset"], 16) == int(dut.flash_offset, 16)
+            except ValueError:
                 offset_ok = False
             if not offset_ok:
                 raise RigError("manifest: flash offset does not match DUT %s flash_offset" % dut.id)
