@@ -13,9 +13,14 @@
 # Zigbee network data in nvs is gone.
 #
 # Pairing: allow joining in Zigbee2MQTT, power the board, it joins on its own.
-# Zigbee2MQTT builds a generated definition with four light endpoints (fan 1-4,
-# brightness = speed) and a temperature/humidity endpoint. To re-pair, erase the
-# flash over USB.
+# Endpoints 1-4 are the fans (dimmable light, brightness = speed, plus an analog
+# input with the RPM), endpoint 5 is temperature/humidity. To re-pair, erase
+# the flash over USB.
+#
+# Zigbee2MQTT: install zigbee2mqtt/fancontroller-zigbee.mjs from this folder as
+# an external converter. Without it Zigbee2MQTT generates a definition that
+# lists every light expose four times (a generator bug with several dimmable
+# endpoints) and names the entities by endpoint number only.
 #
 # Status LED: blue pulse until joined, green on join and dim after 60 s. There
 # is no red state because the component exposes no leave event (connected stays
@@ -108,6 +113,32 @@ zigbee:
                         call.set_speed(speed);
                         call.perform();
                       }
+        # Fan 1 speed in RPM, read only. Unit and description let ZHA and the
+        # Zigbee2MQTT generator label it, the bundled converter names it rpm_fan1
+        - id: ANALOG_INPUT
+          attributes:
+            # presentValue
+            - attribute_id: 0x55
+              type: SINGLE
+              report: true
+              device: fan1_speed
+            # outOfService
+            - attribute_id: 0x51
+              type: BOOL
+              value: false
+            # statusFlags
+            - attribute_id: 0x6F
+              type: MAP8
+              value: 0
+            # description
+            - attribute_id: 0x1C
+              type: STRING
+              value: "Fan 1 RPM"
+              max_length: 9
+            # engineeringUnits, BACnet 104 = revolutions per minute
+            - attribute_id: 0x75
+              type: ENUM16
+              value: 104
 
     # Fan 2: dimmable light, brightness = speed in percent (level 0-254 = 0-100 %)
     - num: 2
@@ -150,6 +181,32 @@ zigbee:
                         call.set_speed(speed);
                         call.perform();
                       }
+        # Fan 2 speed in RPM, read only. Unit and description let ZHA and the
+        # Zigbee2MQTT generator label it, the bundled converter names it rpm_fan2
+        - id: ANALOG_INPUT
+          attributes:
+            # presentValue
+            - attribute_id: 0x55
+              type: SINGLE
+              report: true
+              device: fan2_speed
+            # outOfService
+            - attribute_id: 0x51
+              type: BOOL
+              value: false
+            # statusFlags
+            - attribute_id: 0x6F
+              type: MAP8
+              value: 0
+            # description
+            - attribute_id: 0x1C
+              type: STRING
+              value: "Fan 2 RPM"
+              max_length: 9
+            # engineeringUnits, BACnet 104 = revolutions per minute
+            - attribute_id: 0x75
+              type: ENUM16
+              value: 104
 
     # Fan 3: dimmable light, brightness = speed in percent (level 0-254 = 0-100 %)
     - num: 3
@@ -192,6 +249,32 @@ zigbee:
                         call.set_speed(speed);
                         call.perform();
                       }
+        # Fan 3 speed in RPM, read only. Unit and description let ZHA and the
+        # Zigbee2MQTT generator label it, the bundled converter names it rpm_fan3
+        - id: ANALOG_INPUT
+          attributes:
+            # presentValue
+            - attribute_id: 0x55
+              type: SINGLE
+              report: true
+              device: fan3_speed
+            # outOfService
+            - attribute_id: 0x51
+              type: BOOL
+              value: false
+            # statusFlags
+            - attribute_id: 0x6F
+              type: MAP8
+              value: 0
+            # description
+            - attribute_id: 0x1C
+              type: STRING
+              value: "Fan 3 RPM"
+              max_length: 9
+            # engineeringUnits, BACnet 104 = revolutions per minute
+            - attribute_id: 0x75
+              type: ENUM16
+              value: 104
 
     # Fan 4: dimmable light, brightness = speed in percent (level 0-254 = 0-100 %)
     - num: 4
@@ -234,6 +317,32 @@ zigbee:
                         call.set_speed(speed);
                         call.perform();
                       }
+        # Fan 4 speed in RPM, read only. Unit and description let ZHA and the
+        # Zigbee2MQTT generator label it, the bundled converter names it rpm_fan4
+        - id: ANALOG_INPUT
+          attributes:
+            # presentValue
+            - attribute_id: 0x55
+              type: SINGLE
+              report: true
+              device: fan4_speed
+            # outOfService
+            - attribute_id: 0x51
+              type: BOOL
+              value: false
+            # statusFlags
+            - attribute_id: 0x6F
+              type: MAP8
+              value: 0
+            # description
+            - attribute_id: 0x1C
+              type: STRING
+              value: "Fan 4 RPM"
+              max_length: 9
+            # engineeringUnits, BACnet 104 = revolutions per minute
+            - attribute_id: 0x75
+              type: ENUM16
+              value: 104
     # Temperature and humidity of the onboard HDC1080
     - num: 5
       device_type: TEMPERATURE_SENSOR
