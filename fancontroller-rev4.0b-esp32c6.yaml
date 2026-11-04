@@ -23,7 +23,11 @@ esphome:
   name_add_mac_suffix: true
   project:
     name: zeroflow.fancontroller-rev4-0b
-    version: "4.0"
+    # Release version, CalVer YEAR.MONTH.PATCH, not the hardware revision.
+    # Home Assistant offers an update only when this number goes up. It must
+    # equal the release tag without the leading "v": publish-firmware.yml
+    # checks that before it builds.
+    version: "2026.11.0"
 
 # Enable logging
 logger:

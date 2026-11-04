@@ -27,7 +27,8 @@ esphome:
   # "Arthofer Engineering" instead of the ESP32 board name
   project:
     name: "Arthofer Engineering.wifi-fan-controller-rev4-0"
-    version: "4.0"
+    # Release version (CalVer), same as the board configs, not the hardware revision
+    version: "2026.11.0"
   # Several test boards on one network must not collide on the hostname
   name_add_mac_suffix: true
 
