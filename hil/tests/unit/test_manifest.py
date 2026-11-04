@@ -143,7 +143,8 @@ def test_schema_1_is_refused(tmp_path):
         manifest.load_verified(make(tmp_path, top={"schema": 1}), COMMIT, DUT)
 
 
-def test_local_suffix_in_build_id_is_accepted_on_every_role(tmp_path):
+def test_local_suffix_in_build_id_is_accepted_on_every_role(tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     local = {"build_id": BUILD_ID + ".local"}
     root = write(
         tmp_path,
@@ -422,4 +423,67 @@ def test_a_broken_entry_without_an_ota_file_is_refused(tmp_path):
         [commit_entry(), entry],
     )
     with pytest.raises(RigError, match="ota_file"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+# ---- IN-01: every build ID is tied to the commit under test, and a local build never reaches CI ----
+
+
+def all_ids_from(hex12, local=""):
+    """A manifest whose build IDs all carry `hex12` (the commit field stays COMMIT)."""
+    ids = {
+        "commit": "3.2+hil." + hex12 + local,
+        "qc-auto": "3.2+qc." + hex12 + local,
+        "canary": "3.2+canary." + hex12 + local,
+        "broken": "3.2+broken." + hex12 + local,
+    }
+    entries = [dict(build(), build_id=ids[build()["role"]]) for build in
+               (commit_entry, qc_entry, canary_entry, broken_entry)]
+    return {"schema": 2, "commit": COMMIT, "build_id": ids["commit"], "esphome_version": "x"}, entries
+
+
+def test_a_build_id_from_another_commit_is_refused_even_when_all_ids_agree(tmp_path):
+    header, entries = all_ids_from("b" * 12)
+    with pytest.raises(RigError, match="manifest: build_id is not from commit " + "a" * 12):
+        manifest.load_verified(write(tmp_path, header, entries), COMMIT, DUT)
+
+
+def test_a_build_id_from_the_commit_is_accepted(tmp_path):
+    header, entries = all_ids_from(COMMIT[:12])
+    verified = manifest.load_verified(write(tmp_path, header, entries), COMMIT, DUT)
+    assert verified.build_id == BUILD_ID
+
+
+def test_a_local_build_is_refused_in_ci(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    header, entries = all_ids_from(COMMIT[:12], ".local")
+    with pytest.raises(RigError, match="manifest: a .local build is refused in CI"):
+        manifest.load_verified(write(tmp_path, header, entries), COMMIT, DUT)
+
+
+def test_a_local_build_is_accepted_outside_ci(tmp_path, monkeypatch):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    header, entries = all_ids_from(COMMIT[:12], ".local")
+    verified = manifest.load_verified(write(tmp_path, header, entries), COMMIT, DUT)
+    assert verified.build_id.endswith(".local")
+
+
+def test_a_clean_build_is_accepted_in_ci(tmp_path, monkeypatch):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    header, entries = all_ids_from(COMMIT[:12])
+    assert manifest.load_verified(write(tmp_path, header, entries), COMMIT, DUT).build_id == BUILD_ID
+
+
+def test_a_missing_offset_is_reported_as_missing_not_as_a_mismatch(tmp_path):
+    entry = commit_entry()
+    del entry["offset"]
+    root = write(tmp_path, {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"}, [entry])
+    with pytest.raises(RigError, match="manifest: image offset is missing"):
+        manifest.load_verified(root, COMMIT, DUT)
+
+
+def test_a_non_string_offset_is_reported_as_missing(tmp_path):
+    root = write(tmp_path, {"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "x"},
+                 [dict(commit_entry(), offset=0)])
+    with pytest.raises(RigError, match="manifest: image offset is missing"):
         manifest.load_verified(root, COMMIT, DUT)

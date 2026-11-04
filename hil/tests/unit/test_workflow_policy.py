@@ -28,6 +28,7 @@ FIRMWARE_FILES = [
     "hil-out/firmware.ota.bin",
     "hil-out/qc-auto-3.2.ota.bin",
     "hil-out/canary-3.2.ota.bin",
+    "hil-out/broken-3.2.ota.bin",
     "hil-out/manifest.json",
 ]
 CANARY_RUN = "python3 -I hil/hil/canary.py"
@@ -176,7 +177,7 @@ def violations(data):
     if len(uploads) != 1:
         found.append("build job must have exactly one upload-artifact step")
     elif [line.strip() for line in str(uploads[0].get("with", {}).get("path", "")).splitlines() if line.strip()] != FIRMWARE_FILES:
-        found.append("build upload path must be exactly the five firmware files")
+        found.append("build upload path must be exactly the six firmware files")
 
     last = steps[-1] if steps else {}
     if last.get("name") != "Upload masked logs":
@@ -307,6 +308,20 @@ def widen_firmware_upload(d):
 
 @mutate
 def add_a_third_firmware_file(d):
+    for step in steps_of(d, "build"):
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@"):
+            step["with"]["path"] += "hil-out/extra.bin\n"
+
+
+@mutate
+def drop_the_broken_firmware_file(d):
+    for step in steps_of(d, "build"):
+        if str(step.get("uses", "")).startswith("actions/upload-artifact@"):
+            step["with"]["path"] = step["with"]["path"].replace("hil-out/broken-3.2.ota.bin\n", "")
+
+
+@mutate
+def add_a_seventh_firmware_file(d):
     for step in steps_of(d, "build"):
         if str(step.get("uses", "")).startswith("actions/upload-artifact@"):
             step["with"]["path"] += "hil-out/extra.bin\n"
@@ -532,7 +547,8 @@ MUTATIONS = [
     add_pull_request, add_pull_request_target, add_workflow_run, add_schedule, add_dispatch_inputs,
     add_paths_ignore, add_paths, change_branches, add_a_branch, add_workflow_concurrency,
     add_job_concurrency, widen_permissions, drop_permissions, widen_firmware_upload,
-    add_a_third_firmware_file, drop_environment, other_environment, hosted_runner, drop_timeout,
+    add_a_third_firmware_file, drop_the_broken_firmware_file, add_a_seventh_firmware_file,
+    drop_environment, other_environment, hosted_runner, drop_timeout,
     huge_timeout, step_without_timeout, teardown_without_own_timeout, teardown_timeout_too_short,
     job_timeout_below_the_step_sum, job_timeout_equal_to_the_step_sum, job_timeout_one_above_the_cap,
     remove_the_ref_guard, widen_the_ref_guard, ref_guard_always, remove_the_refuse_job,
