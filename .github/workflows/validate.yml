@@ -122,6 +122,9 @@ jobs:
           fi
           echo "All configs valid."
 
+      - name: Check default profiles and manual-control defaults
+        run: python3 tools/test-default-fan-profiles.py
+
   compile-affected:
     name: Compile affected examples
     runs-on: ubuntu-latest

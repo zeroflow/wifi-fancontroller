@@ -1,0 +1,108 @@
+# Independent profiles and temperature curves for the standard firmware.
+# Retain the old curve internally to migrate saved settings on the first upgrade.
+packages:
+  temperature_curve: !include temperature_curve.yaml
+  fan1_profile: !include
+    file: fan_profile.yaml
+    vars:
+      fan: "1"
+  fan2_profile: !include
+    file: fan_profile.yaml
+    vars:
+      fan: "2"
+  fan3_profile: !include
+    file: fan_profile.yaml
+    vars:
+      fan: "3"
+  fan4_profile: !include
+    file: fan_profile.yaml
+    vars:
+      fan: "4"
+
+globals:
+  - id: curve_user_controls_ready
+    type: bool
+    restore_value: no
+    initial_value: "false"
+  - id: curve_loading_profile
+    type: bool
+    restore_value: no
+    initial_value: "false"
+
+esphome:
+  on_boot:
+    - priority: -1000
+      then:
+        - lambda: id(curve_user_controls_ready) = true;
+        - component.update: fan1_profile
+        - component.update: fan2_profile
+        - component.update: fan3_profile
+        - component.update: fan4_profile
+        - component.update: curve_output_value
+
+select:
+  - id: !extend fan_profile
+    internal: true
+
+sensor:
+  - id: !extend curve_output_value
+    internal: true
+
+# Each fan script uses its own ten points. The shared sensor supplies the tick
+# and the output guard, keeping curve writes distinct from external speed edits.
+output:
+  - id: !extend curve_proxy_output
+    write_action:
+      lambda: |-
+        if (!id(curve_user_controls_ready)) return;
+        id(curve_config_warning) = false;
+        id(fan1_apply_profile).execute();
+        id(fan2_apply_profile).execute();
+        id(fan3_apply_profile).execute();
+        id(fan4_apply_profile).execute();
+
+switch:
+  - id: !extend auto_control_fan1
+    restore_mode: RESTORE_DEFAULT_OFF
+    internal: true
+  - id: !extend auto_control_fan2
+    restore_mode: RESTORE_DEFAULT_OFF
+    internal: true
+  - id: !extend auto_control_fan3
+    restore_mode: RESTORE_DEFAULT_OFF
+    internal: true
+  - id: !extend auto_control_fan4
+    restore_mode: RESTORE_DEFAULT_OFF
+    internal: true
+
+number:
+  - id: !extend curve_temp1
+    internal: true
+  - id: !extend curve_speed1
+    internal: true
+  - id: !extend curve_temp2
+    internal: true
+  - id: !extend curve_speed2
+    internal: true
+  - id: !extend curve_temp3
+    internal: true
+  - id: !extend curve_speed3
+    internal: true
+  - id: !extend curve_temp4
+    internal: true
+  - id: !extend curve_speed4
+    internal: true
+  - id: !extend curve_temp5
+    internal: true
+  - id: !extend curve_speed5
+    internal: true
+
+button:
+  - id: !extend curve_preset_silent
+    internal: true
+  - id: !extend curve_preset_balanced
+    internal: true
+  - id: !extend curve_preset_aggressive
+    internal: true
+  - id: !extend curve_preset_server
+    internal: true

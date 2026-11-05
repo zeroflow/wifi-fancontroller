@@ -1,0 +1,406 @@
+# Internal package instantiated four times by default_fan_profiles.yaml.
+# Modes: -1 migrates the old shared settings, 0 Manual, 1 derived automatic
+# profile, 2 explicitly selected Custom (even when points match a preset).
+globals:
+  - id: fan${fan}_profile_mode
+    type: int
+    restore_value: true
+    initial_value: "-1"
+
+esphome:
+  on_boot:
+    - priority: -900
+      then:
+        - lambda: |-
+            if (id(fan${fan}_profile_mode) < 0 || id(fan${fan}_profile_mode) > 2) {
+              id(fan${fan}_profile_mode) = id(auto_control_fan${fan}).state
+                  ? (id(curve_profile_custom) ? 2 : 1) : 0;
+              // Copy the previous shared curve exactly once, preserving upgrades.
+              auto copy = [](auto *number, float value) {
+                auto call = number->make_call();
+                call.set_value(value);
+                call.perform();
+              };
+              copy(id(fan${fan}_curve_temp1), id(curve_temp1).state);
+              copy(id(fan${fan}_curve_speed1), id(curve_speed1).state);
+              copy(id(fan${fan}_curve_temp2), id(curve_temp2).state);
+              copy(id(fan${fan}_curve_speed2), id(curve_speed2).state);
+              copy(id(fan${fan}_curve_temp3), id(curve_temp3).state);
+              copy(id(fan${fan}_curve_speed3), id(curve_speed3).state);
+              copy(id(fan${fan}_curve_temp4), id(curve_temp4).state);
+              copy(id(fan${fan}_curve_speed4), id(curve_speed4).state);
+              copy(id(fan${fan}_curve_temp5), id(curve_temp5).state);
+              copy(id(fan${fan}_curve_speed5), id(curve_speed5).state);
+            }
+            if (id(fan${fan}_profile_mode) == 0) id(auto_control_fan${fan}).turn_off();
+
+select:
+  - platform: template
+    name: "Fan ${fan} profile"
+    id: fan${fan}_profile
+    icon: mdi:fan-auto
+    options:
+      - Manual
+      - Silent
+      - Balanced
+      - Aggressive
+      - Server
+      - Custom
+    update_interval: 1s
+    lambda: |-
+      auto label = [&](const char *name) -> optional<std::string> {
+        if (id(fan${fan}_profile).has_state() &&
+            id(fan${fan}_profile).current_option() == name) return {};
+        return std::string(name);
+      };
+      if (id(fan${fan}_profile_mode) <= 0) return label("Manual");
+      if (id(fan${fan}_profile_mode) == 2) return label("Custom");
+      const float values[10] = {
+        id(fan${fan}_curve_temp1).state, id(fan${fan}_curve_speed1).state,
+        id(fan${fan}_curve_temp2).state, id(fan${fan}_curve_speed2).state,
+        id(fan${fan}_curve_temp3).state, id(fan${fan}_curve_speed3).state,
+        id(fan${fan}_curve_temp4).state, id(fan${fan}_curve_speed4).state,
+        id(fan${fan}_curve_temp5).state, id(fan${fan}_curve_speed5).state
+      };
+      const float presets[4][10] = {
+        {20, 0, 25, 20, 35, 40, 45, 60, 55, 80},
+        {20, 0, 25, 25, 30, 50, 40, 75, 50, 100},
+        {20, 0, 22, 30, 28, 60, 35, 85, 40, 100},
+        {15, 20, 20, 30, 25, 50, 30, 75, 35, 100}
+      };
+      const char *names[4] = {"Silent", "Balanced", "Aggressive", "Server"};
+      for (int profile = 0; profile < 4; profile++) {
+        bool matches = true;
+        for (int point = 0; point < 10; point++) {
+          if (!std::isfinite(values[point]) ||
+              std::fabs(values[point] - presets[profile][point]) > 0.01f) {
+            matches = false;
+            break;
+          }
+        }
+        if (matches) return label(names[profile]);
+      }
+      return label("Custom");
+    set_action:
+      - lambda: |-
+          if (x == "Manual") {
+            id(fan${fan}_profile_mode) = 0;
+            id(auto_control_fan${fan}).turn_off();
+            id(fan${fan}_profile).update();
+            return;
+          }
+          const char *names[4] = {"Silent", "Balanced", "Aggressive", "Server"};
+          int preset = -1;
+          for (int i = 0; i < 4; i++) if (x == names[i]) preset = i;
+          if (preset < 0 && x != "Custom") return;
+          id(fan${fan}_profile_mode) = x == "Custom" ? 2 : 1;
+          if (preset >= 0) {
+            const float values[4][10] = {
+              {20, 0, 25, 20, 35, 40, 45, 60, 55, 80},
+              {20, 0, 25, 25, 30, 50, 40, 75, 50, 100},
+              {20, 0, 22, 30, 28, 60, 35, 85, 40, 100},
+              {15, 20, 20, 30, 25, 50, 30, 75, 35, 100}
+            };
+            id(curve_loading_profile) = true;
+            auto set = [](auto *number, float value) {
+              auto call = number->make_call();
+              call.set_value(value);
+              call.perform();
+            };
+            set(id(fan${fan}_curve_temp1), values[preset][0]);
+            set(id(fan${fan}_curve_speed1), values[preset][1]);
+            set(id(fan${fan}_curve_temp2), values[preset][2]);
+            set(id(fan${fan}_curve_speed2), values[preset][3]);
+            set(id(fan${fan}_curve_temp3), values[preset][4]);
+            set(id(fan${fan}_curve_speed3), values[preset][5]);
+            set(id(fan${fan}_curve_temp4), values[preset][6]);
+            set(id(fan${fan}_curve_speed4), values[preset][7]);
+            set(id(fan${fan}_curve_temp5), values[preset][8]);
+            set(id(fan${fan}_curve_speed5), values[preset][9]);
+            id(curve_loading_profile) = false;
+          }
+          // Resume curve-paused/running fans, keeping an explicitly stopped fan off.
+          if (id(fan${fan}).state || id(auto_control_fan${fan}).state)
+            id(auto_control_fan${fan}).turn_on();
+          id(fan${fan}_profile).update();
+          id(curve_output_value).update();
+
+fan:
+  - id: !extend fan${fan}
+    on_turn_on:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && id(fan${fan}_profile_mode) > 0 &&
+              !id(curve_applying_output)) {
+            id(auto_control_fan${fan}).turn_on();
+            // Let an accompanying percentage edit select Manual before the tick.
+            id(curve_output_value).defer([]() {
+              if (id(fan${fan}_profile_mode) > 0 && id(auto_control_fan${fan}).state)
+                id(curve_output_value).update();
+            });
+          }
+    on_turn_off:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_applying_output))
+            id(auto_control_fan${fan}).turn_off();
+    on_speed_set:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && id(fan${fan}_profile_mode) > 0 &&
+              !id(curve_applying_output)) {
+            auto call = id(fan${fan}_profile).make_call();
+            call.set_option("Manual");
+            call.perform();
+          }
+
+number:
+  - platform: template
+    name: "Fan ${fan}: 1. At temperature"
+    id: fan${fan}_curve_temp1
+    icon: mdi:thermometer
+    entity_category: config
+    restore_value: true
+    initial_value: 20
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 1. Run at"
+    id: fan${fan}_curve_speed1
+    icon: mdi:fan
+    entity_category: config
+    restore_value: true
+    initial_value: 0
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 2. At temperature"
+    id: fan${fan}_curve_temp2
+    icon: mdi:thermometer
+    entity_category: config
+    restore_value: true
+    initial_value: 25
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 2. Run at"
+    id: fan${fan}_curve_speed2
+    icon: mdi:fan
+    entity_category: config
+    restore_value: true
+    initial_value: 25
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 3. At temperature"
+    id: fan${fan}_curve_temp3
+    icon: mdi:thermometer
+    entity_category: config
+    restore_value: true
+    initial_value: 30
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 3. Run at"
+    id: fan${fan}_curve_speed3
+    icon: mdi:fan
+    entity_category: config
+    restore_value: true
+    initial_value: 50
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 4. At temperature"
+    id: fan${fan}_curve_temp4
+    icon: mdi:thermometer
+    entity_category: config
+    restore_value: true
+    initial_value: 40
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 4. Run at"
+    id: fan${fan}_curve_speed4
+    icon: mdi:fan
+    entity_category: config
+    restore_value: true
+    initial_value: 75
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 5. At temperature"
+    id: fan${fan}_curve_temp5
+    icon: mdi:thermometer
+    entity_category: config
+    restore_value: true
+    initial_value: 50
+    min_value: 0
+    max_value: 60
+    step: 0.5
+    unit_of_measurement: "°C"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+  - platform: template
+    name: "Fan ${fan}: 5. Run at"
+    id: fan${fan}_curve_speed5
+    icon: mdi:fan
+    entity_category: config
+    restore_value: true
+    initial_value: 100
+    min_value: 0
+    max_value: 100
+    step: 1
+    unit_of_measurement: "%"
+    optimistic: true
+    mode: box
+    on_value:
+      - lambda: |-
+          if (id(curve_user_controls_ready) && !id(curve_loading_profile)) {
+            id(fan${fan}_profile).update();
+            id(curve_output_value).update();
+          }
+
+script:
+  - id: fan${fan}_apply_profile
+    then:
+      - lambda: |-
+          if (id(fan${fan}_profile_mode) <= 0 || !id(auto_control_fan${fan}).state ||
+              id(usr_override_fan${fan})) return;
+          const float temperature = id(${temperature_sensor_id}).state;
+          if (!std::isfinite(temperature)) return;
+          struct Point { float temp; float speed; };
+          Point points[5] = {
+            {id(fan${fan}_curve_temp1).state, id(fan${fan}_curve_speed1).state},
+            {id(fan${fan}_curve_temp2).state, id(fan${fan}_curve_speed2).state},
+            {id(fan${fan}_curve_temp3).state, id(fan${fan}_curve_speed3).state},
+            {id(fan${fan}_curve_temp4).state, id(fan${fan}_curve_speed4).state},
+            {id(fan${fan}_curve_temp5).state, id(fan${fan}_curve_speed5).state}
+          };
+          for (int i = 0; i < 5; i++) {
+            if (!std::isfinite(points[i].temp) || !std::isfinite(points[i].speed)) {
+              id(curve_config_warning) = true;
+              return;
+            }
+            if (i > 0 && points[i].temp <= points[i-1].temp)
+              id(curve_config_warning) = true;
+          }
+          for (int i = 0; i < 4; i++) {
+            for (int j = 0; j < 4-i; j++) {
+              if (points[j].temp > points[j+1].temp) {
+                Point tmp = points[j]; points[j] = points[j+1]; points[j+1] = tmp;
+              }
+            }
+          }
+          float effective = points[4].speed;
+          if (temperature <= points[0].temp) effective = points[0].speed;
+          else if (temperature < points[4].temp) {
+            for (int i = 0; i < 4; i++) {
+              if (temperature >= points[i].temp && temperature <= points[i+1].temp) {
+                float range = points[i+1].temp - points[i].temp;
+                effective = range <= 0.0001f ? points[i].speed :
+                    points[i].speed + (temperature-points[i].temp) / range *
+                    (points[i+1].speed-points[i].speed);
+                break;
+              }
+            }
+          }
+          const float floor = id(fan${fan}_safety_floor);
+          if (effective > 0.0f && effective < floor) effective = floor;
+          if (effective <= 0.0f) id(fan${fan}).turn_off().perform();
+          else {
+            auto call = id(fan${fan}).turn_on();
+            call.set_speed(effective);
+            call.perform();
+          }

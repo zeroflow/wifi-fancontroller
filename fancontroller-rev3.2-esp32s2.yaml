@@ -7,6 +7,8 @@
 packages:
   # Include hardware-specific configuration
   hardware: github://zeroflow/wifi-fancontroller/hardware-rev-3.2.yaml@main
+  # Include Manual mode, temperature profiles, and custom curve tuning.
+  fan_profiles: !include modules/default_fan_profiles.yaml
 
 esphome:
   name: fancontroller-r3-2
