@@ -1,0 +1,36 @@
+- name: flags 7 sentences in a caution aside
+  rule: ParagraphLengthStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></aside></div></main>"
+  contains: "Keep a paragraph in a step or a caution or danger notice"
+
+- name: flags 7 sentences in a danger aside
+  rule: ParagraphLengthStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></aside></div></main>"
+  contains: "Keep a paragraph in a step or a caution or danger notice"
+
+- name: does not reach the paragraphs of a numbered step
+  about: Limitation. Vale reads a list item as one block and not as a paragraph, so this scope never sees step text. SentenceLengthSteps covers the length of each step sentence.
+  rule: ParagraphLengthStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></li></ol></div></main>"
+  absent: "DocsEN.ParagraphLengthStrictElements"
+
+- name: accepts 6 sentences in a caution aside
+  rule: ParagraphLengthStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></aside></div></main>"
+  absent: "DocsEN.ParagraphLengthStrictElements"
+
+- name: ignores 7 sentences in a plain paragraph
+  rule: ParagraphLengthStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></main>"
+  absent: "DocsEN.ParagraphLengthStrictElements"
+
+- name: ignores 7 sentences in a note aside
+  rule: ParagraphLengthStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></aside></div></main>"
+  absent: "DocsEN.ParagraphLengthStrictElements"

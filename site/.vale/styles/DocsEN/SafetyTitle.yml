@@ -1,0 +1,12 @@
+extends: script
+message: "Start the title of a caution or danger notice with CAUTION:, WARNING: or DANGER:. See site/style-guide/safety.md."
+level: warning
+scope: safety_title
+script: |
+  text := import("text")
+  matches := []
+  title := text.trim_space(scope)
+  if title != "" && !text.re_match("^(CAUTION|WARNING|DANGER):", title) {
+    start := text.index(scope, title)
+    matches = append(matches, {begin: start, end: start + 1})
+  }

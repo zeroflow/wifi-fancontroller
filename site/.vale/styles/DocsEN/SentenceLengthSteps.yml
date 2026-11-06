@@ -1,0 +1,6 @@
+extends: metric
+message: "This step sentence has %s words. Keep each step sentence to 20 words or fewer."
+level: warning
+scope: 'sentence & steps'
+formula: words
+condition: "> 20"

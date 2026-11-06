@@ -1,0 +1,6 @@
+extends: metric
+message: "This sentence has %s words. Keep sentences in running text to 25 words or fewer."
+level: warning
+scope: 'sentence & content & ~strict_elements & ~table.cell & ~table.header'
+formula: words
+condition: "> 25"

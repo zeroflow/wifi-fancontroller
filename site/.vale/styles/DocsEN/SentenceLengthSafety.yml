@@ -1,0 +1,6 @@
+extends: metric
+message: "This sentence has %s words. Keep each sentence in a caution or danger notice to 20 words or fewer."
+level: warning
+scope: 'sentence & safety'
+formula: words
+condition: "> 20"

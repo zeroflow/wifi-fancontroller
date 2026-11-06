@@ -1,0 +1,55 @@
+extends: capitalization
+message: "Write the heading '%s' in sentence case. Only the first word and proper names start with a capital letter."
+level: suggestion
+scope: 'heading & content'
+match: $sentence
+# Proper names, product names, chips, sensors and acronyms that occur in the
+# built headings. Do not add common words here; fix the heading instead.
+exceptions:
+  - API
+  - Arduino
+  - ASC
+  - BME680
+  - BME680s
+  - Bosch
+  - BSEC2
+  - CO2
+  - DC
+  - DS18B20
+  - DS2484
+  - Elecrow
+  - ESP32
+  - ESP32-S2
+  - ESPHome
+  - FRC
+  - GitHub
+  - GPIO
+  - Home Assistant
+  - I
+  - I2C
+  - Improv
+  - LED
+  - LEDs
+  - LP
+  - NeoPixel
+  - OTA
+  - PID
+  - PWM
+  - Qwiic
+  - RF
+  - RGB
+  - RPM
+  - SCD41
+  - SELV
+  - SMD
+  - SSD1306
+  - STEMMA QT
+  - Tindie
+  - TX/RX
+  - UI
+  - ULP
+  - USB
+  - USB-C
+  - WiFi
+  - WiFi Fan Controller
+  - YAML
