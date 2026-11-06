@@ -1,0 +1,101 @@
+- name: flags 12V
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The board needs 12V.</p></div></main>"
+  contains: "Write a space between the number and the unit"
+
+- name: flags 3.3V
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The logic level is 3.3V.</p></div></main>"
+  contains: "Write a space between the number and the unit"
+
+- name: flags 25kHz
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The PWM frequency is 25kHz.</p></div></main>"
+  contains: "Write a space between the number and the unit"
+
+- name: flags 2.5A
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The limit is 2.5A.</p></div></main>"
+  contains: "Write a space between the number and the unit"
+
+- name: flags 50%
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Set the speed to 50%.</p></div></main>"
+  contains: "Write a space between the number and the unit"
+
+- name: flags 4MB
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The flash has 4MB.</p></div></main>"
+  contains: "Write a space between the number and the unit"
+
+- name: flags a degree sign glued to the number
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The room is at 25\u00b0C.</p></div></main>"
+  contains: "Write a space between the number and the unit"
+
+- name: accepts 12 V with a space
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The board needs 12 V.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts 12 V with a non-breaking space
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The board needs 12&nbsp;V.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts 50 % with a space
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Set the speed to 50 %.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts ESP32
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The ESP32 runs the firmware.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts I2C
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The I2C bus is shared.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts USB-C
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use a USB-C cable.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts 4-pin
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use a 4-pin fan.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts a model name
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan is the S12038-4K.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: accepts a name with digits and a trailing s
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Running two BME680s works.</p></div></main>"
+  absent: "DocsEN.Units"
+
+- name: ignores the same text outside the content container
+  rule: Units.yml
+  format: html
+  input: "<nav><p>The board needs 12V.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Units"

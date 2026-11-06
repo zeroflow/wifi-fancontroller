@@ -1,0 +1,21 @@
+# mirrors: Passive, Vague
+extends: existence
+message: "Steps and caution or danger notices avoid '%s'. Prefer the active voice and precise words. See site/style-guide/en.md."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & strict_elements'
+tokens:
+  - '(?i)\b(?:is|are|was|were|be|been|being)\s+\w{2,}ed\b'
+  - '(?i)\b(?:is|are|was|were|be|been|being)\s+(?:built|done|given|taken|shown|written|made|found|held|kept|sent|seen|known|chosen|broken|driven|hidden|lost|told|set)\b'
+  - '(?i)\busually\b'
+  - '(?i)\btypically\b'
+  - '(?i)\bprobably\b'
+  - '(?i)\bsimply\b'
+  - '(?i)\bvarious\b'
+  - '(?i)\bmight\b'
+  - '(?i)\bmaybe\b'
+  - '(?i)\bperhaps\b'
+  - '(?i)\bbasically\b'
+  - '(?i)\beasily\b'
+  - '(?i)\bquite\b'

@@ -1,0 +1,16 @@
+extends: existence
+message: "Write out the abbreviation '%s'. For example, write 'for example' instead of 'e.g.' and 'at most' instead of 'max.'."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content & ~table.cell & ~table.header'
+tokens:
+  - '(?i)\be\.g\.'
+  - '(?i)\bi\.e\.'
+  - '(?i)\betc\.'
+  - '(?i)\bapprox\.'
+  - '(?i)\bvs\.'
+  - '(?i)\bFig\.'
+  - '(?i)\bincl\.'
+  - '(?i)\bresp\.'
+  - '(?i)\b(?:max|min)\.\s*\d'

@@ -1,0 +1,18 @@
+extends: existence
+message: "Avoid the vague word '%s'. Give the condition or the number instead."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content'
+tokens:
+  - '(?i)\busually\b'
+  - '(?i)\btypically\b'
+  - '(?i)\bprobably\b'
+  - '(?i)\bsimply\b'
+  - '(?i)\bvarious\b'
+  - '(?i)\bmight\b'
+  - '(?i)\bmaybe\b'
+  - '(?i)\bperhaps\b'
+  - '(?i)\bbasically\b'
+  - '(?i)\beasily\b'
+  - '(?i)\bquite\b'

@@ -1,0 +1,12 @@
+extends: existence
+message: "Write out the contraction '%s'. A contraction hides a negation that matters in instructions."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content'
+tokens:
+  - '(?i)\b(?:ca|wo|do|does|did|is|are|was|were|has|have|had|should|would|could)n[''\x{2019}]t\b'
+  - '(?i)\b(?:it|that|there|here|what|let)[''\x{2019}]s\b'
+  - '(?i)\b(?:you|we|they)[''\x{2019}](?:re|ve|ll|d)\b'
+  - '(?i)\bit[''\x{2019}]ll\b'
+  - '(?i)\bI[''\x{2019}](?:m|ve|ll|d)\b'

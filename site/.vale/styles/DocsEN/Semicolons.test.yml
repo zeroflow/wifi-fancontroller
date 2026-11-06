@@ -1,0 +1,23 @@
+- name: flags a semicolon in a sentence
+  rule: Semicolons.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect the fan; then power on.</p></div></main>"
+  contains: "Do not use a semicolon"
+
+- name: ignores a semicolon inside code
+  rule: Semicolons.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Write <code>a;b</code> in the file.</p></div></main>"
+  absent: "DocsEN.Semicolons"
+
+- name: ignores an ampersand entity
+  rule: Semicolons.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Fan &amp; board are connected.</p></div></main>"
+  absent: "DocsEN.Semicolons"
+
+- name: ignores the same text outside the content container
+  rule: Semicolons.yml
+  format: html
+  input: "<nav><p>Connect the fan; then power on.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Semicolons"

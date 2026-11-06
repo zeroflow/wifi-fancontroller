@@ -1,0 +1,41 @@
+- name: flags a regular passive
+  rule: Passive.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan is controlled by the board.</p></div></main>"
+  contains: "Consider the active voice"
+
+- name: flags a passive with was
+  rule: Passive.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The value was changed by the update.</p></div></main>"
+  contains: "Consider the active voice"
+
+- name: flags a passive with an irregular participle
+  rule: Passive.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The value is set to 20.</p></div></main>"
+  contains: "Consider the active voice"
+
+- name: accepts the active form
+  rule: Passive.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The board controls the fan.</p></div></main>"
+  absent: "DocsEN.Passive"
+
+- name: accepts a color adjective that ends in ed
+  rule: Passive.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The LED is red.</p></div></main>"
+  absent: "DocsEN.Passive"
+
+- name: ignores a passive inside inline code
+  rule: Passive.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use <code>is_controlled</code> as the name.</p></div></main>"
+  absent: "DocsEN.Passive"
+
+- name: ignores the same text outside the content container
+  rule: Passive.yml
+  format: html
+  input: "<nav><p>The fan is controlled by the board.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Passive"

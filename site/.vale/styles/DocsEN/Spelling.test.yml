@@ -1,0 +1,71 @@
+- name: flags colour and names the American form
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The colour of the LED changes.</p></div></main>"
+  want: "1:57:DocsEN.Spelling:Use the American spelling 'color' instead of 'colour'."
+
+- name: flags behaviour
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The behaviour changes.</p></div></main>"
+  contains: "'behavior'"
+
+- name: flags centre
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Place it at the centre.</p></div></main>"
+  contains: "'center'"
+
+- name: flags licence
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Accept the licence.</p></div></main>"
+  contains: "'license'"
+
+- name: flags an inflection
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The LED is coloured red.</p></div></main>"
+  contains: "'colored'"
+
+- name: flags optimise
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Optimise the curve.</p></div></main>"
+  contains: "'optimize'"
+
+- name: accepts color
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The color of the LED changes.</p></div></main>"
+  absent: "DocsEN.Spelling"
+
+- name: accepts behavior
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The behavior changes.</p></div></main>"
+  absent: "DocsEN.Spelling"
+
+- name: accepts center
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Place it at the center.</p></div></main>"
+  absent: "DocsEN.Spelling"
+
+- name: accepts license
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Accept the license.</p></div></main>"
+  absent: "DocsEN.Spelling"
+
+- name: accepts the plural analyses of analysis
+  rule: Spelling.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The analyses agree.</p></div></main>"
+  absent: "DocsEN.Spelling"
+
+- name: ignores the same text outside the content container
+  rule: Spelling.yml
+  format: html
+  input: "<nav><p>The colour of the LED changes.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Spelling"

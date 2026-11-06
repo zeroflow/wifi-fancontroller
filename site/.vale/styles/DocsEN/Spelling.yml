@@ -1,0 +1,54 @@
+extends: substitution
+message: "Use the American spelling '%s' instead of '%s'."
+level: warning
+ignorecase: true
+scope: 'text & content'
+swap:
+  colour: color
+  colours: colors
+  coloured: colored
+  colouring: coloring
+  behaviour: behavior
+  behaviours: behaviors
+  behavioural: behavioral
+  centre: center
+  centres: centers
+  centred: centered
+  licence: license
+  licences: licenses
+  favour: favor
+  favourite: favorite
+  honour: honor
+  analyse: analyze
+  analysed: analyzed
+  analysing: analyzing
+  organise: organize
+  organised: organized
+  organising: organizing
+  initialise: initialize
+  initialised: initialized
+  initialising: initializing
+  initialisation: initialization
+  customise: customize
+  customised: customized
+  customising: customizing
+  recognise: recognize
+  recognised: recognized
+  recognising: recognizing
+  optimise: optimize
+  optimised: optimized
+  optimising: optimizing
+  minimise: minimize
+  minimised: minimized
+  maximise: maximize
+  maximised: maximized
+  prioritise: prioritize
+  prioritised: prioritized
+  catalogue: catalog
+  catalogues: catalogs
+  grey: gray
+  aluminium: aluminum
+  programme: program
+  programmes: programs
+  artefact: artifact
+  artefacts: artifacts

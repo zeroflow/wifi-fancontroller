@@ -1,0 +1,9 @@
+extends: existence
+message: "Write a space between the number and the unit ('%s'). Use a non-breaking space where the format allows it, for example 12&nbsp;V."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content'
+tokens:
+  - '\b\d+(?:[.,]\d+)?(?:mV|mA|mW|kHz|MHz|GHz|Hz|mm|cm|ms|kB|KB|MB|GB|V|A|W|s)\b'
+  - '\b\d+(?:[.,]\d+)?(?:%|\x{00B0}C)'
