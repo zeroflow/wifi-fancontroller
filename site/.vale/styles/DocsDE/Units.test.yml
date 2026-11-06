@@ -1,0 +1,77 @@
+- name: flags 12V
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Platine braucht 12V.</p></div></main>"
+  contains: "Leerzeichen"
+
+- name: flags 2,5A with a decimal comma
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Grenzwert ist 2,5A.</p></div></main>"
+  contains: "Leerzeichen"
+
+- name: flags 25kHz
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die PWM-Frequenz beträgt 25kHz.</p></div></main>"
+  contains: "Leerzeichen"
+
+- name: flags 50%
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Stellen Sie 50% ein.</p></div></main>"
+  contains: "Leerzeichen"
+
+- name: flags a decimal point before a unit
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Grenzwert ist 2.5 A.</p></div></main>"
+  contains: "Leerzeichen"
+
+- name: accepts 12 V with a space
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Platine braucht 12 V.</p></div></main>"
+  absent: "DocsDE.Units"
+
+- name: accepts 2,5 A with a space
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Grenzwert ist 2,5 A.</p></div></main>"
+  absent: "DocsDE.Units"
+
+- name: accepts 50 % with a space
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Stellen Sie 50 % ein.</p></div></main>"
+  absent: "DocsDE.Units"
+
+- name: accepts 12 V with a non-breaking space
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Platine braucht 12\u00a0V.</p></div></main>"
+  absent: "DocsDE.Units"
+
+- name: accepts a compound with a hyphen
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie ein 12-V-Netzteil.</p></div></main>"
+  absent: "DocsDE.Units"
+
+- name: accepts a model name
+  rule: Units.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter ist der S12038-4K.</p></div></main>"
+  absent: "DocsDE.Units"
+
+- name: ignores the same text outside the content container
+  rule: Units.yml
+  format: html
+  input: "<nav><p>Die Platine braucht 12V.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Units"
+
+- name: ignores the same text on an English fallback page
+  rule: Units.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Die Platine braucht 12V.</p></div></main>"
+  absent: "DocsDE.Units"

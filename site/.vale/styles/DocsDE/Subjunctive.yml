@@ -1,0 +1,8 @@
+extends: existence
+message: "Schreiben Sie im Präsens und vermeiden Sie den Konjunktiv ('%s')."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '(?i)\b(?:würde|würden|würdest|könnte|könnten|sollte|sollten|wäre|wären|hätte|hätten|müsste|müssten|dürfte|dürften)\b'

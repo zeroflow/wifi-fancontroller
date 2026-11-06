@@ -1,0 +1,65 @@
+- name: flags a caution title without a signal word
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Geregeltes Netzteil verwenden</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  contains: "VORSICHT:"
+
+- name: flags a title that starts with an umlaut
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Überspannung vermeiden</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  contains: "VORSICHT:"
+
+- name: accepts a caution title with VORSICHT
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>VORSICHT: Geregeltes Netzteil verwenden</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  absent: "DocsDE.SafetyTitle"
+
+- name: accepts a danger title with WARNUNG
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>WARNUNG: Abstand zur Antenne</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  absent: "DocsDE.SafetyTitle"
+
+- name: accepts a danger title with GEFAHR
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>GEFAHR: Netzspannung</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  absent: "DocsDE.SafetyTitle"
+
+- name: flags a danger title without a signal word
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Abstand zur Antenne</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  contains: "VORSICHT:"
+
+- name: yields exactly one alert for two asides with one correct
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>VORSICHT: Geregeltes Netzteil verwenden</p><div class='starlight-aside__content'><p>Text.</p></div></aside><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Geregeltes Netzteil verwenden</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  want: "1:150:DocsDE.SafetyTitle:Beginnen Sie den Titel eines Caution- oder Danger-Hinweises mit VORSICHT:, WARNUNG: oder GEFAHR:. Siehe site/style-guide/safety.md."
+
+- name: ignores a note aside with any title
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Geregeltes Netzteil verwenden</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  absent: "DocsDE.SafetyTitle"
+
+- name: ignores a tip aside with any title
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--tip'><p class='starlight-aside__title'>Geregeltes Netzteil verwenden</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  absent: "DocsDE.SafetyTitle"
+
+- name: ignores a caution title outside the content container
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='de'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Ohne Signalwort</p></aside><div class='sl-markdown-content'><p>Text.</p></div></main>"
+  absent: "DocsDE.SafetyTitle"
+
+- name: ignores a caution title on an English fallback page
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Use a regulated power supply</p><div class='starlight-aside__content'><p>Text.</p></div></aside></div></main>"
+  absent: "DocsDE.SafetyTitle"

@@ -1,0 +1,19 @@
+extends: existence
+message: "Vermeiden Sie das ungenaue Wort '%s'. Nennen Sie die Bedingung oder die Zahl."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '(?i)\beventuell\b'
+  - '(?i)\bvielleicht\b'
+  - '(?i)\brelativ(?:e|en|er|es|em)?\b'
+  - '(?i)\beinfach(?:e|en|er|es|em)?\b'
+  - '(?i)\bschnell(?:e|en|er|es|em)?\b'
+  - '(?i)\bziemlich\b'
+  - '(?i)\beigentlich\b'
+  - '(?i)\bnormalerweise\b'
+  - '(?i)\bmöglicherweise\b'
+  - '(?i)\bunter\s+Umständen\b'
+  - '(?i)\bgegebenenfalls\b'
+  - '(?i)\bquasi\b'

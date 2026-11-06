@@ -1,0 +1,9 @@
+extends: existence
+message: "Verwenden Sie keine Gendersonderzeichen ('%s'). Nutzen Sie eine neutrale Form oder die Paarform. Die Reihenfolge steht in site/style-guide/de.md."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '\p{L}+[*:_]in(?:nen)?\b'
+  - '\p{Ll}In(?:nen)?\b'

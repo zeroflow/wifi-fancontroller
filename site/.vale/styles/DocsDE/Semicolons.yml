@@ -1,0 +1,8 @@
+extends: existence
+message: "Setzen Sie kein Semikolon. Schreiben Sie zwei Sätze."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - ';'

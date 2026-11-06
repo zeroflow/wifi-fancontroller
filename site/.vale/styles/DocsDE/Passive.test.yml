@@ -1,0 +1,53 @@
+- name: flags a passive with von
+  rule: Passive.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter wird von der Platine gesteuert.</p></div></main>"
+  contains: "Schreiben Sie aktiv"
+
+- name: flags a passive with a separable prefix participle
+  rule: Passive.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Werte werden angezeigt.</p></div></main>"
+  contains: "Schreiben Sie aktiv"
+
+- name: flags a passive in the past
+  rule: Passive.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Datei wurde gespeichert.</p></div></main>"
+  contains: "Schreiben Sie aktiv"
+
+- name: accepts the active form
+  rule: Passive.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Platine steuert den Lüfter.</p></div></main>"
+  absent: "DocsDE.Passive"
+
+- name: accepts werden without a participle
+  rule: Passive.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter wird schneller.</p></div></main>"
+  absent: "DocsDE.Passive"
+
+- name: accepts a compound that contains ge
+  rule: Passive.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Dann wird die Lüftergeschwindigkeit ruhig.</p></div></main>"
+  absent: "DocsDE.Passive"
+
+- name: ignores a passive inside inline code
+  rule: Passive.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie <code>wird gesetzt</code> als Namen.</p></div></main>"
+  absent: "DocsDE.Passive"
+
+- name: ignores the same text outside the content container
+  rule: Passive.yml
+  format: html
+  input: "<nav><p>Der Lüfter wird von der Platine gesteuert.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Passive"
+
+- name: ignores the same text on an English fallback page
+  rule: Passive.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Der Lüfter wird von der Platine gesteuert.</p></div></main>"
+  absent: "DocsDE.Passive"

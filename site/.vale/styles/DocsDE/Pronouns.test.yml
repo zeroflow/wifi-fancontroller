@@ -1,0 +1,47 @@
+- name: flags Man at the start of a sentence
+  rule: Pronouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Man schließt den Lüfter an.</p></div></main>"
+  contains: "unpersönliche Pronomen"
+
+- name: flags man inside a sentence
+  rule: Pronouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Dann muss man den Lüfter anschließen.</p></div></main>"
+  contains: "unpersönliche Pronomen"
+
+- name: accepts Mangan
+  rule: Pronouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Mangan ist ein Metall.</p></div></main>"
+  absent: "DocsDE.Pronouns"
+
+- name: accepts Normandie
+  rule: Pronouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Normandie liegt in Frankreich.</p></div></main>"
+  absent: "DocsDE.Pronouns"
+
+- name: accepts a word that ends in man after an umlaut
+  rule: Pronouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Rüman kommt.</p></div></main>"
+  absent: "DocsDE.Pronouns"
+
+- name: accepts a word that starts with man
+  rule: Pronouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Das Mannsbild kommt.</p></div></main>"
+  absent: "DocsDE.Pronouns"
+
+- name: ignores the same text outside the content container
+  rule: Pronouns.yml
+  format: html
+  input: "<nav><p>Man schließt den Lüfter an.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Pronouns"
+
+- name: ignores the same text on an English fallback page
+  rule: Pronouns.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Man schließt den Lüfter an.</p></div></main>"
+  absent: "DocsDE.Pronouns"
