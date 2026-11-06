@@ -494,6 +494,8 @@ You can combine multiple modules in your configuration. For example:
 
 Found a bug or have a feature request? Open an issue or submit a pull request on [GitHub](https://github.com/zeroflow/wifi-fancontroller).
 
+Writing or editing documentation? Read the [documentation style guide](site/style-guide/README.md) first. After a change, build the site with `npm --prefix site run build` and run `bash site/scripts/verify-prose.sh` to check the prose.
+
 ---
 
 ## License
