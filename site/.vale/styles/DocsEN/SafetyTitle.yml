@@ -8,5 +8,5 @@ script: |
   title := text.trim_space(scope)
   if title != "" && !text.re_match("^(CAUTION|WARNING|DANGER):", title) {
     start := text.index(scope, title)
-    matches = append(matches, {begin: start, end: start + 1})
+    matches = append(matches, {begin: start, end: start + len(title)})
   }

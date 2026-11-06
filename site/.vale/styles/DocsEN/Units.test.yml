@@ -49,7 +49,7 @@
 - name: accepts 12 V with a non-breaking space
   rule: Units.yml
   format: html
-  input: "<main lang='en'><div class='sl-markdown-content'><p>The board needs 12&nbsp;V.</p></div></main>"
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The board needs 12\u00a0V.</p></div></main>"
   absent: "DocsEN.Units"
 
 - name: accepts 50 % with a space
