@@ -1,5 +1,5 @@
 extends: metric
-message: "This sentence has %s words. Keep each sentence in a caution or danger notice to 20 words or fewer."
+message: "This sentence is too long. Keep each sentence in a caution or danger notice to 20 words or fewer."
 level: warning
 scope: 'sentence & safety'
 formula: words
