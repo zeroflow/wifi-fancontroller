@@ -22,6 +22,8 @@ def all_contract_names():
     names = [n for d in contract.BUTTON.values() for n in d.values()]
     names += [n for d in contract.SWITCH.values() for n in d.values()]
     names += list(contract.SERIAL_CONNECTED.values())
+    names += list(contract.SERIAL_CLIENTS.values())
+    names += list(contract.WATCHDOG_RELEASES.values())
     names.append(contract.SUPERVISOR_RESTART)
     return names
 
@@ -30,10 +32,10 @@ def missing(name):
     return "entity '%s' missing on supervisor" % name
 
 
-def test_required_entities_are_seventeen_without_duplicates():
+def test_required_entities_are_twenty_one_without_duplicates():
     names = all_contract_names()
-    assert len(names) == 17 and len(set(names)) == 17
-    assert len(contract.REQUIRED_ENTITIES) == 17
+    assert len(names) == 21 and len(set(names)) == 21
+    assert len(contract.REQUIRED_ENTITIES) == 21
     assert contract.REQUIRED_ENTITIES == set(names)
 
 
@@ -57,7 +59,7 @@ def test_prefix_lookalike_does_not_satisfy_the_contract():
 def test_empty_entity_list_reports_every_contract_name_sorted():
     problems = Supervisor.contract_problems([])
     assert problems == [missing(n) for n in sorted(contract.REQUIRED_ENTITIES)]
-    assert len(problems) == 17
+    assert len(problems) == 21
 
 
 def test_missing_names_are_listed_in_sorted_order_whatever_the_input_order():

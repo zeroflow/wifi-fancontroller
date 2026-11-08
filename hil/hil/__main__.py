@@ -14,9 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from . import RigError, config, contract, manifest, nvs, redact, summary, teardown
+from . import RigError, config, contract, manifest, nvs, preflight, redact, summary, teardown
 from .dut import Dut
 from .flasher import Flasher
+from .serial_tap import SerialTap
 from .supervisor import Supervisor
 
 EXIT = {"PASS": 0, "FAIL": 1, "INTERRUPTED": 2, "RIG ERROR": 3}
@@ -278,7 +279,19 @@ STALE_REPORTS = (
     "raw/api-dut-a.log",
     "raw/junit.xml",
     "raw/summary.md",
+    "final-image.json",
+    "teardown-flash-dut-a.json",
 )
+# What `hil preflight` writes before the run; `hil run` keeps these (RESEARCH Pattern 7).
+PREFLIGHT_REPORTS = (
+    preflight.REPORT,
+    preflight.HEAL_FLASH_REPORT,
+    "watchdog.json",
+    str(preflight.TAP_LOG),
+    str(preflight.TAP_LOG.with_suffix(".marks.json")),
+)
+PREFLIGHT_PROVISIONAL = "preflight did not complete"
+PREFLIGHT_PASSED = "preflight passed; the run has not started"
 
 
 def redact_reports(rig):
@@ -319,6 +332,8 @@ def _run(holder):
         stale = reports / name
         if stale.exists():
             stale.unlink()
+    # The redacted tree of an earlier run is rebuilt from scratch by this run's redaction (WR-10).
+    shutil.rmtree(reports / "redacted", ignore_errors=True)
     # A run that is killed from here on (step ceiling, signal) leaves this, never PASS or an
     # earlier run's verdict; the final write_verdict replaces it. It prints nothing.
     write_verdict("RIG ERROR", commit, None, reason=PROVISIONAL_REASON, announce=False)
@@ -391,6 +406,66 @@ def write_summary(rig, reports):
         summary.write(reports, firmware_manifest_dict(), config.mask_literals(rig))
     except Exception as exc:  # noqa: BLE001 - a summary fault must not hide the teardown result
         print("RIG ERROR: job summary not written (%s)" % type(exc).__name__)
+
+
+def cmd_preflight():
+    """`hil preflight`: check the rig before any test (HARN-05, D-43). Exit 0 fit, 3 RIG ERROR.
+
+    verdict.json is RIG ERROR from the first line on: a preflight that is killed leaves "preflight
+    did not complete", one that passes leaves "preflight passed; the run has not started", and only
+    `hil run` can write anything else.
+    """
+    commit = config.expected_commit()
+    reports = config.reports_dir()
+    reports.mkdir(parents=True, exist_ok=True)
+    for name in PREFLIGHT_REPORTS:
+        stale = reports / name
+        if stale.exists():
+            stale.unlink()
+    write_verdict("RIG ERROR", commit, None, reason=PREFLIGHT_PROVISIONAL, announce=False)
+    previous = signal.signal(signal.SIGTERM, _terminate)
+    rig = None
+    try:
+        try:
+            rig = load_rig()
+        except RigError as exc:
+            return _preflight_rig_error(commit, "rig configuration: %s" % exc)
+        cfg = rig.duts["A"]
+        supervisor = Supervisor(rig.supervisor_host, rig.supervisor_key)
+
+        def make_tap(port, path):
+            return SerialTap(rig.supervisor_host, port, path)
+
+        def make_dut(tap):
+            flasher = Flasher(rig.supervisor_host, contract.BRIDGE_PORT["A"], cfg.chip)
+            return Dut("A", cfg, supervisor, flasher, tap=tap)
+
+        ok, cause, record = preflight.run_preflight(
+            rig, reports, supervisor=supervisor, make_tap=make_tap, make_dut=make_dut
+        )
+        for check in record["checks"]:
+            state = "ok" if check["ok"] else check["detail"]
+            if check["ok"] and check["detail"]:
+                state = "ok (%s)" % check["detail"]
+            teardown.say("Preflight: %s: %s" % (check["name"], state))
+        for warning in record["warnings"]:
+            teardown.say("WARNING: %s" % warning)
+        if not ok:
+            return _preflight_rig_error(commit, cause)
+        write_verdict("RIG ERROR", commit, None, reason=PREFLIGHT_PASSED, announce=False)
+        teardown.say("Preflight: passed")
+        return 0
+    finally:
+        redact_reports(rig)
+        signal.signal(signal.SIGTERM, previous)
+
+
+def _preflight_rig_error(commit, cause):
+    teardown.say("RIG ERROR: %s" % cause)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("::error title=RIG ERROR::preflight: %s" % first_line(cause))
+    write_verdict("RIG ERROR", commit, None, reason=cause, announce=False)
+    return EXIT["RIG ERROR"]
 
 
 def cmd_teardown():
@@ -514,6 +589,7 @@ def build_parser():
     parser = argparse.ArgumentParser(prog="python -m hil")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("run", help="verify the manifest, flash DUT A, check the build ID")
+    sub.add_parser("preflight", help="check the rig before any test; exit 0 fit, 3 RIG ERROR")
     sub.add_parser("teardown", help="release every line and leave DUT A on a confirmed image")
     known = sub.add_parser("known-good", help="flash the v1.6.0 factory image (plus NVS backup) to DUT A")
     known.add_argument("--dut", choices=["A"], required=True)
@@ -538,6 +614,8 @@ def main(argv=None):
     if args.command == "run":
         return run()
     try:
+        if args.command == "preflight":
+            return cmd_preflight()
         if args.command == "teardown":
             return cmd_teardown()
         if args.command == "known-good":

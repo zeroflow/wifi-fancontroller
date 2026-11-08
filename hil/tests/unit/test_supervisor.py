@@ -1,7 +1,7 @@
 """Supervisor.release_all is best effort: every line is commanded off, failures are raised once (CR-01)."""
 
 import pytest
-from aioesphomeapi import APIConnectionError, SwitchInfo
+from aioesphomeapi import APIConnectionError, SensorInfo, SensorState, SwitchInfo, SwitchState
 
 from hil import RigError, contract
 from hil.supervisor import Supervisor
@@ -85,3 +85,64 @@ def test_a_switch_that_never_reports_off_is_named(sv, monkeypatch):
     with pytest.raises(RigError) as raised:
         sv.release_all()
     assert stuck in str(raised.value)
+
+
+# ------------------------------------------------------------------ sensors (RIG-06)
+
+CLIENTS_A = contract.SERIAL_CLIENTS["A"]
+RELEASES_B = contract.WATCHDOG_RELEASES["B"]
+SENSOR_KEYS = {CLIENTS_A: 101, RELEASES_B: 102}
+
+
+@pytest.fixture
+def sensors(sv):
+    for name, key in SENSOR_KEYS.items():
+        sv._entities[name] = (SensorInfo, key)
+        sv._names[key] = name
+    return sv
+
+
+def test_a_sensor_state_is_stored_as_a_float_apart_from_the_booleans(sensors):
+    sensors._on_state(SensorState(key=SENSOR_KEYS[CLIENTS_A], state=2.0, missing_state=False))
+    assert sensors.sensor_value(CLIENTS_A) == 2.0 and isinstance(sensors.sensor_value(CLIENTS_A), float)
+    assert CLIENTS_A not in sensors._states
+
+
+def test_a_zero_count_is_zero_not_missing(sensors):
+    sensors._on_state(SensorState(key=SENSOR_KEYS[CLIENTS_A], state=0.0, missing_state=False))
+    assert sensors.sensor_value(CLIENTS_A) == 0.0 and sensors.sensor_value(CLIENTS_A) is not None
+
+
+def test_a_missing_state_is_none_never_zero(sensors):
+    sensors._on_state(SensorState(key=SENSOR_KEYS[CLIENTS_A], state=0.0, missing_state=True))
+    assert sensors.sensor_value(CLIENTS_A) is None
+
+
+def test_a_nan_state_is_none(sensors):
+    sensors._on_state(SensorState(key=SENSOR_KEYS[RELEASES_B], state=float("nan"), missing_state=False))
+    assert sensors.sensor_value(RELEASES_B) is None
+
+
+def test_a_sensor_that_never_reported_is_none(sensors):
+    assert sensors.sensor_value(RELEASES_B) is None
+
+
+def test_a_later_value_replaces_a_missing_one(sensors):
+    key = SENSOR_KEYS[RELEASES_B]
+    sensors._on_state(SensorState(key=key, state=0.0, missing_state=True))
+    sensors._on_state(SensorState(key=key, state=4.0, missing_state=False))
+    assert sensors.sensor_value(RELEASES_B) == 4.0
+
+
+def test_sensor_value_of_an_unknown_or_non_sensor_name_is_a_rig_error(sensors):
+    with pytest.raises(RigError, match="missing on supervisor"):
+        sensors.sensor_value(contract.SERIAL_CLIENTS["B"])
+    with pytest.raises(RigError, match="missing on supervisor"):
+        sensors.sensor_value(SWITCHES[0])
+
+
+def test_switch_booleans_are_unchanged_by_sensor_states(sensors):
+    sensors._on_state(SwitchState(key=key_of(SWITCHES[1]), state=True))
+    sensors._on_state(SensorState(key=SENSOR_KEYS[CLIENTS_A], state=1.0, missing_state=False))
+    assert sensors.switch_is_on(SWITCHES[1]) is True
+    assert sensors.sensor_value(CLIENTS_A) == 1.0

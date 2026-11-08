@@ -6,6 +6,7 @@ fixture finalizers still run. Supervisor names come from contract.py only.
 """
 
 import asyncio
+import math
 import threading
 import time
 
@@ -15,6 +16,8 @@ from aioesphomeapi import (
     BinarySensorInfo,
     BinarySensorState,
     ButtonInfo,
+    SensorInfo,
+    SensorState,
     SwitchInfo,
     SwitchState,
 )
@@ -34,7 +37,8 @@ class Supervisor:
         self._entities = {}  # name -> (info class, key)
         self._name_list = []  # every entity name as reported, in order, duplicates kept
         self._names = {}  # key -> name
-        self._states = {}  # name -> bool
+        self._states = {}  # name -> bool (switches and binary sensors)
+        self._values = {}  # name -> float, or None when the sensor reported no value (sensors, RIG-06)
         self._closed = False
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, name="hil-supervisor-loop", daemon=True)
@@ -53,8 +57,17 @@ class Supervisor:
 
     def _on_state(self, state):
         name = self._names.get(state.key)
-        if name is not None and isinstance(state, (SwitchState, BinarySensorState)):
+        if name is None:
+            return
+        if isinstance(state, (SwitchState, BinarySensorState)):
             self._states[name] = bool(state.state)
+        elif isinstance(state, SensorState):
+            # A sensor without a value is None, never 0: a missing client count must not pass (RIG-06).
+            value = None if state.missing_state else float(state.state)
+            self._values[name] = None if value is None or math.isnan(value) else value
+
+    def _has_state(self, name):
+        return name in self._states or name in self._values
 
     async def _connect(self):
         client = APIClient(self._host, contract.API_PORT, None, noise_psk=self._key)
@@ -70,14 +83,14 @@ class Supervisor:
             raise RigError("supervisor connection failed (%s)" % type(exc).__name__) from None
         self._name_list = [entity.name for entity in entities]
         for entity in entities:
-            if isinstance(entity, (ButtonInfo, SwitchInfo, BinarySensorInfo)):
+            if isinstance(entity, (ButtonInfo, SwitchInfo, BinarySensorInfo, SensorInfo)):
                 self._entities[entity.name] = (type(entity), entity.key)
                 self._names[entity.key] = entity.name
         self._client = client
         client.subscribe_states(self._on_state)
         wanted = [n for n in self._entities if n in contract.REQUIRED_ENTITIES and self._entities[n][0] is not ButtonInfo]
         deadline = time.monotonic() + STATE_WAIT
-        while time.monotonic() < deadline and any(n not in self._states for n in wanted):
+        while time.monotonic() < deadline and any(not self._has_state(n) for n in wanted):
             await asyncio.sleep(0.1)
 
     def _lookup(self, name, kind):
@@ -154,6 +167,14 @@ class Supervisor:
             time.sleep(0.1)
         if failed:
             raise RigError("switch '%s' not released" % "', '".join(sorted(failed)))
+
+    def sensor_value(self, name):
+        """Last reported value of a contract sensor as a float, or None when it has no value (RIG-06).
+
+        RigError when the supervisor has no sensor of that name.
+        """
+        self._lookup(name, SensorInfo)
+        return self._values.get(name)
 
     def serial_connected(self, dut_id):
         name = contract.SERIAL_CONNECTED[dut_id]
