@@ -32,6 +32,18 @@ FIRMWARE_FILES = [
     "hil-out/manifest.json",
 ]
 CANARY_RUN = "python3 -I hil/hil/canary.py"
+# D-43, D-45: the rig checks itself right before the run step; a failed preflight (exit 3) skips the
+# run step, because neither step carries an `if`, while Teardown and the upload (if: always()) still run.
+PREFLIGHT_RUN = "exec .venv/bin/python -m hil preflight"
+PREFLIGHT_ENV = {
+    "HIL_SUPERVISOR_KEY": "${{ secrets.HIL_SUPERVISOR_KEY }}",
+    "HIL_FW_DIR": "${{ github.workspace }}/hil-fw",
+    "HIL_EXPECTED_COMMIT": "${{ github.sha }}",
+}
+HIL_STEP_NAMES = [
+    "Checkout harness", "Runner credential canary", "Download firmware and manifest", "Sync environment",
+    "Preflight", "Run hardware check", "Teardown", "Upload masked logs",
+]
 LOG_PATH = "hil/reports/redacted/"
 # validate.yml's pin reader, copied verbatim on purpose, interpolates an expression in a
 # run script. It runs on a GitHub-hosted runner, reads a file of this repository and has
@@ -92,6 +104,31 @@ def refuse_violations(data):
         found.append("refuse job must print %s" % REFUSE_ANNOTATION)
     if re.search(r"^\s*exit\s+[1-9]", script, re.MULTILINE) is None:
         found.append("refuse job must exit non-zero")
+    return found
+
+
+def preflight_violations(data):
+    """D-43, D-45: Preflight sits right after Sync environment and right before Run hardware check, runs
+    `hil preflight` from hil/ with the run step's environment, and neither step has an `if`, so a red
+    preflight skips the run step and nothing can run it anyway."""
+    names = [s.get("name") for s in steps_of(data, "hil")]
+    step = step_named(data, "hil", "Preflight")
+    if step is None:
+        return ["hil job has no single Preflight step (D-43)"]
+    found = []
+    at = names.index("Preflight")
+    if at == 0 or names[at - 1] != "Sync environment" or at + 1 >= len(names) or names[at + 1] != "Run hardware check":
+        found.append("Preflight must sit between Sync environment and Run hardware check")
+    if str(step.get("run", "")).strip() != PREFLIGHT_RUN:
+        found.append("Preflight must run exactly %s" % PREFLIGHT_RUN)
+    if step.get("working-directory") != "hil":
+        found.append("Preflight must run with working-directory: hil")
+    if step.get("env") != PREFLIGHT_ENV:
+        found.append("Preflight env must be exactly %s" % sorted(PREFLIGHT_ENV))
+    run = step_named(data, "hil", "Run hardware check")
+    for checked in (step, run):
+        if checked is not None and "if" in checked:
+            found.append("step %r must have no if: a failed preflight must skip the run step" % checked.get("name"))
     return found
 
 
@@ -158,6 +195,8 @@ def violations(data):
     if canary.get("name") != "Runner credential canary" or str(canary.get("run", "")).strip() != CANARY_RUN:
         found.append("the step right after checkout must be 'Runner credential canary' running %s" % CANARY_RUN)
 
+    found.extend(preflight_violations(data))
+
     teardown = step_named(data, "hil", "Teardown")
     if teardown is None:
         found.append("hil job has no Teardown step")
@@ -207,12 +246,16 @@ def test_the_real_workflow_has_the_expected_shape():
     assert data["jobs"]["build"]["timeout-minutes"] == 40
     build_run = next(s for s in steps_of(data, "build") if s.get("name") == "Build image and manifest")["run"]
     assert "build_image.py --all --out hil-out" in build_run
-    assert data["jobs"]["hil"]["timeout-minutes"] == 72 <= HIL_JOB_CAP_MINUTES
+    assert data["jobs"]["hil"]["timeout-minutes"] == 86 <= HIL_JOB_CAP_MINUTES
     assert data["jobs"]["hil"]["if"] == HIL_GUARD
     assert data["jobs"]["refuse"]["if"] == REFUSE_GUARD
     assert data["jobs"]["refuse"]["runs-on"] == "ubuntu-latest"
     names = [s["name"] for s in steps_of(data, "hil")]
     assert names.index("Runner credential canary") < names.index("Sync environment")
+    assert names == HIL_STEP_NAMES
+    preflight = step_named(data, "hil", "Preflight")
+    assert preflight["env"] == PREFLIGHT_ENV and preflight["timeout-minutes"] == 14
+    assert step_named(data, "hil", "Run hardware check")["env"] == PREFLIGHT_ENV
 
 
 def test_a_wrapped_always_condition_is_accepted():
@@ -543,6 +586,52 @@ def logs_before_teardown(d):
     steps.insert([s.get("name") for s in steps].index("Teardown"), logs)
 
 
+@mutate
+def drop_preflight(d):
+    d["jobs"]["hil"]["steps"] = [s for s in hil_steps(d) if s.get("name") != "Preflight"]
+
+
+@mutate
+def preflight_after_the_run_step(d):
+    steps = hil_steps(d)
+    step = next(s for s in steps if s.get("name") == "Preflight")
+    steps.remove(step)
+    steps.insert([s.get("name") for s in steps].index("Run hardware check") + 1, step)
+
+
+@mutate
+def preflight_before_sync(d):
+    steps = hil_steps(d)
+    step = next(s for s in steps if s.get("name") == "Preflight")
+    steps.remove(step)
+    steps.insert([s.get("name") for s in steps].index("Sync environment"), step)
+
+
+@mutate
+def preflight_continue_on_error(d):
+    next(s for s in hil_steps(d) if s.get("name") == "Preflight")["continue-on-error"] = True
+
+
+@mutate
+def run_step_after_a_failed_preflight(d):
+    next(s for s in hil_steps(d) if s.get("name") == "Run hardware check")["if"] = "always()"
+
+
+@mutate
+def preflight_without_the_key(d):
+    del next(s for s in hil_steps(d) if s.get("name") == "Preflight")["env"]["HIL_SUPERVISOR_KEY"]
+
+
+@mutate
+def preflight_runs_something_else(d):
+    next(s for s in hil_steps(d) if s.get("name") == "Preflight")["run"] = "exec .venv/bin/python -m hil status"
+
+
+@mutate
+def preflight_without_working_directory(d):
+    del next(s for s in hil_steps(d) if s.get("name") == "Preflight")["working-directory"]
+
+
 MUTATIONS = [
     add_pull_request, add_pull_request_target, add_workflow_run, add_schedule, add_dispatch_inputs,
     add_paths_ignore, add_paths, change_branches, add_a_branch, add_workflow_concurrency,
@@ -562,6 +651,9 @@ MUTATIONS = [
     run_check_without_working_directory, logs_only_on_failure, logs_only_on_failure_or_cancelled,
     logs_without_condition, logs_without_ignore, logs_error_on_empty, logs_upload_raw_reports,
     logs_before_teardown,
+    drop_preflight, preflight_after_the_run_step, preflight_before_sync, preflight_continue_on_error,
+    run_step_after_a_failed_preflight, preflight_without_the_key, preflight_runs_something_else,
+    preflight_without_working_directory,
 ]
 
 

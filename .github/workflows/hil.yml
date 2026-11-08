@@ -121,18 +121,22 @@ jobs:
     # other branch off the rig even if that rule were loosened (WR-07). The refuse job below turns
     # such a run red.
     if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/main' }}
-    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + run 38 +
-    # teardown 15 + upload 3 = 71, so the job deadline can never fall inside Teardown
-    # and cut a flash mid-write. The run step holds the session deadline (25 min), one test
-    # started just before it (10 min) and the connect and release phases around them
-    # (37.3 min). Teardown's own worst case (every deadline hit, known-good attempt plus
-    # the commit-image fallback) is about 14 minutes; test_timeouts.py
-    # computes both sums from the code and fails if they drift. A user cancel is
+    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + preflight 14 +
+    # run 38 + teardown 15 + upload 3 = 85, so the job deadline can never fall inside Teardown
+    # and cut a flash mid-write. Preflight (D-43) checks the rig before any test and heals DUT A
+    # at most once: about 7 s on a healthy rig, about 200 s with a heal, and about 13.4 minutes
+    # with every deadline hit (two bridge evictions, a heal with both flash attempts, the
+    # recheck). A failed preflight exits 3 and ends the job red (D-45); the run step is skipped,
+    # Teardown and the log upload still run. The run step holds the session deadline (25 min),
+    # one test started just before it (10 min) and the connect and release phases around them
+    # (37.7 min). Teardown's own worst case (every deadline hit, known-good attempt plus the
+    # commit-image fallback) is about 14 minutes; test_timeouts.py
+    # computes all three sums from the code and fails if they drift. A user cancel is
     # different: GitHub gives always() steps a fixed 5 minutes and the job syntax has no
-    # key to change it; a nominal teardown needs about 2 minutes. The 72 minute job deadline
-    # sits under the 90 minute policy cap the maintainer chose in 03-04; later steps (Preflight,
-    # baseline download) raise the step sum and the job deadline with it, never past the cap.
-    timeout-minutes: 72
+    # key to change it; a nominal teardown needs about 2 minutes. The 86 minute job deadline
+    # sits under the 90 minute policy cap the maintainer chose in 03-04; a later step (baseline
+    # download) raises the step sum and the job deadline with it, never past the cap.
+    timeout-minutes: 86
     steps:
       - name: Checkout harness
         uses: actions/checkout@v7
@@ -159,6 +163,18 @@ jobs:
         timeout-minutes: 4
         working-directory: hil
         run: uv sync --frozen
+
+      - name: Preflight
+        # The rig checks itself before any test (D-43): supervisor, contract, released lines,
+        # free bridges, watchdog counters, DUT A booting; one heal of DUT A at most. Exit 3 is
+        # RIG ERROR and skips the run step; no continue-on-error, by design (D-45).
+        timeout-minutes: 14
+        working-directory: hil
+        env:
+          HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
+          HIL_FW_DIR: ${{ github.workspace }}/hil-fw
+          HIL_EXPECTED_COMMIT: ${{ github.sha }}
+        run: exec .venv/bin/python -m hil preflight
 
       - name: Run hardware check
         timeout-minutes: 38

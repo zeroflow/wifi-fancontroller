@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from hil import RigError, budget, contract, dut, dutlink, flasher, ota, qc, recovery, serial_tap, supervisor, teardown
+from hil import RigError, budget, contract, dut, dutlink, flasher, ota, preflight, qc, recovery, serial_tap, supervisor, teardown
 
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
@@ -117,6 +117,29 @@ SWITCHES = len([n for lines in contract.SWITCH.values() for n in lines.values()]
 SV_RELEASE_S = SWITCHES * supervisor.PRESS_S + supervisor.STATE_WAIT
 
 
+def worst_case_preflight_s():
+    """`hil preflight` with every deadline hit and its one heal (D-43, D-44): supervisor connect and
+    release, both bridges at the whole eviction wait, the tap connect, the boot check, the heal (two
+    flash attempts with their bootloader presses and banner waits, the reset, the API wait), the recheck
+    and the closing disconnect. A probe is bounded by Supervisor.run (API_CONNECT_S + 5); the boot check
+    tries the HIL key and no encryption per poll, so its last poll may overshoot by two probes and a sleep."""
+    probe = dut.API_CONNECT_S + 5
+    connect = SV_CONNECT_S
+    release = SV_RELEASE_S
+    bridges = 2 * (preflight.EVICT_WAIT_S + preflight.POLL_S)
+    boot_check = supervisor.PRESS_S + preflight.BOOT_BANNER_S + dut.API_WAIT_S + 2 * probe + preflight.API_POLL_S
+    flash = dut.FLASH_ATTEMPTS * (supervisor.PRESS_S + dut.BOOTLOADER_BANNER_S + flasher.FLASH_ATTEMPT_S) + supervisor.PRESS_S
+    heal = flash + dut.API_WAIT_S + probe + 1  # wait_api: its last probe and the 1 s sleep after it
+    close = supervisor.PRESS_S + 5 + 2  # supervisor disconnect and loop join, tap join
+    return connect + release + bridges + serial_tap.TAP_CONNECT_S + boot_check + heal + boot_check + close
+
+
+def test_preflight_step_ceiling_exceeds_its_worst_case_with_one_heal():
+    """About 802 s with every deadline hit (a healthy preflight takes about 7 s, a real heal about 200 s,
+    03-07): the 14 minute step is never the cut, preflight's own RIG ERROR is."""
+    assert 780 < worst_case_preflight_s() < step_minutes("Preflight") * 60
+
+
 def run_step_worst_case_s():
     """The run step under the harness's own deadlines: supervisor connect and release before the
     session, the session deadline (cooperative: checked after a test), one test started just before
@@ -140,19 +163,22 @@ def test_run_step_ceiling_exceeds_the_session_deadline_plus_one_overshooting_tes
 
 
 def test_phase_3_budgets_are_the_documented_numbers():
-    """03-04, maintainer decision cap-90: session 1500 s, run step 38 min, policy cap 90. Later plans add
-    a Preflight step (03-08) and a baseline download (03-14); they change the step list and the job
-    deadline (always step sum + 1) in the same commit, never the cap."""
+    """03-04, maintainer decision cap-90: session 1500 s, run step 38 min, policy cap 90. 03-08 adds the
+    14 minute Preflight step; a later plan adds a baseline download (03-14). Each changes the step list
+    and the job deadline (always step sum + 1) in the same commit, never the cap."""
     options = ini()
     assert (options["timeout"], options["session_timeout"]) == (620, 1500)
     assert step_minutes("Run hardware check") == 38
+    assert step_minutes("Preflight") == 14
+    names = [s["name"] for s in hil_job()["steps"]]
+    assert names.index("Sync environment") + 1 == names.index("Preflight") == names.index("Run hardware check") - 1
     steps = [s["timeout-minutes"] for s in hil_job()["steps"]]
-    assert steps == [3, 5, 3, 4, 38, 15, 3] and sum(steps) == 71
-    assert hil_job()["timeout-minutes"] == sum(steps) + 1 == 72
+    assert steps == [3, 5, 3, 4, 14, 38, 15, 3] and sum(steps) == 85
+    assert hil_job()["timeout-minutes"] == sum(steps) + 1 == 86 <= 90
 
 
 def test_the_job_deadline_is_one_minute_above_the_step_budgets():
-    """The job deadline can never fall inside Teardown: the step sum 71 < 72, and 72 is under the 90 minute policy cap."""
+    """The job deadline can never fall inside Teardown: the step sum 85 < 86, and 86 is under the 90 minute policy cap."""
     assert sum(s["timeout-minutes"] for s in hil_job()["steps"]) == hil_job()["timeout-minutes"] - 1
 
 

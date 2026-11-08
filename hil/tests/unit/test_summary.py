@@ -5,7 +5,7 @@ import re
 
 import pytest
 
-from hil import redact, summary
+from hil import contract, redact, summary
 
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
@@ -152,6 +152,7 @@ def test_every_section_shows_in_the_documented_order(full):
         "## HIL run: FAIL",
         "Commit `0123456789ab` | ESPHome 2026.10.1",
         "Baseline: commit image over serial",
+        "### Preflight",
         "### DUT A (Rev 3.2, esp32s2)",
         "**Canary:** detected",
         "### Images",
@@ -392,3 +393,82 @@ def test_the_manifest_dict_is_none_without_a_readable_manifest(tmp_path, monkeyp
     assert entry.firmware_manifest_dict() is None
     (tmp_path / "manifest.json").write_text('{"commit": "x"}', encoding="utf-8")
     assert entry.firmware_manifest_dict() == {"commit": "x"}
+
+
+# ---------------------------------------------------------------- Preflight section (03-08, HARN-05)
+
+A = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")  # the DUT A label, from contract
+B = contract.SERIAL_CONNECTED["B"].removesuffix(" Serial Connected")
+
+PREFLIGHT = {
+    "schema": 1,
+    "commit": COMMIT,
+    "checks": [
+        {"name": "supervisor reachable", "ok": True, "detail": ""},
+        {"name": "contract", "ok": True, "detail": "21 names"},
+        {"name": A + " bridge clients", "ok": True, "detail": "0 after 26 s"},
+        {"name": A + " boot", "ok": True, "detail": "boot:0x8 seen, API answered (HIL key), 3.2+hil.0123456789ab"},
+        {"name": B + " boot", "ok": False, "detail": "not checked (DUT B joins the suite in Phase 4)"},
+    ],
+    "warnings": ["stray bridge client on " + A + " evicted after 26 s"],
+    "heal": None,
+    "watchdog_start": {"A": 6, "B": 0},
+}
+
+
+def test_the_preflight_section_lists_each_check_and_each_warning_for_this_commit(full):
+    put(full, "preflight.json", PREFLIGHT)
+    text = summary.render(full, FULL_MANIFEST)
+    section = text[text.index("### Preflight"):text.index("### DUT A")]
+    assert "| supervisor reachable | ok |" in section
+    assert "| contract | ok (21 names) |" in section
+    assert "| %s bridge clients | ok (0 after 26 s) |" % A in section
+    assert "| %s boot | not checked (DUT B joins the suite in Phase 4) |" % B in section
+    assert "- WARNING stray bridge client on %s evicted after 26 s" % A in section
+    assert "Heal: no heal" in section
+    assert summary.PREFLIGHT_NOT_RUN not in section
+
+
+@pytest.mark.parametrize("commit", ["f" * 40, None, ""])
+def test_a_preflight_of_another_commit_reads_not_run_for_this_commit(full, commit):
+    put(full, "preflight.json", {**PREFLIGHT, "commit": commit})
+    text = summary.render(full, FULL_MANIFEST)
+    section = text[text.index("### Preflight"):text.index("### DUT A")]
+    assert summary.PREFLIGHT_NOT_RUN in section and "supervisor reachable" not in section
+
+
+def test_no_preflight_json_reads_not_run_for_this_commit(full):
+    assert summary.PREFLIGHT_NOT_RUN in summary.render(full, FULL_MANIFEST)
+
+
+def test_a_verdict_without_a_commit_never_shows_a_preflight(full):
+    put(full, "preflight.json", PREFLIGHT)
+    put(full, "verdict.json", {"verdict": "FAIL", "commit": None})
+    assert summary.PREFLIGHT_NOT_RUN in summary.render(full, FULL_MANIFEST)
+
+
+def test_a_heal_shows_its_source_and_version(full):
+    healed = {
+        **PREFLIGHT,
+        "warnings": [A + " healed with v1.6.0 (3.2)"],
+        "heal": {"source": "v1.6.0", "ok": True, "version": "3.2", "duration_s": 86.1,
+                 "detail": "v1.6.0 (3.2) written and confirmed", "first_failure": A + " boot check failed: ..."},
+    }
+    put(full, "preflight.json", healed)
+    text = summary.render(full, FULL_MANIFEST)
+    assert "Heal: healed with v1.6.0 (3.2)" in text
+    assert "- WARNING %s healed with v1.6.0 (3.2)" % A in text
+
+
+def test_a_heal_that_could_not_start_shows_its_cause(full):
+    failed = {
+        **PREFLIGHT,
+        "checks": PREFLIGHT["checks"][:3] + [{"name": A + " boot", "ok": False, "detail": "heal impossible: no image"}],
+        "warnings": [],
+        "heal": {"source": None, "ok": False, "detail": "heal impossible: no image", "first_failure": "x"},
+    }
+    put(full, "preflight.json", failed)
+    text = summary.render(full, FULL_MANIFEST)
+    assert "| %s boot | heal impossible: no image |" % A in text
+    assert "Heal: heal impossible: no image" in text
+    assert "Warnings: none" in text

@@ -97,6 +97,43 @@ def _head(reports, manifest):
     return lines
 
 
+PREFLIGHT_NOT_RUN = "Preflight: not run for this commit"
+
+
+def _preflight(reports):
+    """### Preflight from reports/preflight.json (HARN-05, HARN-10): every check, the heal, every warning.
+
+    Shown only when preflight.json names the same commit as verdict.json (T-03-19): a preflight of an
+    earlier commit, or none at all, reads "not run for this commit".
+    """
+    record = _read_json(reports / "preflight.json")
+    verdict = _read_json(reports / "verdict.json")
+    commit = verdict.get("commit") if isinstance(verdict, dict) else None
+    if not isinstance(record, dict) or not commit or record.get("commit") != commit:
+        return [PREFLIGHT_NOT_RUN]
+    lines = ["| Check | Result |", "|---|---|"]
+    for check in record.get("checks") or []:
+        if not isinstance(check, dict):
+            continue
+        detail = check.get("detail") or ""
+        if check.get("ok") is True:
+            result = "ok (%s)" % detail if detail else "ok"
+        else:
+            result = detail or "failed"
+        lines.append("| %s | %s |" % (_cell(check.get("name", "?")), _cell(_first_line(result))))
+    heal = record.get("heal")
+    if not isinstance(heal, dict):
+        lines += ["", "Heal: no heal"]
+    elif heal.get("ok") is True:
+        version = " (%s)" % heal["version"] if heal.get("version") else ""
+        lines += ["", "Heal: healed with %s%s" % (heal.get("source") or "unknown source", version)]
+    else:
+        lines += ["", "Heal: %s" % _first_line(heal.get("detail") or "not completed")]
+    warnings = [str(w) for w in record.get("warnings") or []]
+    lines += [""] + (["- WARNING %s" % _cell(w) for w in warnings] or ["Warnings: none"])
+    return lines
+
+
 def _dut_heading(manifest):
     images = (manifest or {}).get("images")
     first = next((i for i in images if isinstance(i, dict) and i.get("role") == "commit"), None) if isinstance(images, list) else None
@@ -232,11 +269,12 @@ def _final_image_line(reports):
 def render(reports_dir, manifest):
     """The job summary as Markdown. Pure: reads files, writes nothing, never raises for a missing report.
 
-    Order: verdict, commit/ESPHome/baseline line, DUT A table (JUnit order) and failures, Canary, Images, Timings,
-    Flash and OTA, Skipped, Rig conditions, Reset budget, Final image.
+    Order: verdict, commit/ESPHome/baseline line, Preflight, DUT A table (JUnit order) and failures, Canary,
+    Images, Timings, Flash and OTA, Skipped, Rig conditions, Reset budget, Final image.
     """
     reports = Path(reports_dir)
     lines = _head(reports, manifest)
+    lines += ["", "### Preflight", ""] + _preflight(reports)
     lines += ["", _dut_heading(manifest), ""] + _dut_table(reports)
     lines += ["", _canary_line(reports)]
     lines += ["", "### Images", ""] + _images(manifest)
