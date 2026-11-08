@@ -1,11 +1,12 @@
 """Preflight (HARN-05, D-43) with a fake supervisor, a fake UART tap, a fake Dut and a fake clock (no hardware)."""
 
 import json
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from hil import RigError, contract, preflight
+from hil import FirmwareFailure, RigError, contract, preflight
 from hil import __main__ as cli
 
 # Labels and names come from the contract, so no supervisor name literal sits in a test.
@@ -14,7 +15,19 @@ LABEL_B = contract.SERIAL_CONNECTED["B"].removesuffix(" Serial Connected")
 LINES = [n for d in "AB" for n in contract.SWITCH[d].values()]
 BANNER = "ESP-ROM:esp32s2-rc4-20191025\r\nrst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)\r\n"
 BUILD_ID = "3.2+hil." + "a" * 12
+LAST_GREEN_ID = "3.2+hil." + "b" * 12
+RELEASE = "2026.11.0"
 KEY = "hil-key"
+V160 = SimpleNamespace(
+    source="v1.6.0",
+    regions=[("0x0", Path("kg.bin")), ("0x3A0000", Path("nvs.bin"))],
+    psk=None,
+    expected_build_id=None,
+    detail="store missing",
+)
+LAST_GREEN = SimpleNamespace(
+    source="last-green", regions=[("0x0", Path("store/x.bin"))], psk=KEY, expected_build_id=LAST_GREEN_ID, detail=""
+)
 
 
 class Clock:
@@ -100,28 +113,58 @@ class FakeTap:
 
 
 class FakeDut:
-    """reset() marks the tap and, when `banner`, appends the ROM banner; probe() answers in the `accepts` modes."""
+    """Each reset() takes the next boot mode from `boots` (the last one repeats):
 
-    def __init__(self, tap, accepts=(KEY,), banner=True, version=BUILD_ID):
+    ok    ROM banner on the tap, the API answers in the `accepts` modes
+    dark  ROM banner, no API answer (a broken image)
+    none  no ROM banner at all
+    A flash writes the healed image: version and accepted modes change, the flash reset boots `after_flash`.
+    """
+
+    def __init__(self, tap, accepts=(KEY,), banner=True, version=BUILD_ID, boots=None, after_flash="ok",
+                 healed_version=RELEASE, healed_accepts=(None,), flash_error=None, wait_error=None):
         self.tap = tap
         self.accepts = set(accepts)
-        self.banner = banner
+        self.boots = list(boots) if boots is not None else ["ok" if banner else "none"]
+        self.mode = None
         self.version = version
+        self.after_flash = after_flash
+        self.healed_version = healed_version
+        self.healed_accepts = healed_accepts
+        self.flash_error = flash_error
+        self.wait_error = wait_error
         self.resets = 0
         self.probes = []
+        self.flashes = []
+        self.waits = []
 
     def reset(self):
         self.resets += 1
+        self.mode = self.boots.pop(0) if len(self.boots) > 1 else self.boots[0]
         mark = "reset_%d" % self.resets
         self.tap.mark(mark)
-        if self.banner:
+        if self.mode != "none":
             self.tap.buf += BANNER
         return mark
 
     def probe(self, psk):
         self.probes.append(psk)
-        if psk not in self.accepts:
+        if self.mode != "ok" or psk not in self.accepts:
             raise OSError("refused")
+        return SimpleNamespace(project_version=self.version)
+
+    def flash_regions(self, regions, report_name=None):
+        self.flashes.append((list(regions), report_name))
+        if self.flash_error:
+            raise RigError(self.flash_error)
+        self.version, self.accepts, self.mode = self.healed_version, set(self.healed_accepts), self.after_flash
+
+    def wait_api(self, noise_psk, deadline_s=90):
+        self.waits.append(noise_psk)
+        if self.wait_error is not None:
+            raise self.wait_error
+        if self.mode != "ok" or noise_psk not in self.accepts:
+            raise RigError("API did not answer within %ss" % deadline_s)
         return SimpleNamespace(project_version=self.version)
 
 
@@ -137,7 +180,17 @@ def env(tmp_path, monkeypatch):
         dut_api_key=KEY,
         duts={"A": SimpleNamespace(id="A", chip="esp32s2", host="192.0.2.20")},
     )
-    return SimpleNamespace(tmp=tmp_path, reports=tmp_path / "reports", rig=rig, clock=Clock())
+    selected = SimpleNamespace(calls=[], result=V160)
+
+    def select(rig_arg, dut_key, *args, **kwargs):
+        selected.calls.append((rig_arg, dut_key))
+        if isinstance(selected.result, Exception):
+            raise selected.result
+        return selected.result
+
+    # The heal's selector is the real known_good.select in test_known_good.py; here only its result matters.
+    monkeypatch.setattr(preflight, "known_good", SimpleNamespace(select=select), raising=False)
+    return SimpleNamespace(tmp=tmp_path, reports=tmp_path / "reports", rig=rig, clock=Clock(), selected=selected)
 
 
 def go(env, sv=None, tap_fail=False, **dut_kwargs):
@@ -320,18 +373,95 @@ def test_fixes_before_a_later_cause_stay_listed_as_warnings(env):
     assert out.record["warnings"] == ["line %s was on at preflight start; released" % line]
 
 
-# ---------------------------------------------------------------- the boot check (no heal in this case: no banner, no answer)
-
-
-def test_no_boot_banner_is_a_failed_boot_check(env):
-    out = go(env, banner=False)
-    assert not out.ok and "no boot:0x8 within 5 s after the EN reset" in out.cause
+# ---------------------------------------------------------------- the boot check and the single heal (HARN-10, D-44)
 
 
 def test_a_tap_that_cannot_start_is_rig_error_and_no_reset_is_pressed(env):
     out = go(env, tap_fail=True)
     assert not out.ok and out.cause.startswith("%s UART tap did not start" % LABEL_A)
     assert out.made.duts == [] and out.made.taps[0].stopped
+
+
+def test_a_healthy_boot_never_heals(env):
+    out = go(env)
+    assert out.made.duts[0].flashes == [] and env.selected.calls == []
+
+
+def test_a_boot_check_that_fails_once_and_passes_after_the_heal_is_ok_with_one_warning(env):
+    out = go(env, boots=["dark", "ok"])
+    dut = out.made.duts[0]
+    assert (out.ok, out.cause) == (True, None)
+    assert out.record["warnings"] == ["%s healed with v1.6.0 (%s)" % (LABEL_A, RELEASE)]
+    heal = out.record["heal"]
+    assert (heal["source"], heal["ok"]) == ("v1.6.0", True) and heal["detail"]
+    assert dut.flashes == [(V160.regions, "heal-flash-dut-a.json")]
+    assert dut.waits == [None]
+    assert env.selected.calls == [(env.rig, KEY)]
+    boot = [c for c in out.record["checks"] if c["name"] == "%s boot" % LABEL_A]
+    assert boot[-1]["ok"] is True
+
+
+def test_a_heal_with_last_green_checks_the_stored_build_id(env):
+    env.selected.result = LAST_GREEN
+    out = go(env, boots=["none", "ok"], healed_version=LAST_GREEN_ID, healed_accepts=(KEY,))
+    assert out.ok
+    assert out.record["warnings"] == ["%s healed with last-green (%s)" % (LABEL_A, LAST_GREEN_ID)]
+    assert out.made.duts[0].waits == [KEY]
+
+
+def test_a_last_green_heal_that_reports_another_build_is_a_failed_heal(env):
+    env.selected.result = LAST_GREEN
+    out = go(env, boots=["dark", "ok"], healed_version=BUILD_ID, healed_accepts=(KEY,))
+    assert not out.ok and out.cause.startswith("heal failed: ")
+    assert LAST_GREEN_ID in out.cause
+    assert out.record["heal"]["ok"] is False
+
+
+def test_a_boot_check_that_fails_again_after_the_heal_is_rig_error_and_never_heals_twice(env):
+    out = go(env, boots=["dark", "dark"])
+    dut = out.made.duts[0]
+    assert not out.ok and out.cause.startswith("heal failed: ")
+    assert len(dut.flashes) == 1
+    assert out.record["heal"]["ok"] is False and out.record["heal"]["source"] == "v1.6.0"
+    assert out.record["warnings"] == []
+
+
+def test_no_boot_banner_before_and_after_the_heal_is_a_failed_heal_naming_the_banner(env):
+    out = go(env, banner=False)
+    assert not out.ok and out.cause.startswith("heal failed: ")
+    assert "no boot:0x8 within 5 s after the EN reset" in out.cause
+    assert len(out.made.duts[0].flashes) == 1
+
+
+def test_a_heal_whose_dut_never_answers_after_the_flash_is_a_failed_heal(env):
+    out = go(env, boots=["dark"], after_flash="dark")
+    assert not out.ok and out.cause.startswith("heal failed: ")
+    assert len(out.made.duts[0].flashes) == 1
+
+
+def test_a_heal_flash_that_fails_is_a_failed_heal(env):
+    out = go(env, boots=["dark"], flash_error="flash failed after 2 attempts (timeout); last output:\nline")
+    assert not out.ok and out.cause == "heal failed: flash failed after 2 attempts (timeout); last output:"
+
+
+def test_a_firmware_failure_during_the_heal_is_a_failed_heal_not_a_fail_verdict(env):
+    out = go(env, boots=["dark"], wait_error=FirmwareFailure("booted but its API did not answer"))
+    assert not out.ok and out.cause == "heal failed: booted but its API did not answer"
+
+
+def test_select_raising_is_heal_impossible_and_nothing_is_flashed(env):
+    env.selected.result = RigError("known_good_image sha256 does not match known_good_sha256")
+    out = go(env, boots=["dark"])
+    assert not out.ok
+    assert out.cause == "heal impossible: known_good_image sha256 does not match known_good_sha256"
+    assert out.made.duts[0].flashes == []
+    assert out.record["heal"]["ok"] is False
+    assert not (env.reports / "heal-flash-dut-a.json").exists()
+
+
+def test_the_dut_b_boot_line_follows_a_successful_heal(env):
+    out = go(env, boots=["dark", "ok"])
+    assert out.record["checks"][-1] == {"name": "%s boot" % LABEL_B, "ok": False, "detail": preflight.DUT_B_BOOT}
 
 
 # ---------------------------------------------------------------- concurrency: tap and supervisor closed on every path

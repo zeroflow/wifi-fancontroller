@@ -259,24 +259,45 @@ def test_no_firmware_directory_after_a_timeout_ends_unknown(rig):
     assert len(out.calls) == 1
 
 
-def test_sha256_mismatch_raises_before_any_press(rig):
+def test_a_v160_image_that_does_not_verify_falls_back_to_the_commit_image(rig, capsys):
+    """WR-03: an unverifiable known-good image no longer stops teardown; D-09's commit fallback runs."""
     rig.dutcfg.known_good_sha256 = "0" * 64
-    events = []
-    sv = FakeSupervisor(events)
-    flasher = Flasher("192.0.2.10", 6638, "esp32s2", esptool_cmd=[sys.executable, str(rig.script)])
-    dut = ScriptedDut("A", rig.dutcfg, sv, flasher, answers=["3.2"])
-    with pytest.raises(RigError, match="sha256"):
-        teardown.run_teardown(rig.cfg, str(rig.fw), "failure", rig.tmp / "reports", supervisor=sv, dut=dut, dut_key="k")
-    assert [e for e in events if isinstance(e, tuple)] == []
-    assert esptool_calls(rig) == []
-    assert final(rig)["image"] == "unknown"
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert [regions(c) for c in out.calls] == [[("0x0", str(rig.fw / "firmware.factory.bin"))]]
+    assert any(step.startswith("known-good image does not verify") for step in out.final["steps"])
+    assert (out.final["image"], out.final["version"], out.final["confirmed"]) == ("commit", BUILD_ID, True)
+    assert "known-good image does not verify" in capsys.readouterr().out
+    assert json.loads((rig.tmp / "reports" / "verdict.json").read_text())["verdict"] == "RIG ERROR"
 
 
-def test_wrong_size_nvs_backup_raises_before_any_press(rig):
+def test_the_known_good_image_is_verified_before_any_known_good_press(rig):
+    rig.dutcfg.known_good_sha256 = "0" * 64
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert all(str(rig.kg) not in call for call in out.calls)
+
+
+def test_a_wrong_size_nvs_backup_falls_back_to_the_commit_image(rig):
     rig.nvs.write_bytes(b"\x01" * 10)
-    with pytest.raises(RigError, match="nvs_backup"):
-        go(rig, ["3.2"])
-    assert esptool_calls(rig) == []
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert [regions(c) for c in out.calls] == [[("0x0", str(rig.fw / "firmware.factory.bin"))]]
+    assert any("nvs_backup" in step for step in out.final["steps"])
+
+
+def test_teardown_chooses_through_the_shared_selector(rig, monkeypatch):
+    from hil import known_good
+
+    calls = []
+    real = known_good.select
+
+    def spy(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(known_good, "select", spy)
+    go(rig, ["3.2"], job_status="failure")
+    assert len(calls) == 1
 
 
 def test_no_esptool_argv_contains_an_erase_subcommand(rig):
