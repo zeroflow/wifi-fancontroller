@@ -393,7 +393,9 @@ def test_a_boot_check_that_fails_once_and_passes_after_the_heal_is_ok_with_one_w
     assert (out.ok, out.cause) == (True, None)
     assert out.record["warnings"] == ["%s healed with v1.6.0 (%s)" % (LABEL_A, RELEASE)]
     heal = out.record["heal"]
-    assert (heal["source"], heal["ok"]) == ("v1.6.0", True) and heal["detail"]
+    assert (heal["source"], heal["ok"]) == ("v1.6.0", True)
+    assert heal["detail"] == "v1.6.0 (%s) written and confirmed" % RELEASE
+    assert heal["first_failure"].endswith("did not answer within 90 s with the HIL key or without encryption")
     assert dut.flashes == [(V160.regions, "heal-flash-dut-a.json")]
     assert dut.waits == [None]
     assert env.selected.calls == [(env.rig, KEY)]
@@ -606,7 +608,7 @@ def test_hil_run_deletes_the_earlier_final_image_teardown_flash_and_redacted_tre
 def test_hil_preflight_prints_the_heal_with_its_first_failure(cli_env, monkeypatch, capsys):
     def run(rig, reports_dir, *, supervisor, **_k):
         supervisor.close()
-        heal = {"source": "v1.6.0", "ok": True, "detail": "v1.6.0 (2026.11.0) written and confirmed after: x",
+        heal = {"source": "v1.6.0", "ok": True, "detail": "v1.6.0 (2026.11.0) written and confirmed",
                 "first_failure": "boot check failed: y"}
         record = {"schema": 1, "commit": None, "checks": [], "warnings": ["healed"], "heal": heal,
                   "watchdog_start": {}}
@@ -615,5 +617,5 @@ def test_hil_preflight_prints_the_heal_with_its_first_failure(cli_env, monkeypat
     monkeypatch.setattr(preflight, "run_preflight", run)
     assert cli.main(["preflight"]) == 0
     out = capsys.readouterr().out
-    assert "Preflight: heal: v1.6.0 (2026.11.0) written and confirmed after: x (first: boot check failed: y)" in out
+    assert "Preflight: heal: v1.6.0 (2026.11.0) written and confirmed (first: boot check failed: y)" in out
     assert "WARNING: healed" in out

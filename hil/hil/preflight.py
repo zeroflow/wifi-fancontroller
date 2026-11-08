@@ -244,7 +244,7 @@ class Preflight:
             ok=True,
             version=info.project_version,
             duration_s=round(self.clock() - started, 1),
-            detail="%s (%s) written and confirmed after: %s" % (chosen.source, info.project_version, first_failure),
+            detail="%s (%s) written and confirmed" % (chosen.source, info.project_version),
         )
         self.warn("%s healed with %s (%s)" % (_label("A"), chosen.source, info.project_version))
         return "%s, after a heal with %s" % (detail, chosen.source)
