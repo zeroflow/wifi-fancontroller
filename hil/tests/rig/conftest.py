@@ -7,21 +7,26 @@ themselves in LOG_SINKS. The autouse `log_boundaries` fixture writes `START <nod
 sink before a test and `END <nodeid> <outcome> t=<s>` after it, and the capability skip hook writes
 `SKIP <nodeid>: <reason>`; `dut_state` depends on `log_boundaries`, so the order is START,
 before-check, test, after-check, END.
+
+Watchdog (D-47, 03-08): the autouse `watchdog_guard` wraps every test outside dut.STATE_EXEMPT,
+the state checks included (`dut_state` depends on it). A supervisor watchdog release of a line the
+test drove is a RigError, a release of any other line a warning that names the line and the test.
 """
 
 import json
 import time
+import warnings
 from pathlib import Path
 
 import pytest
 from aioesphomeapi import APIConnectionError
 
 from hil import RigError, caps, config, contract, manifest
-from hil.dut import API_WAIT_S, Dut, state_roles
+from hil.dut import API_WAIT_S, STATE_EXEMPT, Dut, state_roles
 from hil.dutlink import DutLink
 from hil.flasher import Flasher
 from hil.serial_tap import SerialTap
-from hil.supervisor import Supervisor
+from hil.supervisor import Supervisor, watchdog_guard_outcome
 
 
 _RIG = []
@@ -224,6 +229,30 @@ def crash_mark(tap_a, dut_link, log_boundaries):
 
 
 @pytest.fixture(autouse=True)
+def watchdog_guard(request, supervisor):
+    """D-47 (clarified 2026-11-04): a watchdog release during a test fails it only if the test drove that line.
+
+    Before the test: the start time and both Watchdog Releases counters. After it (and after the
+    state checks, which may press Reset): the release lines received since then against the lines the
+    supervisor facade drove since then. A driven line released is a RigError; a counter rise that no
+    release line explains is a RigError naming the counter (fail-closed); a release of a line the test
+    never drove is a warning naming the line and the test, and the test result stands.
+    """
+    if request.node.path.name in STATE_EXEMPT:
+        yield
+        return
+    t0 = time.monotonic()
+    start = supervisor.watchdog_counts()
+    yield
+    found, error = watchdog_guard_outcome(supervisor, t0, start, request.node.nodeid)
+    for text in found:
+        print("WARNING: %s" % text)
+        warnings.warn(text, stacklevel=1)
+    if error is not None:
+        raise RigError(error)
+
+
+@pytest.fixture(autouse=True)
 def log_boundaries(request):
     """HARN-08: START and END lines around every executed test, in the UART0 log and the API log.
 
@@ -252,7 +281,7 @@ def _clean_problems(dut_a, dut_link, build_id):
 
 
 @pytest.fixture(autouse=True)
-def dut_state(request, log_boundaries, crash_mark):
+def dut_state(request, log_boundaries, crash_mark, watchdog_guard):
     """HARN-03: a test with an `image` marker starts and ends with DUT A in a confirmed state.
 
     Before: DUT A answers with the build ID of the marker's before-role and is CLEAN. After: the

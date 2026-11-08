@@ -10,6 +10,11 @@ Order: release every supervisor switch, decide green or not, then
                 verdict becomes RIG ERROR and the commit image is flashed instead (D-09)
 Only regions are written; nothing in this module erases flash. Safe to run twice.
 
+Last, on every path, the supervisor's two Watchdog Releases counters are read and compared with
+preflight.json's watchdog_start of this commit (D-47): reports/watchdog.json, and every rise is a
+WARNING line plus `::warning title=HIL watchdog::` under GitHub Actions. A read failure is
+recorded as no value, never as a new exit code.
+
 Exit codes: 0 confirmed and the run's verdict stands, 3 verdict.json rewritten to RIG ERROR
 (a green run whose commit image is not confirmed, or a failed known-good attempt) or the
 lines could not be released. A recorded FAIL is never rewritten (D-46): the cause goes to
@@ -21,14 +26,18 @@ import os
 import time
 from pathlib import Path
 
-from . import RigError, config, known_good, last_green, manifest
+from . import RigError, config, contract, known_good, last_green, manifest
+from .supervisor import watchdog_delta
 
 # Moved to known_good.py (WR-03); kept importable here for cmd_known_good and older callers.
 from .known_good import known_good_psk, known_good_regions, sha256_file, verify_known_good  # noqa: F401
 
 FINAL_IMAGE = "final-image.json"
 TEARDOWN_FLASH_REPORT = "teardown-flash-dut-a.json"
-BRIDGE_FREE_S = 15
+WATCHDOG_REPORT = "watchdog.json"
+PREFLIGHT_REPORT = "preflight.json"
+# D-48: the supervisor's keepalive evicts a vanished bridge client in about 25 s (RESEARCH Pitfall 16).
+BRIDGE_FREE_S = 40
 
 
 def say(line):
@@ -171,7 +180,72 @@ def warn(text):
         print("WARNING: %s" % text)
 
 
+def _label(dut_id):
+    return "DUT %s" % dut_id
+
+
+def preflight_watchdog_start(reports_dir):
+    """preflight.json's watchdog_start when that preflight belongs to this commit, else None."""
+    try:
+        record = json.loads((Path(reports_dir) / PREFLIGHT_REPORT).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    commit = config.expected_commit()
+    if not isinstance(record, dict) or not commit or record.get("commit") != commit:
+        return None
+    start = record.get("watchdog_start")
+    return start if isinstance(start, dict) and start else None
+
+
+def read_watchdog_counts(supervisor):
+    """{dut: int or None}; a counter that cannot be read is None (never raises)."""
+    counts = {}
+    for dut_id, name in contract.WATCHDOG_RELEASES.items():
+        try:
+            value = supervisor.sensor_value(name)
+        except Exception:  # noqa: BLE001 - a missing sensor or a dead link is "not recorded", never a new exit
+            value = None
+        counts[dut_id] = None if value is None else int(value)
+    return counts
+
+
+def record_watchdog(supervisor, reports_dir):
+    """reports/watchdog.json {start, end, delta} and one WARNING per DUT whose counter changed (D-47)."""
+    start = preflight_watchdog_start(reports_dir)
+    end = read_watchdog_counts(supervisor)
+    delta = watchdog_delta(start, end)
+    data = {"start": start, "end": end, "delta": delta}
+    try:
+        Path(reports_dir).mkdir(parents=True, exist_ok=True)
+        (Path(reports_dir) / WATCHDOG_REPORT).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    for dut_id, value in delta.items():
+        if value is None or value == 0:
+            continue
+        if value > 0:
+            text = "supervisor watchdog released %s lines %d time(s) during this run" % (_label(dut_id), value)
+        else:
+            text = "supervisor watchdog counter of %s fell from %d to %d: the supervisor restarted during this run" % (
+                _label(dut_id), start[dut_id], end[dut_id])
+        say("WARNING: %s" % text)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print("::warning title=HIL watchdog::%s" % text)
+    return data
+
+
 def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_key):
+    """The teardown (see the module docstring); the watchdog counters are recorded last, on every path."""
+    try:
+        return _run_teardown(cfg, fw_dir, job_status, reports_dir, supervisor=supervisor, dut=dut, dut_key=dut_key)
+    finally:
+        try:
+            record_watchdog(supervisor, Path(reports_dir))
+        except Exception as exc:  # noqa: BLE001 - the watchdog record must never change the teardown result
+            say("WARNING: supervisor watchdog not recorded (%s)" % type(exc).__name__)
+
+
+def _run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_key):
     reports_dir = Path(reports_dir)
     reports_dir.mkdir(parents=True, exist_ok=True)
     state = new_state()

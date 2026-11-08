@@ -130,7 +130,7 @@ jobs:
     # Teardown and the log upload still run. The run step holds the session deadline (25 min),
     # one test started just before it (10 min) and the connect and release phases around them
     # (37.7 min). Teardown's own worst case (every deadline hit, known-good attempt plus the
-    # commit-image fallback) is about 14 minutes; test_timeouts.py
+    # commit-image fallback, a 40 s bridge wait) is about 14 minutes; test_timeouts.py
     # computes all three sums from the code and fails if they drift. A user cancel is
     # different: GitHub gives always() steps a fixed 5 minutes and the job syntax has no
     # key to change it; a nominal teardown needs about 2 minutes. The 86 minute job deadline

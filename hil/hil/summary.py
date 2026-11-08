@@ -134,6 +134,35 @@ def _preflight(reports):
     return lines
 
 
+WATCHDOG_NOT_RECORDED = "Supervisor watchdog: %s" % NOT_RECORDED
+
+
+def _watchdog_line(reports):
+    """Supervisor watchdog: none, or each DUT whose counter changed during the run (D-47), from reports/watchdog.json."""
+    data = _read_json(reports / "watchdog.json")
+    delta = data.get("delta") if isinstance(data, dict) else None
+    if not isinstance(delta, dict) or not delta:
+        return WATCHDOG_NOT_RECORDED
+    start = data.get("start") if isinstance(data.get("start"), dict) else {}
+    end = data.get("end") if isinstance(data.get("end"), dict) else {}
+    parts, missing = [], []
+    for dut_id in sorted(delta):
+        value = delta[dut_id]
+        label = "DUT %s" % dut_id
+        if not isinstance(value, int) or isinstance(value, bool):
+            missing.append(label)
+        elif value > 0:
+            parts.append("%s released %d line(s) during this run (WARNING)" % (label, value))
+        elif value < 0:
+            parts.append(
+                "%s counter fell from %s to %s, the supervisor restarted during this run (WARNING)"
+                % (label, start.get(dut_id, "?"), end.get(dut_id, "?"))
+            )
+    if missing:
+        parts.append("%s (%s)" % (NOT_RECORDED, ", ".join(missing)))
+    return "Supervisor watchdog: %s" % ("; ".join(parts) if parts else "none")
+
+
 def _dut_heading(manifest):
     images = (manifest or {}).get("images")
     first = next((i for i in images if isinstance(i, dict) and i.get("role") == "commit"), None) if isinstance(images, list) else None
@@ -269,12 +298,13 @@ def _final_image_line(reports):
 def render(reports_dir, manifest):
     """The job summary as Markdown. Pure: reads files, writes nothing, never raises for a missing report.
 
-    Order: verdict, commit/ESPHome/baseline line, Preflight, DUT A table (JUnit order) and failures, Canary,
-    Images, Timings, Flash and OTA, Skipped, Rig conditions, Reset budget, Final image.
+    Order: verdict, commit/ESPHome/baseline line, Preflight, Supervisor watchdog, DUT A table (JUnit order) and
+    failures, Canary, Images, Timings, Flash and OTA, Skipped, Rig conditions, Reset budget, Final image.
     """
     reports = Path(reports_dir)
     lines = _head(reports, manifest)
     lines += ["", "### Preflight", ""] + _preflight(reports)
+    lines += ["", _watchdog_line(reports)]
     lines += ["", _dut_heading(manifest), ""] + _dut_table(reports)
     lines += ["", _canary_line(reports)]
     lines += ["", "### Images", ""] + _images(manifest)
