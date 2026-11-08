@@ -302,10 +302,17 @@ def fan_steps_s():
 
 
 def smoke_s():
-    """Tap connect, two flash attempts each with a bootloader press and settle, the reset press,
-    the API wait with its last probe, and the boot settle window."""
+    """test_10 (release baseline, D-36): tap connect, two flash attempts each with a bootloader press and
+    settle, the reset press, the rejoin wait (baseline.REJOIN_S, the API wait) with its last probe, and the
+    boot settle window the old smoke test had (kept as slack)."""
     flash = dut.FLASH_ATTEMPTS * (supervisor.PRESS_S + dut.BOOTLOADER_SETTLE_S + flasher.FLASH_ATTEMPT_S)
     return serial_tap.TAP_CONNECT_S + flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + dut.BOOT_SETTLE_S + ALLOWANCE_S
+
+
+def test_the_release_baseline_row_waits_as_long_as_baseline_flash_does():
+    from hil import baseline
+
+    assert baseline.REJOIN_S == dut.API_WAIT_S
 
 
 def broken_dark_s():
@@ -343,7 +350,8 @@ STATE_CHECK_S = dut.SETTLE_S + dut.API_WAIT_S
 BASE_S = {
     "test_supervisor_exposes_contract": SV_CONNECT_S + SV_RELEASE_S + ALLOWANCE_S,
     "test_switches_released": SWITCHES * supervisor.STATE_WAIT + ALLOWANCE_S,
-    "test_commit_image_boots_and_reports_build_id": smoke_s(),
+    "test_release_baseline_boots_and_rejoins": smoke_s(),
+    "test_ota_from_the_release_to_the_commit": ota_s() + ALLOWANCE_S,
     "test_ota_to_qc_auto": ota_s() + ALLOWANCE_S,
     "test_dut_runs_the_shipped_framework": dut.API_WAIT_S + qc.TEXT_SENSOR_WAIT_S + ALLOWANCE_S,
     "test_fan_channels_map_to_their_own_tach": fan_steps_s() + ALLOWANCE_S,
@@ -436,7 +444,8 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
     assert WORST_CASE_S == {
         "test_supervisor_exposes_contract": 105,
         "test_switches_released": 80,
-        "test_commit_image_boots_and_reports_build_id": 506,
+        "test_release_baseline_boots_and_rejoins": 506,
+        "test_ota_from_the_release_to_the_commit": 410,
         "test_ota_to_qc_auto": 410,
         "test_dut_runs_the_shipped_framework": 230,
         "test_fan_channels_map_to_their_own_tach": 325,

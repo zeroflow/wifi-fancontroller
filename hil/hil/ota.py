@@ -6,7 +6,16 @@ line and environment are never printed. The worker (python -m hil.ota) is the on
 that imports esphome, so importing this module in the pytest process loads nothing heavy.
 
 The DUT API key reaches the worker only through the HIL_OTA_KEY environment variable,
-never argv. Plaintext is refused: no fallback and no plaintext upload (D-23, T-02-11).
+never argv. Plaintext is refused: no fallback and no plaintext upload (D-23, T-02-11), unless the
+caller sets `allow_plaintext` for one upload. Only the release-to-commit upgrade
+(test_11, maintainer decision allow-one-plaintext of 2026-11-08, T-03-24) does: the release
+predates OTA encryption. The flag reaches the worker as HIL_OTA_ALLOW_PLAINTEXT=1 in its
+environment, never argv and never by default, and the key is still offered, so a device that
+offers encryption gets it.
+
+The worker runs with a minimal environment (IN-04, T-03-26): PATH, HOME, LANG, LC_ALL and TMPDIR
+when set, the key and the plaintext flag. HIL_SUPERVISOR_KEY, GITHUB_* and everything else the
+harness inherited never reach a process that imports esphome.
 """
 
 import logging
@@ -23,6 +32,8 @@ OTA_PORT = 3232
 OTA_ATTEMPT_S = 180  # run_ota itself retries 3 times, 5 s apart, 20 s connect timeout each
 TAIL_LINES = 40
 KEY_ENV = "HIL_OTA_KEY"
+ALLOW_PLAINTEXT_ENV = "HIL_OTA_ALLOW_PLAINTEXT"
+PASSED_ENV = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")  # the only inherited variables the worker sees
 # The worker prints this line the moment espota2 logs "OTA successful", i.e. right after it
 # sent the end acknowledgement and before the DUT reboots. The launcher turns it into the
 # on_done callback, so the caller's "OTA end" mark lands before the reboot banner. Marking when
@@ -53,15 +64,16 @@ class Ota:
         self._port = port
         self._cmd = list(worker_cmd) if worker_cmd else [sys.executable, "-m", "hil.ota"]
 
-    def upload(self, path, key, deadline_s=OTA_ATTEMPT_S, on_done=None):
+    def upload(self, path, key, deadline_s=OTA_ATTEMPT_S, on_done=None, allow_plaintext=False):
         """Upload one firmware file once. Never raises for an upload outcome; see OtaResult.reason.
 
         `on_done()` is called from a reader thread as soon as the worker reports a finished
-        upload, before the worker process has exited.
+        upload, before the worker process has exited. A true `allow_plaintext` lets this one upload
+        go to a device that offers no encryption (the release-to-commit upgrade only); the default
+        refuses it.
         """
         argv = self._cmd + [self._host, str(self._port), str(path)]
-        env = dict(os.environ)
-        env[KEY_ENV] = key
+        env = worker_env(key, allow_plaintext)
         started = time.monotonic()
         proc = subprocess.Popen(
             argv,
@@ -121,6 +133,15 @@ class Ota:
         return OtaResult(ok=reason == "", duration_s=seconds, reason=reason, output_tail="\n".join(tail))
 
 
+def worker_env(key, allow_plaintext=False):
+    """The worker's whole environment: PASSED_ENV when set, the key, and the plaintext flag only when asked."""
+    env = {name: os.environ[name] for name in PASSED_ENV if name in os.environ}
+    env[KEY_ENV] = key
+    if allow_plaintext is True:
+        env[ALLOW_PLAINTEXT_ENV] = "1"
+    return env
+
+
 class _SuccessMark(logging.Handler):
     """Print DONE_LINE when espota2 logs that the upload was acknowledged. A missing line only
     costs the caller its precise end mark (it falls back); it never changes the upload."""
@@ -131,7 +152,11 @@ class _SuccessMark(logging.Handler):
 
 
 def main(argv):
-    """Worker entry: python -m hil.ota <host> <port> <firmware path>; the key is in HIL_OTA_KEY."""
+    """Worker entry: python -m hil.ota <host> <port> <firmware path>; the key is in HIL_OTA_KEY.
+
+    HIL_OTA_ALLOW_PLAINTEXT=1 (set by Ota.upload only for an upload that asked for it) allows a
+    plaintext upload to a device that offers no encryption; anything else refuses it.
+    """
     if len(argv) != 3:
         print("usage: python -m hil.ota <host> <port> <firmware path>")
         return EXIT_SETUP
@@ -160,9 +185,11 @@ def main(argv):
     for handler in handlers:
         logger.addHandler(handler)
     logger.setLevel(logging.INFO)
+    allow_plaintext = os.environ.get(ALLOW_PLAINTEXT_ENV) == "1"
     try:
-        # Keywords only: ota_type sits before noise_psk in the signature. Both plaintext
-        # keywords are False, so a failed encrypted handshake ends the upload.
+        # Keywords only: ota_type sits before noise_psk in the signature. No fallback ever: a failed
+        # encrypted handshake ends the upload. allow_plaintext_upload only for the one upload that
+        # asked for it, to a device that offers no encryption at all (the release image).
         code, _detail = espota2.run_ota(
             host,
             port,
@@ -170,7 +197,7 @@ def main(argv):
             Path(path),
             noise_psk=key,
             plaintext_fallback=False,
-            allow_plaintext_upload=False,
+            allow_plaintext_upload=allow_plaintext,
         )
     finally:
         for handler in handlers:

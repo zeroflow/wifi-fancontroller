@@ -20,6 +20,11 @@ With a `tap` (the UART0 capture) and a `chip`, a wait that ends with the link do
 a rig fault (D-46, WR-01): when the owner has set `crash_mark` (a tap mark taken at the test's start)
 and UART0 shows a ROM normal-boot banner since it, the DUT rebooted during the test and the wait
 raises FirmwareFailure; without a banner the link is down for a rig reason and it stays a RigError.
+
+The key follows the image (HARN-08 for release images): use_key(None) while DUT A runs the release
+baseline, which answers without encryption, and use_key(<HIL key>) for the commit-derived images. A
+changed key ends the current session, so the next one connects with the new key and the release's
+runtime log reaches the API log too.
 """
 
 import asyncio
@@ -80,6 +85,7 @@ class DutLink:
         self._connected = False
         self._closed = False
         self._task = None
+        self._lost = None  # the current session's "connection lost" event (set on the link's loop only)
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, name="hil-dutlink-loop", daemon=True)
         self._thread.start()
@@ -163,6 +169,7 @@ class DutLink:
         """One connection: connect, subscribe, hold until it drops. Always disconnects."""
         client = APIClient(self._host, contract.API_PORT, None, noise_psk=self._key)
         lost = asyncio.Event()
+        self._lost = lost
         unsubscribe = None
 
         async def on_stop(_expected):
@@ -178,6 +185,8 @@ class DutLink:
             unsubscribe = client.subscribe_logs(self._on_log, log_level=LogLevel.LOG_LEVEL_DEBUG)
             await lost.wait()
         finally:
+            if self._lost is lost:
+                self._lost = None
             self._set_disconnected()
             if unsubscribe is not None:
                 try:
@@ -242,6 +251,27 @@ class DutLink:
     def connected(self):
         with self._cond:
             return self._connected
+
+    async def _switch_key(self, noise_psk):
+        """On the link's loop: store the key, end the current session; _maintain reconnects with the new key."""
+        if noise_psk == self._key:
+            return False
+        self._key = noise_psk
+        if self._lost is not None:
+            self._lost.set()
+        return True
+
+    def use_key(self, noise_psk):
+        """Connect with `noise_psk` from the next session on (None: no encryption, for the release baseline).
+
+        A different key ends the current session at once; the same key changes nothing. Returns True when
+        the key changed. HARN-08 for release images: the release's runtime log reaches the API log.
+        """
+        if self._thread is None or self._closed:
+            changed = noise_psk != self._key
+            self._key = noise_psk
+            return changed
+        return self._run(self._switch_key(noise_psk), COMMAND_S)
 
     def wait_connected(self, deadline_s, project_version=None):
         """Block until a session is up and return its DeviceInfo.

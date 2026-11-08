@@ -34,6 +34,9 @@ SETTLE_S = 10  # one shared deadline for the whole of Dut.settle
 SAFE_MODE_DETECT_S = 45  # most a safe-mode press may take until SAFE MODE IS ACTIVE shows on UART0
 PORT_PROBE_S = 2  # TCP connect deadline of the OTA / API port probes after an API timeout
 OTA_PORT = 3232
+# D-36: the pseudo-role of the latest release on DUT A. It is not a manifest role: its version comes from
+# the verified hil-baseline directory (conftest fixture fw_baseline) and it answers without encryption.
+BASELINE_ROLE = "baseline"
 
 # HARN-03: every rig test names the image DUT A runs before and after it (marker `image`), except the
 # tests listed here. A new rig test cannot become exempt by omission: it needs an entry and a reason.
@@ -50,6 +53,7 @@ def state_roles(marker, module_name, roles=None):
     for the modules in STATE_EXEMPT and returns None. Pure: collection calls it without a manifest or
     rig.toml (roles=None checks the names against the roles a manifest can hold); the state fixture
     calls it again with the roles of the loaded manifest, so a role the manifest lacks is a RigError.
+    BASELINE_ROLE is always known: it comes from the release baseline, never from a manifest.
     """
     if marker is None:
         if module_name in STATE_EXEMPT:
@@ -62,7 +66,7 @@ def state_roles(marker, module_name, roles=None):
     after = marker.kwargs.get("after", after)
     if before is None and after is None:
         raise RigError("%s: image() names no role" % module_name)
-    known = set(manifest.ROLE_BUILD_ID_RE) if roles is None else set(roles)
+    known = (set(manifest.ROLE_BUILD_ID_RE) if roles is None else set(roles)) | {BASELINE_ROLE}
     for role in (before, after):
         if role is not None and (not isinstance(role, str) or role not in known):
             raise RigError(
@@ -93,7 +97,7 @@ class Dut:
         # monotonic() until which a freshly OTA-ed image is unconfirmed: ESP32 rollback is on,
         # and an EN reset before boot_is_good_after silently boots the previous image.
         self.unconfirmed_until = 0.0
-        self._ota_mark = None  # the ota_end_<role> mark of the OTA that opened the window
+        self._ota_mark = None  # the ota_end_<label> mark of the OTA that opened the window
         self.budget = ResetBudget(label="DUT %s" % dut_id)
         self._marks = 0  # unique mark names: bootloader_<n>, reset_<n>
         self._in_bootloader = False
@@ -102,6 +106,7 @@ class Dut:
         self.ota_count = 0  # OTA uploads attempted this run (ota and ota_dark); test_41 asserts it did not move
         self.last_reset_mark = None  # the mark of the latest Reset press (reset())
         self.last_bootloader_mark = None  # the mark of the latest Bootloader press (enter_bootloader())
+        self.last_ota = None  # label, transfer_s and boot_s of the latest successful ota()
 
     def _mark(self, name):
         if self.tap is not None:
@@ -369,7 +374,7 @@ class Dut:
 
         Reset levels, lowest first (HARN-03): this settle (no reboot, between tests); one budgeted EN
         reset (reset(), only after a settle found problems, at most once per test); a reflash
-        (flash_regions: the smoke test and teardown only, never inside a test).
+        (flash_regions: the release baseline test, the UART recovery and teardown only, never inside a test).
 
         CLEAN: all four fans commanded off with a fresh tach reading of 0 each, every Button USRn OFF
         on the DUT API, every supervisor USR switch OFF. One deadline, SETTLE_S, covers the whole
@@ -409,9 +414,10 @@ class Dut:
         path = reports / ("ota-dut-%s.json" % self.id.lower())
         path.write_text(json.dumps(self._ota_log, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    def _record_ota(self, image, transfer_s, boot_s, ok, reason, dark=False):
+    def _record_ota(self, image, label, transfer_s, boot_s, ok, reason, dark=False):
         entry = {
             "role": image.role,
+            "label": label,
             "build_id": image.build_id,
             "transfer_s": round(transfer_s, 1),
             "boot_s": None if boot_s is None else round(boot_s, 1),
@@ -423,11 +429,12 @@ class Dut:
         self._ota_log.append(entry)
         self._write_ota_report()
 
-    def _upload(self, image, noise_psk, dark=False):
+    def _upload(self, image, noise_psk, label, dark=False, allow_plaintext=False):
         """The upload half of ota and ota_dark: the file checks, the marks, the upload, the orderly reboot.
 
         Returns (result, window_start): the tap mark from which the new image's boot is looked for. A failed
-        upload is a FirmwareFailure, a worker that cannot run or a tampered file a RigError.
+        upload is a FirmwareFailure, a worker that cannot run or a tampered file a RigError. The marks are
+        named after `label` (ota_start_<label>, ota_end_<label>), so two OTAs to one role stay apart.
         """
         role = image.role
         if image.ota_path is None:
@@ -439,10 +446,10 @@ class Dut:
         if digest != image.ota_sha256:
             raise RigError("OTA file of the '%s' image does not match its manifest sha256" % role)
 
-        self._mark("ota_start_%s" % role)
+        self._mark("ota_start_%s" % label)
         if self._ota is None:
             self._ota = Ota(self.cfg.host)
-        end_mark = "ota_end_%s" % role
+        end_mark = "ota_end_%s" % label
         # The worker reports the acknowledged upload before the DUT reboots, so the mark lands
         # before its banner. Without that report (a changed espota2 message) the banner is looked
         # for from ota_start on: a banner in that window can only be this OTA's reboot.
@@ -453,28 +460,35 @@ class Dut:
             self._mark(end_mark)
 
         self.ota_count += 1
-        result = self._ota.upload(image.ota_path, noise_psk, on_done=done)
+        # The flag is passed only when set, so every other upload is the plain refusing call (T-03-25).
+        plaintext = {"allow_plaintext": True} if allow_plaintext is True else {}
+        result = self._ota.upload(image.ota_path, noise_psk, on_done=done, **plaintext)
         if not result.ok:
             if result.reason == "setup":
                 raise RigError("OTA worker could not run; last output:\n%s" % result.output_tail)
-            self._record_ota(image, result.duration_s, None, False, result.reason, dark)
+            self._record_ota(image, label, result.duration_s, None, False, result.reason, dark)
             raise FirmwareFailure("OTA to %s failed (%s); last output:\n%s" % (role, result.reason, result.output_tail))
         if not reported_done:
             self._mark(end_mark)
         self.budget.record("ota_reboot", orderly=True)  # the DUT reboots at once after the upload, orderly
-        return result, end_mark if reported_done else "ota_start_%s" % role
+        return result, end_mark if reported_done else "ota_start_%s" % label
 
-    def ota(self, image, noise_psk):
-        """Encrypted OTA to `image`, confirmed by a ROM boot banner and the new build ID.
+    def ota(self, image, noise_psk, allow_plaintext=False, label=None):
+        """OTA to `image` (encrypted unless allowed otherwise), confirmed by a ROM boot banner and the new build ID.
 
         A failed upload or a wrong image afterwards is a device-side outcome: FirmwareFailure
         (verdict FAIL, D-26). A worker that cannot run, a tampered file or a lost serial tap is
         a RigError. The old image can keep answering for a moment after the upload, so only the
         new build ID counts. Starts the confirmation window that blocks Dut.reset.
+
+        `label` (default: the role) names the marks, the timings ota_<label> and ota_<label>_boot and
+        the report entry. A true `allow_plaintext` is for the release-to-commit upgrade only (test_11,
+        T-03-24): the release offers no OTA encryption; the key is still offered.
         """
         role = image.role
-        result, window_start = self._upload(image, noise_psk)
-        self._ota_mark = "ota_end_%s" % role
+        label = role if label is None else label
+        result, window_start = self._upload(image, noise_psk, label, allow_plaintext=allow_plaintext)
+        self._ota_mark = "ota_end_%s" % label
 
         started = time.monotonic()
         end = started + OTA_BOOT_S
@@ -489,7 +503,7 @@ class Dut:
             if reported == image.build_id:
                 break
             if time.monotonic() >= end:
-                self._record_ota(image, result.duration_s, None, False, "wrong build id")
+                self._record_ota(image, label, result.duration_s, None, False, "wrong build id")
                 raise FirmwareFailure(
                     "after OTA to %s DUT %s reports %s, expected %s" % (role, self.id, reported, image.build_id)
                 )
@@ -499,15 +513,17 @@ class Dut:
         self._mark("api_ready")
 
         if self.tap is None or self.tap.closed:
-            self._record_ota(image, result.duration_s, boot_s, False, "serial tap lost")
+            self._record_ota(image, label, result.duration_s, boot_s, False, "serial tap lost")
             raise RigError("serial tap lost the bridge after OTA to %s; the reboot cannot be confirmed" % role)
         if not bootlog.has_boot_banner(self.tap.text(window_start), self.cfg.chip):
-            self._record_ota(image, result.duration_s, boot_s, False, "no reboot seen")
+            self._record_ota(image, label, result.duration_s, boot_s, False, "no reboot seen")
             raise FirmwareFailure("no reboot seen after OTA to %s" % role)
-        self._record_ota(image, result.duration_s, boot_s, True, "")
-        summary.record_timing("ota_%s" % role, result.duration_s)
-        summary.record_timing("ota_%s_boot" % role, boot_s)
-        print("ota %s: ok transfer=%.1fs boot=%.1fs build_id=%s" % (role, result.duration_s, boot_s, image.build_id))
+        self._record_ota(image, label, result.duration_s, boot_s, True, "")
+        summary.record_timing("ota_%s" % label, result.duration_s)
+        summary.record_timing("ota_%s_boot" % label, boot_s)
+        self.last_ota = {"label": label, "transfer_s": result.duration_s, "boot_s": boot_s}
+        named = role if label == role else "%s (%s)" % (role, label)
+        print("ota %s: ok transfer=%.1fs boot=%.1fs build_id=%s" % (named, result.duration_s, boot_s, image.build_id))
 
     def ota_dark(self, image, noise_psk):
         """Encrypted OTA of an image that has no API (the broken image), confirmed on UART0 only.
@@ -522,26 +538,26 @@ class Dut:
         from . import recovery  # recovery imports this module for its constants
 
         role = image.role
-        result, window_start = self._upload(image, noise_psk, dark=True)
+        result, window_start = self._upload(image, noise_psk, role, dark=True)
         self.unconfirmed_until = 0.0
         self._ota_mark = None
         started = time.monotonic()
         if self.tap is None or self.tap.closed:
-            self._record_ota(image, result.duration_s, None, False, "serial tap lost", dark=True)
+            self._record_ota(image, role, result.duration_s, None, False, "serial tap lost", dark=True)
             raise RigError("serial tap lost the bridge after OTA to %s; the reboot cannot be confirmed" % role)
         try:
             self.tap.wait_for(recovery.project_line_regex(image.build_id), since=window_start, deadline_s=OTA_BOOT_S)
         except RigError:
             if self.tap.closed:
-                self._record_ota(image, result.duration_s, None, False, "serial tap lost", dark=True)
+                self._record_ota(image, role, result.duration_s, None, False, "serial tap lost", dark=True)
                 raise RigError("serial tap lost the bridge after OTA to %s; the reboot cannot be confirmed" % role) from None
-            self._record_ota(image, result.duration_s, None, False, "no Project line", dark=True)
+            self._record_ota(image, role, result.duration_s, None, False, "no Project line", dark=True)
             raise FirmwareFailure("the %s image did not boot (no Project line on UART0)" % role) from None
         boot_s = time.monotonic() - started
         if not bootlog.has_boot_banner(self.tap.text(window_start), self.cfg.chip):
-            self._record_ota(image, result.duration_s, boot_s, False, "no reboot seen", dark=True)
+            self._record_ota(image, role, result.duration_s, boot_s, False, "no reboot seen", dark=True)
             raise FirmwareFailure("no reboot seen after OTA to %s" % role)
         self._mark("%s_up" % role)
-        self._record_ota(image, result.duration_s, boot_s, True, "", dark=True)
+        self._record_ota(image, role, result.duration_s, boot_s, True, "", dark=True)
         summary.record_timing("ota_%s" % role, result.duration_s)
         print("ota %s: ok transfer=%.1fs boot=%.1fs build_id=%s (no API, confirmed on UART0)" % (role, result.duration_s, boot_s, image.build_id))

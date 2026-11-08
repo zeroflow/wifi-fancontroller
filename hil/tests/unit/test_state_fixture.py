@@ -52,7 +52,7 @@ class FakeDut:
         self.settles = list(SCRIPT.get("settles", []))
 
     def probe(self, key):
-        event("probe")
+        event("probe", key) if SCRIPT.get("log_keys") else event("probe")
         item = self.probes.pop(0) if self.probes else SCRIPT["default_probe"]
         if item == "unreachable":
             raise OSError("refused")
@@ -81,6 +81,10 @@ class FakeDut:
 class FakeLink:
     def wait_connected(self, deadline_s, project_version=None):
         event("wait_connected", project_version)
+
+    def use_key(self, key):
+        if SCRIPT.get("log_keys"):
+            event("use_key", key)
 
 
 class FakeSupervisor:
@@ -122,6 +126,13 @@ class FakeSupervisor:
 @pytest.fixture(scope="session", autouse=True)
 def supervisor():
     return FakeSupervisor()
+
+
+@pytest.fixture(scope="session")
+def fw_baseline():
+    if SCRIPT.get("no_baseline"):
+        raise RigError("HIL_BASELINE_DIR is not set")
+    return SimpleNamespace(tag="v2026.11.0", version="2026.11.0")
 
 
 @pytest.fixture(scope="session")
@@ -293,3 +304,34 @@ def test_the_exempt_module_gets_no_check_and_touches_no_fixture(tmp_path):
 def test_every_problem_is_in_the_failure_message(tmp_path, problems):
     proc, _ = run(tmp_path, {"probes": ["commit"], "settles": [problems]})
     assert "; ".join(problems) in proc.stdout
+
+
+# ---- the release baseline pseudo-role (D-36) and the key that follows the image (HARN-08) ----------
+
+
+def test_the_baseline_role_expects_the_release_version_and_probes_without_a_key(tmp_path):
+    proc, events = run(tmp_path, {"probes": ["2026.11.0", "commit"], "log_keys": True}, marker='before="baseline", after="commit"')
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert events == [
+        "use_key None", "probe None", "wait_connected 2026.11.0", "settle 0",
+        "body",
+        "use_key k", "probe k", "wait_connected " + COMMIT_ID, "settle 0",
+    ]
+
+
+def test_the_commit_image_where_the_release_is_expected_fails_the_precondition_naming_both(tmp_path):
+    proc, events = run(tmp_path, {"probes": ["commit"], "log_keys": True}, marker='before="baseline", after="commit"')
+    assert proc.returncode == 1
+    assert "body" not in events
+    assert "runs %s, expected baseline (2026.11.0)" % COMMIT_ID in proc.stdout
+
+
+def test_after_baseline_switches_the_link_to_no_key(tmp_path):
+    proc, events = run(tmp_path, {"probes": ["2026.11.0"], "log_keys": True}, marker='after="baseline"')
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    assert events == ["body", "use_key None", "probe None", "wait_connected 2026.11.0", "settle 0"]
+
+
+def test_a_manifest_role_never_loads_the_baseline(tmp_path):
+    proc, _events = run(tmp_path, {"probes": ["commit", "qc-auto"], "no_baseline": True})
+    assert proc.returncode == 0, proc.stdout + proc.stderr

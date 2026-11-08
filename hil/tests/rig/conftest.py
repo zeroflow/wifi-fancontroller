@@ -21,8 +21,8 @@ from pathlib import Path
 import pytest
 from aioesphomeapi import APIConnectionError
 
-from hil import RigError, caps, config, contract, manifest
-from hil.dut import API_WAIT_S, STATE_EXEMPT, Dut, state_roles
+from hil import RigError, baseline, caps, config, contract, manifest
+from hil.dut import API_WAIT_S, BASELINE_ROLE, STATE_EXEMPT, Dut, state_roles
 from hil.dutlink import DutLink
 from hil.flasher import Flasher
 from hil.serial_tap import SerialTap
@@ -131,6 +131,12 @@ def rig_config():
 @pytest.fixture(scope="session")
 def fw_manifest(rig_config):
     return manifest.load_verified(config.firmware_dir(), config.expected_commit(), rig_config.duts["A"])
+
+
+@pytest.fixture(scope="session")
+def fw_baseline(rig_config):
+    """The latest release, verified against rig.toml and re-hashed (D-36, REG-01); baseline.flash hashes it again."""
+    return baseline.load_verified(config.baseline_dir(), rig_config.duts["A"])
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -289,6 +295,10 @@ def dut_state(request, log_boundaries, crash_mark, watchdog_guard):
     settle, then a failure. Every state is confirmed by a signal (API build ID, fresh tach readings
     of 0, button and switch states), never by a sleep. Nothing is reflashed inside a test.
     Only the exempt test_00_contract (dut.STATE_EXEMPT) has no marker and gets no check.
+
+    The pseudo-role `baseline` (D-36) is the release from fw_baseline: its version is the expected build
+    ID and it answers without encryption. Before every check the DutLink gets the key of the image that
+    check expects (HARN-08: the release's runtime log reaches the API log too).
     """
     node = request.node
     marker = node.get_closest_marker("image")
@@ -303,26 +313,34 @@ def dut_state(request, log_boundaries, crash_mark, watchdog_guard):
     link = request.getfixturevalue("dut_link")
     label = "DUT %s" % dut_a.id
 
+    def expected(role):
+        """(build ID, API key) DUT A answers with on `role`; the release baseline answers without a key."""
+        if role == BASELINE_ROLE:
+            return request.getfixturevalue("fw_baseline").version, None
+        return fw.image(role, cfg.rev).build_id, rig.dut_api_key
+
     if before is not None:
-        want = fw.image(before, cfg.rev)
-        seen = _answering_build_id(dut_a, rig.dut_api_key, "precondition")
-        if seen != want.build_id:
-            pytest.fail("precondition: %s runs %s, expected %s (%s)" % (label, seen, before, want.build_id))
-        problems = _clean_problems(dut_a, link, want.build_id)
+        build_id, key = expected(before)
+        link.use_key(key)
+        seen = _answering_build_id(dut_a, key, "precondition")
+        if seen != build_id:
+            pytest.fail("precondition: %s runs %s, expected %s (%s)" % (label, seen, before, build_id))
+        problems = _clean_problems(dut_a, link, build_id)
         if problems:
             pytest.fail("precondition: %s is not clean (%s): %s" % (label, before, "; ".join(problems)))
 
     yield
 
     if after is not None:
-        want = fw.image(after, cfg.rev)
-        seen = _answering_build_id(dut_a, rig.dut_api_key, "%s did not return to a clean %s state" % (label, after))
-        if seen != want.build_id:
-            pytest.fail("%s did not return to a clean %s state: runs %s, expected %s" % (label, after, seen, want.build_id))
-        problems = _clean_problems(dut_a, link, want.build_id)
+        build_id, key = expected(after)
+        link.use_key(key)
+        seen = _answering_build_id(dut_a, key, "%s did not return to a clean %s state" % (label, after))
+        if seen != build_id:
+            pytest.fail("%s did not return to a clean %s state: runs %s, expected %s" % (label, after, seen, build_id))
+        problems = _clean_problems(dut_a, link, build_id)
         if problems:
             mark = dut_a.reset()  # the one EN reset a test may spend; budgeted, and never inside the rollback window
-            dut_a.wait_running(rig.dut_api_key, mark)
-            problems = _clean_problems(dut_a, link, want.build_id)
+            dut_a.wait_running(key, mark)
+            problems = _clean_problems(dut_a, link, build_id)
         if problems:
             pytest.fail("%s did not return to a clean %s state: %s" % (label, after, "; ".join(problems)))

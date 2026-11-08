@@ -8,6 +8,7 @@ import re
 import sys
 import time
 import types
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -18,16 +19,21 @@ from hil.dut import Dut
 from hil.ota import Ota
 
 KEY = "KEY-VALUE-THAT-MUST-NOT-LEAK"
+ASK_PLAINTEXT = {"allow_plaintext": True}  # spelled as a dict: the literal keyword belongs to test_11 alone
 BANNER = "rst:0x1 (POWERON),boot:0x8 (SPI_FAST_FLASH_BOOT)\r\n"
 OLD_ID = "3.2+hil." + "a" * 12
 NEW_ID = "3.2+qc." + "a" * 12
 
+# The worker sees a minimal environment (IN-04), so the fake takes its mode and state path as the first
+# two arguments of its command; the launcher appends host, port and path after them.
 FAKE_WORKER = r'''
 import json, os, subprocess, sys, time
-mode = os.environ["FAKE_MODE"]
-state = os.environ["FAKE_STATE"]
-json.dump({"argv": sys.argv[1:], "key_set": bool(os.environ.get("HIL_OTA_KEY"))}, open(state + ".call", "w"))
-print("worker argv count", len(sys.argv) - 1)
+mode, state = sys.argv[1], sys.argv[2]
+json.dump(
+    {"argv": sys.argv[3:], "key_set": bool(os.environ.get("HIL_OTA_KEY")), "env": dict(os.environ)},
+    open(state + ".call", "w"),
+)
+print("worker argv count", len(sys.argv) - 3)
 if mode == "ok":
     sys.exit(0)
 if mode == "done_slow":
@@ -52,11 +58,9 @@ if mode == "hang":
 def worker(tmp_path, monkeypatch):
     script = tmp_path / "fake_worker.py"
     script.write_text(FAKE_WORKER, encoding="utf-8")
-    monkeypatch.setenv("FAKE_STATE", str(tmp_path / "state"))
 
     def make(mode):
-        monkeypatch.setenv("FAKE_MODE", mode)
-        return Ota("203.0.113.9", worker_cmd=[sys.executable, str(script)])
+        return Ota("203.0.113.9", worker_cmd=[sys.executable, str(script), mode, str(tmp_path / "state")])
 
     return make
 
@@ -80,6 +84,54 @@ def test_key_is_in_the_worker_environment_and_never_in_argv_or_output(worker, tm
     assert KEY not in json.dumps(call["argv"])
     assert KEY not in result.output_tail
     assert call["argv"][:2] == ["203.0.113.9", str(ota.OTA_PORT)]
+
+
+def read_call(tmp_path):
+    return json.loads((tmp_path / "state.call").read_text(encoding="utf-8"))
+
+
+def test_the_plaintext_flag_reaches_the_worker_only_when_asked(worker, tmp_path, monkeypatch):
+    """T-03-25: the default refuses plaintext; a flag set in the parent never leaks into the worker."""
+    monkeypatch.setenv(ota.ALLOW_PLAINTEXT_ENV, "1")  # a stray flag in the harness's own environment
+    worker("ok").upload(tmp_path / "fw.bin", KEY)
+    assert ota.ALLOW_PLAINTEXT_ENV not in read_call(tmp_path)["env"]
+    worker("ok").upload(tmp_path / "fw.bin", KEY, **ASK_PLAINTEXT)
+    call = read_call(tmp_path)
+    assert call["env"][ota.ALLOW_PLAINTEXT_ENV] == "1" and call["env"][ota.KEY_ENV] == KEY
+    assert call["argv"][:2] == ["203.0.113.9", str(ota.OTA_PORT)] and len(call["argv"]) == 3  # nothing added to argv
+
+
+@pytest.mark.parametrize("truthy", ["yes", 1, "1"])
+def test_only_the_literal_true_sets_the_flag(truthy):
+    assert ota.ALLOW_PLAINTEXT_ENV not in ota.worker_env(KEY, truthy)
+    assert ota.worker_env(KEY, True)[ota.ALLOW_PLAINTEXT_ENV] == "1"
+
+
+def test_the_worker_environment_is_minimal(worker, tmp_path, monkeypatch):
+    """IN-04, T-03-26: the supervisor key, GITHUB_* and anything else inherited never reach the worker."""
+    monkeypatch.setenv("HIL_SUPERVISOR_KEY", "SUPERVISOR-KEY-THAT-MUST-NOT-LEAK")
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_must_not_leak")
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("SOME_OTHER_VARIABLE", "x")
+    monkeypatch.setenv("LANG", "C.UTF-8")
+    monkeypatch.setenv("TMPDIR", str(tmp_path))
+    monkeypatch.delenv("LC_ALL", raising=False)
+    worker("ok").upload(tmp_path / "fw.bin", KEY)
+    env = read_call(tmp_path)["env"]
+    assert set(env) - {"PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", ota.KEY_ENV} <= {"LC_CTYPE", "PWD", "SHLVL", "_"}
+    assert env["LANG"] == "C.UTF-8" and env["TMPDIR"] == str(tmp_path) and env[ota.KEY_ENV] == KEY
+    assert "LC_ALL" not in env and "HIL_SUPERVISOR_KEY" not in env
+    assert not any(name.startswith("GITHUB_") for name in env)
+    assert "SUPERVISOR-KEY-THAT-MUST-NOT-LEAK" not in json.dumps(env)
+
+
+def test_worker_env_passes_only_the_listed_variables(monkeypatch):
+    monkeypatch.setenv("HIL_SUPERVISOR_KEY", "x")
+    monkeypatch.setenv("GITHUB_SHA", "y")
+    monkeypatch.setenv("PATH", "/usr/bin")
+    env = ota.worker_env(KEY)
+    assert set(env) <= set(ota.PASSED_ENV) | {ota.KEY_ENV}
+    assert env["PATH"] == "/usr/bin" and env[ota.KEY_ENV] == KEY
 
 
 def test_done_line_calls_back_before_the_worker_exits_and_is_not_output(worker, tmp_path):
@@ -159,6 +211,28 @@ def test_main_passes_the_key_as_noise_psk_and_refuses_plaintext(monkeypatch, tmp
     assert kwargs == {"noise_psk": KEY, "plaintext_fallback": False, "allow_plaintext_upload": False}
 
 
+@pytest.mark.parametrize("value", [None, "0", "true", "yes", ""])
+def test_main_refuses_plaintext_unless_the_flag_is_exactly_1(monkeypatch, tmp_path, value):
+    calls = stub_espota2(monkeypatch)
+    monkeypatch.setenv(ota.KEY_ENV, KEY)
+    if value is None:
+        monkeypatch.delenv(ota.ALLOW_PLAINTEXT_ENV, raising=False)
+    else:
+        monkeypatch.setenv(ota.ALLOW_PLAINTEXT_ENV, value)
+    assert ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")]) == ota.EXIT_OK
+    (_args, kwargs), = calls
+    assert kwargs["allow_plaintext_upload"] is False and kwargs["plaintext_fallback"] is False
+
+
+def test_main_with_the_flag_allows_a_plaintext_upload_and_still_offers_the_key(monkeypatch, tmp_path):
+    calls = stub_espota2(monkeypatch)
+    monkeypatch.setenv(ota.KEY_ENV, KEY)
+    monkeypatch.setenv(ota.ALLOW_PLAINTEXT_ENV, "1")
+    assert ota.main(["203.0.113.9", "3232", str(tmp_path / "fw.bin")]) == ota.EXIT_OK
+    (_args, kwargs), = calls
+    assert kwargs == {"noise_psk": KEY, "plaintext_fallback": False, "allow_plaintext_upload": True}
+
+
 def test_main_without_a_key_exits_3_before_importing_esphome(monkeypatch, tmp_path, capsys):
     calls = stub_espota2(monkeypatch)
     monkeypatch.delenv(ota.KEY_ENV, raising=False)
@@ -198,9 +272,14 @@ def test_real_worker_process_reports_done_before_it_exits(tmp_path, monkeypatch)
         "    return 0, host\n",
         encoding="utf-8",
     )
-    monkeypatch.setenv("PYTHONPATH", str(tmp_path / "stubs"))
+    # PYTHONPATH does not reach the worker (minimal environment), so the stub path goes into the command.
+    boot = "import runpy, sys; sys.path.insert(0, %r); runpy.run_module('hil.ota', run_name='__main__')" % str(
+        tmp_path / "stubs"
+    )
     seen = []
-    result = Ota("203.0.113.9").upload(tmp_path / "fw.bin", KEY, on_done=lambda: seen.append(time.monotonic()))
+    result = Ota("203.0.113.9", worker_cmd=[sys.executable, "-c", boot]).upload(
+        tmp_path / "fw.bin", KEY, on_done=lambda: seen.append(time.monotonic())
+    )
     finished = time.monotonic()
     assert result.ok and len(seen) == 1
     assert finished - seen[0] > 1.0
@@ -235,9 +314,11 @@ class FakeOta:
         self.result = result
         self.reports_done = reports_done
         self.uploads = []
+        self.kwargs = []
 
-    def upload(self, path, key, deadline_s=ota.OTA_ATTEMPT_S, on_done=None):
+    def upload(self, path, key, deadline_s=ota.OTA_ATTEMPT_S, on_done=None, **kwargs):
         self.uploads.append((path, key))
+        self.kwargs.append(kwargs)
         if self.result.ok and self.reports_done and on_done is not None:
             on_done()
         return self.result
@@ -489,3 +570,60 @@ def test_a_failed_ota_records_no_timing(rig):
     with pytest.raises(FirmwareFailure):
         device.ota(rig.image, noise_psk=KEY)
     assert not (rig.reports / "timings.json").exists()
+
+
+# Labels and the plaintext flag of Dut.ota ----------------------------------------------
+
+
+def test_dut_ota_never_asks_for_plaintext_by_default(rig):
+    device, fake_ota, *_ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY)
+    assert fake_ota.kwargs == [{}]
+
+
+def test_dut_ota_passes_allow_plaintext_and_the_key_when_asked(rig):
+    device, fake_ota, *_ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT)
+    assert fake_ota.kwargs == [{"allow_plaintext": True}] and fake_ota.uploads == [(rig.image.ota_path, KEY)]
+
+
+def test_a_label_names_the_marks_the_timings_and_the_report_entry(rig, capsys):
+    device, _, _, tap = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY, label="baseline_commit")
+    assert tap.marks[0] == "ota_start_baseline_commit" and "ota_end_baseline_commit" in tap.marks
+    assert tap.asked == ["ota_end_baseline_commit"]
+    (entry,) = read_report(rig)
+    assert entry["label"] == "baseline_commit" and entry["role"] == "qc-auto" and entry["build_id"] == NEW_ID
+    timings = read_timings(rig)
+    assert set(timings) == {"ota_baseline_commit", "ota_baseline_commit_boot"}
+    assert device.last_ota["label"] == "baseline_commit"
+    assert "ota qc-auto (baseline_commit): ok" in capsys.readouterr().out
+    device.reset()  # the window guard waits for Boot seems successful since the labelled end mark
+    assert tap.waited[-1][1] == "ota_end_baseline_commit"
+
+
+def test_two_otas_to_one_role_with_different_labels_stay_apart(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY, label="baseline_commit")
+    device.ota(rig.image, noise_psk=KEY)
+    assert [e["label"] for e in read_report(rig)] == ["baseline_commit", "qc-auto"]
+    assert {"ota_baseline_commit", "ota_qc-auto"} <= set(read_timings(rig))
+
+
+def test_without_a_label_the_report_entry_is_labelled_with_the_role(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY)
+    assert read_report(rig)[0]["label"] == "qc-auto"
+
+
+def test_only_test_11_asks_for_a_plaintext_upload():
+    """T-03-24: the keyword with a literal True appears in exactly one rig test, in no harness module and no other test."""
+    root = Path(__file__).resolve().parents[2]
+    needle = "allow_plaintext" + "=True"
+    found = sorted(
+        str(path.relative_to(root))
+        for folder in ("hil", "tests")
+        for path in (root / folder).rglob("*.py")
+        if needle in path.read_text(encoding="utf-8")
+    )
+    assert found == ["tests/rig/test_11_upgrade_from_release.py"]

@@ -447,7 +447,7 @@ def test_the_exempt_module_without_a_marker_has_no_state_check():
     assert state_roles(None, "test_00_contract.py") is None
 
 
-@pytest.mark.parametrize("module", ["test_10_smoke_dut_a.py", "test_new.py", "test_00_contract.pyc", ""])
+@pytest.mark.parametrize("module", ["test_10_release_baseline.py", "test_new.py", "test_00_contract.pyc", ""])
 def test_any_other_module_without_a_marker_is_a_rig_error_naming_it(module):
     with pytest.raises(RigError, match="no image marker and no recorded HARN-03 exemption") as caught:
         state_roles(None, module)
@@ -478,6 +478,15 @@ def test_a_keyword_overrides_one_side_of_the_positional_role():
 def test_a_malformed_marker_or_an_unknown_role_name_is_a_rig_error(bad):
     with pytest.raises(RigError):
         state_roles(bad, "test_x.py")
+
+
+def test_the_baseline_pseudo_role_is_known_with_and_without_the_manifest_roles():
+    """D-36: `baseline` is the release from the hil-baseline directory, never a manifest role."""
+    assert dut_module.BASELINE_ROLE == "baseline"
+    assert state_roles(marker(after="baseline"), "test_x.py") == (None, "baseline")
+    assert state_roles(marker(before="baseline", after="commit"), "test_x.py", roles={"commit"}) == ("baseline", "commit")
+    with pytest.raises(RigError):
+        state_roles(marker("Baseline"), "test_x.py")
 
 
 def test_a_role_the_manifest_lacks_is_a_rig_error_when_the_roles_are_given():
@@ -521,7 +530,8 @@ def test_every_rig_test_module_has_the_roles_of_the_traceability_table():
     assert result["code"] == 0
     assert result["found"] == {
         "test_00_contract.py": None,
-        "test_10_smoke_dut_a.py": [None, "commit"],
+        "test_10_release_baseline.py": [None, "baseline"],
+        "test_11_upgrade_from_release.py": ["baseline", "commit"],
         "test_20_ota_qc_auto.py": ["commit", "qc-auto"],
         "test_21_qc_framework.py": ["qc-auto", "qc-auto"],
         "test_22_qc_fans.py": ["qc-auto", "qc-auto"],

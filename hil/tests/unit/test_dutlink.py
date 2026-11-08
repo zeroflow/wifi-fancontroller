@@ -453,3 +453,49 @@ def test_an_unexpected_exception_in_a_session_is_logged_and_polling_goes_on(monk
     assert "[HIL] link task error: ValueError" in text
     assert "secret detail" not in text
     assert calls["n"] >= 2
+
+
+# ---- use_key: the key follows the image (HARN-08 for release images) -------------------------------
+
+
+def wait_for_client(count, deadline_s=5):
+    end = time.monotonic() + deadline_s
+    while len(FakeClient.instances) < count and time.monotonic() < end:
+        time.sleep(0.01)
+    assert len(FakeClient.instances) >= count
+
+
+def test_use_key_ends_the_session_and_the_next_one_connects_with_the_new_key(link):
+    link.wait_connected(5)
+    first = current()
+    assert link.use_key(None) is True
+    wait_for_client(2)
+    link.wait_connected(5)
+    assert first.disconnected and current() is not first
+    assert current().args == ("192.0.2.1", 6053, None, None)
+    assert link.use_key("key") is True
+    wait_for_client(3)
+    link.wait_connected(5)
+    assert current().args[3] == "key"
+
+
+def test_use_key_with_the_same_key_keeps_the_session(link):
+    link.wait_connected(5)
+    first = current()
+    assert link.use_key("key") is False
+    time.sleep(0.2)
+    assert current() is first and not first.disconnected and link.connected()
+
+
+def test_use_key_before_the_first_connect_is_used_by_the_first_session(monkeypatch):
+    FakeClient.instances = []
+    FakeClient.refuse = 0
+    monkeypatch.setattr(dutlink, "APIClient", FakeClient)
+    made = dutlink.DutLink("192.0.2.1", "key")
+    try:
+        assert made.use_key(None) is True
+        made.start()
+        made.wait_connected(5)
+        assert current().args[3] is None
+    finally:
+        made.close()
