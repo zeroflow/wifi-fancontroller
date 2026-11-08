@@ -4,9 +4,11 @@ The log carries ANSI colour codes, ends its lines with a bare carriage return
 and starts with binary ROM bytes, so everything here works on decoded text.
 """
 
+import json
 import re
+import warnings
 
-from . import RigError
+from . import RigError, config
 
 ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 ESPHOME_ERROR_RE = re.compile(r"^\[E\]\[[^\]]+:\d+\]")
@@ -115,7 +117,37 @@ def safe_mode_lines(text):
     """Lines that say the DUT is in ESPHome safe mode, ANSI stripped, verbatim."""
     return [line.strip() for line in lines(text) if SAFE_MODE_RE.search(line)]
 
+ALLOWLISTED_REPORT = "allowlisted-errors.json"
+
 
 def check_boot_window(tap, since, until, chip, label):
-    """Skeleton for the RED commit of 03-06 Task 2."""
-    return [], []
+    """The D-14 gate (with the Amendment 4 exception) over the UART0 text between two tap marks.
+
+    RigError when the tap lost the bridge or the window holds no ROM boot banner: a gate that cannot see
+    the boot would pass vacuously. Otherwise returns (errors, allowed) from classify_errors. Every
+    allowlisted line is printed as a WARNING, raised as a UserWarning and appended as "<label>: <line>" to
+    reports/allowlisted-errors.json (created when missing), so the lines of several windows accumulate in
+    one file that `hil run` deletes at its start. The caller decides what the error lines mean.
+    """
+    window = tap.text(since, until)
+    if tap.closed:
+        raise RigError("serial tap lost the bridge during the scan window; boot log gate would be vacuous (%s)" % label)
+    if not has_boot_banner(window, chip):
+        raise RigError("no ROM boot banner captured after reset; boot log gate would be vacuous (%s)" % label)
+    errors, allowed = classify_errors(window)
+    for line in allowed:
+        message = "ALLOWLISTED boot-log line (D-14 amendment, expires with the ESPHome 2026.10.1 pin): %s" % line
+        print("WARNING: " + message)
+        warnings.warn(message, stacklevel=2)
+    reports = config.reports_dir()
+    reports.mkdir(parents=True, exist_ok=True)
+    path = reports / ALLOWLISTED_REPORT
+    try:
+        lines = json.loads(path.read_text(encoding="utf-8"))["lines"]
+        if not isinstance(lines, list):
+            lines = []
+    except (OSError, ValueError, KeyError, TypeError):
+        lines = []
+    lines.extend("%s: %s" % (label, line) for line in allowed)
+    path.write_text(json.dumps({"lines": lines}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return errors, allowed

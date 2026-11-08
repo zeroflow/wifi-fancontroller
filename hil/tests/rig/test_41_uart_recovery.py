@@ -4,11 +4,14 @@ DUT A runs the broken image (test_40). The commit factory image is written over 
 the Bootloader button; the Reset press that follows boots it. The test passes only when every fact of the
 UART path holds (recovery.uart_path_problems): DUT A was dark at the start, the flash is ok and verified,
 the ROM download banner followed the Bootloader mark, no OTA upload happened during the test, the API
-answered for the first time after the flash, and it reports the commit's build ID.
+answered for the first time after the flash, and it reports the commit's build ID. The recovery boot passes the
+same D-14 boot-log gate as the smoke boot (bootlog.check_boot_window, Amendment 4 exception included).
 
 This flash is the run's last write: DUT A ends on the commit image, running the commit image's own
 bootloader, so the final image is never inside an OTA rollback window (D-36).
 """
+
+import time
 
 import pytest
 
@@ -45,8 +48,20 @@ def test_uart_flash_recovers_the_dark_dut(dut_a, tap_a, fw_manifest, rig_config)
         "expected_build_id": image.build_id,
         "api_after_flash": info is not None and dut_a.last_reset_mark != reset_before,
     }
-    recovery.write_report("uart", facts)
+
+    # D-14 on the recovery boot: the same gate as the smoke boot, from the Reset press of the flash to the settle.
+    boot_log_errors, allowlisted = [], []
+    if info is not None:
+        time.sleep(dut_module.BOOT_SETTLE_S)
+        tap_a.mark("recovery_scan_end")
+        boot_log_errors, allowlisted = bootlog.check_boot_window(
+            tap_a, dut_a.last_reset_mark, "recovery_scan_end", cfg.chip, "recovery"
+        )
+    recovery.write_report("uart", {**facts, "boot_log_errors": boot_log_errors, "allowlisted": allowlisted})
 
     problems = recovery.uart_path_problems(facts, label)
+    if boot_log_errors:
+        problems.append("%d [E] line(s) in the UART0 boot log of the recovery boot:\n%s" % (len(boot_log_errors), "\n".join(boot_log_errors)))
     assert not problems, "\n".join(problems + ([failure] if failure else []))
     print("%s recovered over UART: %s" % (label, info.project_version))
+    print("boot log of the recovery boot clean: 0 [E] lines (%d allowlisted)" % len(allowlisted))

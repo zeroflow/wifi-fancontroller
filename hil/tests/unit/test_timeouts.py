@@ -297,9 +297,9 @@ def broken_dark_s():
 
 def uart_recovery_s():
     """test_41: the two port probes, two flash attempts each with a bootloader press and settle, the reset
-    press, the API wait with its last probe."""
+    press, the API wait with its last probe, and the boot settle window of the D-14 gate."""
     flash = dut.FLASH_ATTEMPTS * (supervisor.PRESS_S + dut.BOOTLOADER_SETTLE_S + flasher.FLASH_ATTEMPT_S)
-    return 2 * dut.PORT_PROBE_S + flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S
+    return 2 * dut.PORT_PROBE_S + flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + dut.BOOT_SETTLE_S
 
 
 # 02-07: the before and after state checks of a test with an image marker (HARN-03) add one fixed
@@ -420,7 +420,7 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
         "test_canary_swap_is_detected": 605,
         "test_ota_back_to_commit_image": 410,
         "test_broken_image_is_alive_but_dark": 486,
-        "test_uart_flash_recovers_the_dark_dut": 490,
+        "test_uart_flash_recovers_the_dark_dut": 505,
     }
 
 

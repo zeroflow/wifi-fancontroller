@@ -4,11 +4,10 @@ and its UART0 boot log from reset to API-ready plus a settle time has no [E] lin
 
 import json
 import time
-import warnings
 
 import pytest
 
-from hil import RigError, bootlog, config
+from hil import bootlog, config
 from hil.dut import BOOT_SETTLE_S
 
 # D-23: the run starts with one serial flash of the commit image; the OTAs follow in later files.
@@ -48,20 +47,7 @@ def test_commit_image_boots_and_reports_build_id(dut_a, tap_a, fw_manifest, rig_
 
     time.sleep(BOOT_SETTLE_S)
     tap_a.mark("scan_end")
-    window = tap_a.text("reset_pressed", "scan_end")
-    if tap_a.closed:
-        raise RigError("serial tap lost the bridge during the scan window; boot log gate would be vacuous")
-    if not bootlog.has_boot_banner(window, rig_config.duts["A"].chip):
-        raise RigError("no ROM boot banner captured after reset; boot log gate would be vacuous")
-
-    errors, allowed = bootlog.classify_errors(window)
-    for line in allowed:
-        message = "ALLOWLISTED boot-log line (D-14 amendment, expires with the ESPHome 2026.10.1 pin): %s" % line
-        print("WARNING: " + message)
-        warnings.warn(message, stacklevel=1)
-    (reports / "allowlisted-errors.json").write_text(
-        json.dumps({"lines": allowed}, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-    )
+    errors, allowed = bootlog.check_boot_window(tap_a, "reset_pressed", "scan_end", rig_config.duts["A"].chip, "smoke")
     if errors:
         problems.append("%d [E] line(s) in the UART0 boot log:\n%s" % (len(errors), "\n".join(errors)))
     else:

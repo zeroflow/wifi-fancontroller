@@ -260,6 +260,25 @@ def load_rig():
 
 
 NO_CONFIG_REPORTS = ("verdict.json", "final-image.json")
+# Deleted at the start of every run: nothing of an earlier run may be uploaded or summarised as this run's.
+STALE_REPORTS = (
+    "dut-a.json",
+    "tests.json",
+    "rig-errors.json",
+    "timings.json",
+    "budget-dut-a.json",
+    "flash-dut-a.json",
+    "ota-dut-a.json",
+    "qc-fans-dut-a.json",
+    "canary-dut-a.json",
+    "recovery-dut-a.json",
+    "allowlisted-errors.json",
+    "raw/uart-dut-a.log",
+    "raw/uart-dut-a.marks.json",
+    "raw/api-dut-a.log",
+    "raw/junit.xml",
+    "raw/summary.md",
+)
 
 
 def redact_reports(rig):
@@ -296,23 +315,7 @@ def _run(holder):
     reports = config.reports_dir()
     reports.mkdir(parents=True, exist_ok=True)
     # Nothing of an earlier run may be uploaded or summarised as this run's: reports, logs, JUnit, summary.
-    for name in (
-        "dut-a.json",
-        "tests.json",
-        "rig-errors.json",
-        "timings.json",
-        "budget-dut-a.json",
-        "flash-dut-a.json",
-        "ota-dut-a.json",
-        "qc-fans-dut-a.json",
-        "canary-dut-a.json",
-        "recovery-dut-a.json",
-        "raw/uart-dut-a.log",
-        "raw/uart-dut-a.marks.json",
-        "raw/api-dut-a.log",
-        "raw/junit.xml",
-        "raw/summary.md",
-    ):
+    for name in STALE_REPORTS:
         stale = reports / name
         if stale.exists():
             stale.unlink()
