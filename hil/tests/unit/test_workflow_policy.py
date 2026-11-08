@@ -32,6 +32,17 @@ FIRMWARE_FILES = [
     "hil-out/manifest.json",
 ]
 CANARY_RUN = "python3 -I hil/hil/canary.py"
+# REG-01, T-03-22: the hosted prepare job is the only fetcher of the release baseline. It uploads exactly
+# these two files, holds the only GitHub token (github.token, contents: read) in the one step that calls
+# gh, and has no secret, no environment and no third-party action.
+BASELINE_FILES = [
+    "hil-baseline/fancontroller-r3-2-esp32s2.factory.bin",
+    "hil-baseline/baseline.json",
+]
+BASELINE_ARTIFACT = "hil-baseline"
+PREPARE_RUN = 'python3 hil/tools/fetch_baseline.py --repo "$GITHUB_REPOSITORY" --rev 3.2 --out hil-baseline'
+PREPARE_TOKEN = "${{ github.token }}"
+PREPARE_CAP_MINUTES = 10
 # D-43, D-45: the rig checks itself right before the run step; a failed preflight (exit 3) skips the
 # run step, because neither step carries an `if`, while Teardown and the upload (if: always()) still run.
 PREFLIGHT_RUN = "exec .venv/bin/python -m hil preflight"
@@ -107,6 +118,77 @@ def refuse_violations(data):
     return found
 
 
+def expressions_in(value, path=()):
+    """(path, text) of every string under `value` that contains an expression."""
+    if isinstance(value, dict):
+        for key, item in value.items():
+            yield from expressions_in(item, path + (key,))
+    elif isinstance(value, list):
+        for index, item in enumerate(value):
+            yield from expressions_in(item, path + (index,))
+    elif isinstance(value, str) and "${{" in value:
+        yield path, value
+
+
+def prepare_violations(data):
+    """REG-01, T-03-22: the hosted prepare job fetches and verifies the release baseline. Hosted runner, no
+    environment, no needs, no job permissions, no secret, first-party actions only, no expression anywhere
+    except GH_TOKEN = github.token in the fetch step's env, exactly the two baseline files uploaded, and a
+    timeout of at most 10 minutes. The hil job may consume hil-baseline only if it needs prepare, so a failed
+    prepare job skips it (fail-closed, Pitfall 18)."""
+    job = data["jobs"].get("prepare")
+    if job is None:
+        return ["job prepare is missing: the release baseline would have no verified source (REG-01)"]
+    found = []
+    runs_on = job.get("runs-on")
+    if not isinstance(runs_on, str) or "self-hosted" in runs_on or not runs_on.startswith("ubuntu-"):
+        found.append("prepare job must run on a GitHub-hosted ubuntu runner, never on the rig")
+    for key in ("environment", "needs", "permissions", "env", "container", "services"):
+        if key in job:
+            found.append("prepare job must have no %s" % key)
+    if "secrets." in str(job):
+        found.append("prepare job must not touch a secret")
+    if not isinstance(job.get("timeout-minutes"), int) or job["timeout-minutes"] > PREPARE_CAP_MINUTES:
+        found.append("prepare job timeout-minutes must be set and at most %d" % PREPARE_CAP_MINUTES)
+    steps = job.get("steps", [])
+    fetch = [i for i, step in enumerate(steps) if str(step.get("run", "")).strip() == PREPARE_RUN]
+    if len(fetch) != 1:
+        found.append("prepare job must have exactly one step running %s" % PREPARE_RUN)
+    for path, text in expressions_in(job):
+        allowed = (len(fetch) == 1 and path == ("steps", fetch[0], "env", "GH_TOKEN")
+                   and text.strip() == PREPARE_TOKEN)
+        if not allowed:
+            found.append("prepare job may hold no expression but GH_TOKEN: %s in the fetch step (found at %s)"
+                         % (PREPARE_TOKEN, ".".join(str(p) for p in path)))
+    if len(fetch) == 1 and steps[fetch[0]].get("env") != {"GH_TOKEN": PREPARE_TOKEN}:
+        found.append("the fetch step env must be exactly GH_TOKEN: %s" % PREPARE_TOKEN)
+    for step in steps:
+        uses = step.get("uses")
+        if uses is not None and not str(uses).startswith("actions/"):
+            found.append("prepare job uses a non-actions/ action: %s" % uses)
+        if "${{" in str(step.get("run", "")):
+            found.append("prepare job must not put an expression inside a run script")
+    uploads = [s for s in steps if str(s.get("uses", "")).startswith("actions/upload-artifact@")]
+    if len(uploads) != 1:
+        found.append("prepare job must have exactly one upload-artifact step")
+    else:
+        options = uploads[0].get("with", {})
+        paths = [line.strip() for line in str(options.get("path", "")).splitlines() if line.strip()]
+        if paths != BASELINE_FILES:
+            found.append("prepare upload path must be exactly the two baseline files %s" % BASELINE_FILES)
+        if options.get("name") != BASELINE_ARTIFACT:
+            found.append("prepare upload must be named %s" % BASELINE_ARTIFACT)
+        if options.get("if-no-files-found") != "error":
+            found.append("prepare upload must set if-no-files-found: error")
+    for step in steps_of(data, "hil"):
+        if str(step.get("uses", "")).startswith("actions/download-artifact@") and \
+                step.get("with", {}).get("name") == BASELINE_ARTIFACT:
+            needs = data["jobs"]["hil"].get("needs", [])
+            if "prepare" not in (needs if isinstance(needs, list) else [needs]):
+                found.append("the hil job downloads %s but does not need prepare (fail-closed)" % BASELINE_ARTIFACT)
+    return found
+
+
 def preflight_violations(data):
     """D-43, D-45: Preflight sits right after Sync environment and right before Run hardware check, runs
     `hil preflight` from hil/ with the run step's environment, and neither step has an `if`, so a red
@@ -175,6 +257,7 @@ def violations(data):
         found.append("hil step timeouts must sum to less than the job timeout-minutes, or the job deadline can cut Teardown")
 
     found.extend(refuse_violations(data))
+    found.extend(prepare_violations(data))
 
     for job_name, job in data["jobs"].items():
         if "continue-on-error" in job:
@@ -240,7 +323,7 @@ def test_the_real_workflow_satisfies_the_policy():
 
 def test_the_real_workflow_has_the_expected_shape():
     data = load_workflow()
-    assert set(data["jobs"]) == {"release-version", "build", "hil", "refuse"}
+    assert set(data["jobs"]) == {"release-version", "build", "prepare", "hil", "refuse"}
     assert data["on"]["push"]["branches"] == list(EXPECTED_BRANCHES)
     assert data["jobs"]["hil"]["needs"] == "build"
     assert data["jobs"]["build"]["timeout-minutes"] == 40
@@ -256,6 +339,16 @@ def test_the_real_workflow_has_the_expected_shape():
     preflight = step_named(data, "hil", "Preflight")
     assert preflight["env"] == PREFLIGHT_ENV and preflight["timeout-minutes"] == 14
     assert step_named(data, "hil", "Run hardware check")["env"] == PREFLIGHT_ENV
+    prepare = data["jobs"]["prepare"]
+    assert prepare["runs-on"] == "ubuntu-latest" and prepare["timeout-minutes"] == 10
+    assert [s.get("uses", "run") for s in prepare["steps"]] == [
+        "actions/checkout@v7", "run", "actions/upload-artifact@v7"]
+    assert prepare["steps"][0]["with"] == {"persist-credentials": False, "sparse-checkout": "hil/tools"}
+    assert prepare["steps"][1]["run"].strip() == PREPARE_RUN
+    assert prepare["steps"][1]["env"] == {"GH_TOKEN": PREPARE_TOKEN}
+    assert prepare["steps"][2]["with"]["retention-days"] == 7
+    # Until 03-14 wires it, the hil job neither needs prepare nor downloads hil-baseline.
+    assert not any(s.get("with", {}).get("name") == BASELINE_ARTIFACT for s in steps_of(data, "hil"))
 
 
 def test_a_wrapped_always_condition_is_accepted():
@@ -632,6 +725,99 @@ def preflight_without_working_directory(d):
     del next(s for s in hil_steps(d) if s.get("name") == "Preflight")["working-directory"]
 
 
+def prepare_steps(data):
+    return steps_of(data, "prepare")
+
+
+def prepare_fetch(data):
+    return next(s for s in prepare_steps(data) if str(s.get("run", "")).strip() == PREPARE_RUN)
+
+
+def prepare_upload(data):
+    return next(s for s in prepare_steps(data) if str(s.get("uses", "")).startswith("actions/upload-artifact@"))
+
+
+@mutate
+def prepare_gains_a_secret(d):
+    prepare_fetch(d)["env"]["HIL_SUPERVISOR_KEY"] = "${{ secrets.HIL_SUPERVISOR_KEY }}"
+
+
+@mutate
+def prepare_on_the_rig(d):
+    d["jobs"]["prepare"]["runs-on"] = ["self-hosted", "hil"]
+
+
+@mutate
+def prepare_uses_a_third_party_action(d):
+    prepare_steps(d).insert(1, {"name": "Setup gh", "uses": "cli/gh-action@v1"})
+
+
+@mutate
+def prepare_expression_in_run(d):
+    prepare_fetch(d)["run"] = PREPARE_RUN.replace('"$GITHUB_REPOSITORY"', "${{ github.repository }}")
+
+
+@mutate
+def prepare_uploads_another_path(d):
+    prepare_upload(d)["with"]["path"] += "hil-baseline/fancontroller-r3-2.manifest.json\n"
+
+
+@mutate
+def prepare_uploads_the_whole_directory(d):
+    prepare_upload(d)["with"]["path"] = "hil-baseline/\n"
+
+
+@mutate
+def prepare_gains_the_environment(d):
+    d["jobs"]["prepare"]["environment"] = "hil"
+
+
+@mutate
+def prepare_gains_write_permissions(d):
+    d["jobs"]["prepare"]["permissions"] = {"contents": "write"}
+
+
+@mutate
+def prepare_token_in_the_checkout(d):
+    prepare_steps(d)[0]["with"]["token"] = "${{ github.token }}"
+
+
+@mutate
+def prepare_token_at_job_level(d):
+    d["jobs"]["prepare"]["env"] = {"GH_TOKEN": "${{ github.token }}"}
+
+
+@mutate
+def prepare_token_is_a_pat(d):
+    prepare_fetch(d)["env"]["GH_TOKEN"] = "${{ secrets.RELEASE_PAT }}"
+
+
+@mutate
+def prepare_without_timeout(d):
+    del d["jobs"]["prepare"]["timeout-minutes"]
+
+
+@mutate
+def prepare_timeout_above_ten(d):
+    d["jobs"]["prepare"]["timeout-minutes"] = 11
+
+
+@mutate
+def prepare_upload_tolerates_missing_files(d):
+    prepare_upload(d)["with"]["if-no-files-found"] = "warn"
+
+
+@mutate
+def remove_the_prepare_job(d):
+    del d["jobs"]["prepare"]
+
+
+@mutate
+def hil_downloads_the_baseline_without_needing_prepare(d):
+    hil_steps(d).insert(3, {"name": "Download release baseline", "uses": "actions/download-artifact@v8",
+                            "timeout-minutes": 1, "with": {"name": BASELINE_ARTIFACT, "path": "hil-baseline"}})
+
+
 MUTATIONS = [
     add_pull_request, add_pull_request_target, add_workflow_run, add_schedule, add_dispatch_inputs,
     add_paths_ignore, add_paths, change_branches, add_a_branch, add_workflow_concurrency,
@@ -654,6 +840,12 @@ MUTATIONS = [
     drop_preflight, preflight_after_the_run_step, preflight_before_sync, preflight_continue_on_error,
     run_step_after_a_failed_preflight, preflight_without_the_key, preflight_runs_something_else,
     preflight_without_working_directory,
+    prepare_gains_a_secret, prepare_on_the_rig, prepare_uses_a_third_party_action, prepare_expression_in_run,
+    prepare_uploads_another_path, prepare_uploads_the_whole_directory, prepare_gains_the_environment,
+    prepare_gains_write_permissions, prepare_token_in_the_checkout, prepare_token_at_job_level,
+    prepare_token_is_a_pat, prepare_without_timeout, prepare_timeout_above_ten,
+    prepare_upload_tolerates_missing_files, remove_the_prepare_job,
+    hil_downloads_the_baseline_without_needing_prepare,
 ]
 
 
@@ -661,6 +853,19 @@ MUTATIONS = [
 def test_every_mutation_of_the_workflow_is_caught(mutation):
     mutated = mutation(copy.deepcopy(load_workflow()))
     assert violations(mutated), "policy test did not catch %s" % mutation.__name__
+
+
+def test_the_hil_job_may_download_the_baseline_once_it_needs_prepare():
+    """The 03-14 shape: needs [build, prepare] plus the download; the fail-closed rule then holds."""
+    data = hil_downloads_the_baseline_without_needing_prepare(copy.deepcopy(load_workflow()))
+    data["jobs"]["hil"]["needs"] = ["build", "prepare"]
+    assert prepare_violations(data) == []
+
+
+def test_each_prepare_mutation_is_caught_by_the_prepare_rules():
+    for mutation in (prepare_gains_a_secret, prepare_on_the_rig, prepare_uses_a_third_party_action,
+                     prepare_expression_in_run, prepare_uploads_another_path):
+        assert prepare_violations(mutation(copy.deepcopy(load_workflow()))), mutation.__name__
 
 
 def test_the_release_version_job_is_the_only_one_allowed_an_expression_in_run():

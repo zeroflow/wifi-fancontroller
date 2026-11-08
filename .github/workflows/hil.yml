@@ -26,6 +26,15 @@ name: HIL
 # artifact). The qc-auto and canary OTA images carry the published HIL values like
 # the factory image does (D-01); the broken OTA image carries no network values at all
 # (no wifi, api or ota section, D-40) and is never a final or heal image.
+#
+# The prepare job resolves the latest release once and fetches its Rev 3.2 factory image
+# by that tag on a GitHub-hosted runner (REG-01). It checks the image against three
+# independent digests (the release's .sha256 sidecar, the release manifest and GitHub's
+# asset digest) and uploads only the image and baseline.json as hil-baseline. So the LAN
+# runner needs neither a GitHub token nor egress to release storage: its only token is
+# this job's github.token (contents: read), in the one step that calls gh. Once the hil
+# job needs prepare (03-14 wires the needs and the download), a failed prepare job skips
+# it: the run is red and no hardware was touched (fail-closed, RESEARCH Pitfall 18).
 on:
   push:
     branches:
@@ -108,6 +117,34 @@ jobs:
             hil-out/canary-3.2.ota.bin
             hil-out/broken-3.2.ota.bin
             hil-out/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  prepare:
+    name: Resolve the release baseline
+    # Hosted, no environment, no secret, first-party actions only. fetch_baseline.py writes
+    # nothing into hil-baseline/ unless all digests agree, and exits 1 naming what disagreed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout fetch tool
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: hil/tools
+
+      - name: Resolve, download and verify the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 hil/tools/fetch_baseline.py --repo "$GITHUB_REPOSITORY" --rev 3.2 --out hil-baseline
+
+      - name: Upload release baseline
+        uses: actions/upload-artifact@v7
+        with:
+          name: hil-baseline
+          path: |
+            hil-baseline/fancontroller-r3-2-esp32s2.factory.bin
+            hil-baseline/baseline.json
           if-no-files-found: error
           retention-days: 7
 
