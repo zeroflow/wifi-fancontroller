@@ -99,6 +99,9 @@ class Dut:
         self._in_bootloader = False
         self._time_boot = False  # True only inside the run's own flash (not the teardown's, not a read)
         self._flash_reset_at = None  # monotonic() of the press that leaves the bootloader after a timed flash
+        self.ota_count = 0
+        self.last_reset_mark = None
+        self.last_bootloader_mark = None
 
     def _mark(self, name):
         if self.tap is not None:
@@ -492,3 +495,6 @@ class Dut:
         summary.record_timing("ota_%s" % role, result.duration_s)
         summary.record_timing("ota_%s_boot" % role, boot_s)
         print("ota %s: ok transfer=%.1fs boot=%.1fs build_id=%s" % (role, result.duration_s, boot_s, image.build_id))
+
+    def ota_dark(self, image, noise_psk):
+        return None
