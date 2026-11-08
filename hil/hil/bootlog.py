@@ -114,3 +114,8 @@ def has_download_banner(text, chip):
 def safe_mode_lines(text):
     """Lines that say the DUT is in ESPHome safe mode, ANSI stripped, verbatim."""
     return [line.strip() for line in lines(text) if SAFE_MODE_RE.search(line)]
+
+
+def check_boot_window(tap, since, until, chip, label):
+    """Skeleton for the RED commit of 03-06 Task 2."""
+    return [], []
