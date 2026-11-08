@@ -190,6 +190,10 @@ class FakeDut:
     def flash_regions(self, regions, report_name=None):
         self.events.append(("flash_regions", [(str(o), str(p)) for o, p in regions], report_name))
         self.last_reset_mark = "reset_1"
+        # Like Dut.flash_regions: the report under its own name in the reports directory.
+        reports = config.reports_dir()
+        reports.mkdir(parents=True, exist_ok=True)
+        (reports / report_name).write_text(json.dumps({"durations_s": self.durations}), encoding="utf-8")
         return SimpleNamespace(durations_s=list(self.durations), attempts=len(self.durations), ok=True)
 
     def wait_running(self, noise_psk, since_mark, deadline_s=90):
@@ -257,8 +261,8 @@ def test_an_image_changed_after_load_verified_is_never_flashed(tmp_path):
 @pytest.mark.parametrize(
     "failure",
     [
-        RigError("DUT A API did not answer within 90s (last: APIConnectionError)"),
-        FirmwareFailure("DUT A booted after reset_1 (ROM boot banner seen) but its API did not answer within 90s"),
+        RigError("API did not answer within 90s (last: APIConnectionError)"),
+        FirmwareFailure("booted after reset_1 (ROM boot banner seen) but its API did not answer within 90s"),
     ],
 )
 def test_a_dut_that_never_rejoins_is_a_rig_error(tmp_path, failure):
@@ -385,7 +389,7 @@ def test_cli_refuses_a_tampered_directory_before_any_press(tmp_path, monkeypatch
 
 def test_cli_releases_the_lines_when_the_dut_never_rejoins(tmp_path, monkeypatch, capsys):
     directory = write_dir(tmp_path / "hil-baseline")
-    dut = FakeDut(failure=RigError("DUT A API did not answer within 90s (last: TimeoutError)"))
+    dut = FakeDut(failure=RigError("API did not answer within 90s (last: TimeoutError)"))
     supervisor = cli_rig(tmp_path, monkeypatch, dut)
     assert cli.main(["baseline", "--dut", "A", "--dir", str(directory)]) == 3
     assert "RIG ERROR: DUT A did not rejoin on the release baseline v2026.11.0" in capsys.readouterr().out

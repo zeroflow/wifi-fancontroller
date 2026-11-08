@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from . import RigError, config, contract, manifest, nvs, preflight, redact, summary, teardown
+from . import RigError, baseline, config, contract, manifest, nvs, preflight, redact, summary, teardown
 from .dut import Dut
 from .flasher import Flasher
 from .serial_tap import SerialTap
@@ -281,6 +281,8 @@ STALE_REPORTS = (
     "raw/summary.md",
     "final-image.json",
     "teardown-flash-dut-a.json",
+    baseline.REPORT,
+    baseline.FLASH_REPORT,
 )
 # What `hil preflight` writes before the run; `hil run` keeps these (RESEARCH Pattern 7).
 PREFLIGHT_REPORTS = (
@@ -528,6 +530,46 @@ def cmd_known_good(args):
             supervisor.close()
 
 
+def _seconds(value):
+    return "?" if value is None else "%.1f" % value
+
+
+def cmd_baseline(args):
+    """The verified release baseline on DUT A (REG-01): re-hash, flash with the NVS backup, confirm on the release.
+
+    `--no-nvs` writes the factory image alone, for an NVS re-capture on a new release: that image has no
+    WiFi, so there is no rejoin to wait for. Nothing is downloaded; the directory comes from the prepare job.
+    """
+    rig = load_rig()
+    cfg = rig.duts["A"]
+    directory = Path(args.dir) if args.dir else config.baseline_dir()
+    verified = baseline.load_verified(directory, cfg)
+    with_nvs = not args.no_nvs
+    reports = config.reports_dir()
+    for name in (baseline.REPORT, baseline.FLASH_REPORT):
+        stale = reports / name
+        if stale.exists():
+            stale.unlink()
+    supervisor, dut = _rig_dut(rig)
+    try:
+        supervisor.release_all()
+        version, rejoin_s = baseline.flash(dut, verified, cfg, with_nvs=with_nvs)
+        data = baseline.write_report(reports, verified, cfg, version, rejoin_s, nvs_replayed=with_nvs)
+        if with_nvs:
+            print(
+                "baseline %s: flashed in %s s, API answered after %s s, project_version %s"
+                % (verified.tag, _seconds(data["flash_s"]), _seconds(data["rejoin_s"]), version)
+            )
+        else:
+            print("baseline %s: flashed in %s s without NVS; no rejoin to wait for" % (verified.tag, _seconds(data["flash_s"])))
+        return 0
+    finally:
+        try:
+            supervisor.release_all()
+        finally:
+            supervisor.close()
+
+
 def cmd_status(args):
     """Project name, version and compile time. Never the device name: it carries the MAC suffix."""
     rig = load_rig()
@@ -598,6 +640,10 @@ def build_parser():
     known.add_argument("--dut", choices=["A"], required=True)
     known.add_argument("--no-nvs", action="store_true", help="write only the factory image")
     known.add_argument("--no-confirm", action="store_true", help="do not wait for the API afterwards")
+    base = sub.add_parser("baseline", help="flash the verified latest-release baseline (plus NVS backup) to DUT A")
+    base.add_argument("--dut", choices=["A"], required=True)
+    base.add_argument("--dir", help="baseline directory (default: HIL_BASELINE_DIR)")
+    base.add_argument("--no-nvs", action="store_true", help="write only the factory image (for an NVS re-capture)")
     status = sub.add_parser("status", help="print project name, version and compile time of DUT A")
     status.add_argument("--dut", choices=["A"], required=True)
     status.add_argument("--plain", action="store_true", help="key=value lines")
@@ -623,6 +669,8 @@ def main(argv=None):
             return cmd_teardown()
         if args.command == "known-good":
             return cmd_known_good(args)
+        if args.command == "baseline":
+            return cmd_baseline(args)
         if args.command == "status":
             return cmd_status(args)
         return cmd_nvs(args)

@@ -240,6 +240,15 @@ def firmware_dir(env=None):
     return Path(value)
 
 
+def baseline_dir(env=None):
+    """The verified release baseline (hil-baseline artifact of the prepare job, 03-09)."""
+    env = os.environ if env is None else env
+    value = env.get("HIL_BASELINE_DIR")
+    if not value:
+        raise RigError("HIL_BASELINE_DIR is not set")
+    return Path(value)
+
+
 MIN_MASK_LEN = 6
 
 
