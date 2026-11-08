@@ -32,6 +32,7 @@ known_good_api_encryption = false
 nvs_backup = "/nonexistent/nvs.bin"
 nvs_offset = "0x3A0000"
 nvs_size = "0x60000"
+nvs_release_tag = "v1.6.0"
 last_green_dir = "/nonexistent/last-green"
 %s[dut.b]
 rev = "4.0"
@@ -203,3 +204,35 @@ def test_dut_a_with_an_empty_capability_list_is_accepted(tmp_path):
 def test_dut_b_may_omit_both_keys(tmp_path):
     cfg, _env, _net = load(tmp_path)
     assert cfg.duts["B"].framework == "" and cfg.duts["B"].capabilities == ()
+
+
+# --- D-37: the release tag the NVS dump was captured with ---------------------------------------
+
+NVS_TAG_LINE = 'nvs_release_tag = "v1.6.0"\n'
+
+
+def test_dut_a_carries_the_nvs_release_tag(tmp_path):
+    cfg, _env, _net = load(tmp_path)
+    assert cfg.duts["A"].nvs_release_tag == "v1.6.0"
+
+
+def test_a_calver_nvs_release_tag_is_accepted(tmp_path):
+    cfg, _env, _net = load(tmp_path, rig_toml().replace(NVS_TAG_LINE, 'nvs_release_tag = "v2026.11.0"\n'))
+    assert cfg.duts["A"].nvs_release_tag == "v2026.11.0"
+
+
+def test_dut_a_without_nvs_release_tag_is_refused(tmp_path):
+    with pytest.raises(RigError, match=r"^rig\.toml: dut\.a\.nvs_release_tag is missing$"):
+        load(tmp_path, rig_toml().replace(NVS_TAG_LINE, ""))
+
+
+@pytest.mark.parametrize("value", ['"1.6.0"', '"v1.6"', '"v1.6.0-rc1"', '"v1.6.0 "', '""', "160"])
+def test_an_nvs_release_tag_outside_vxyz_is_refused_without_its_value(tmp_path, value):
+    with pytest.raises(RigError, match=r"^rig\.toml: dut\.a\.nvs_release_tag is not vX\.Y\.Z$"):
+        load(tmp_path, rig_toml().replace(NVS_TAG_LINE, "nvs_release_tag = %s\n" % value))
+
+
+def test_dut_b_does_not_need_an_nvs_release_tag(tmp_path):
+    cfg, _env, _net = load(tmp_path)
+    assert "nvs_release_tag" not in rig_toml().split("[dut.b]")[1]
+    assert cfg.duts["B"].nvs_release_tag == ""

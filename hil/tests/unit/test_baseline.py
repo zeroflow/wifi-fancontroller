@@ -7,6 +7,7 @@ never an erase) and confirms DUT A rejoins without encryption on the release's v
 
 import hashlib
 import json
+import re
 from dataclasses import replace
 from types import SimpleNamespace
 
@@ -40,6 +41,7 @@ def dut_config(tmp_path, **changes):
         nvs_size="0x%X" % NVS_SIZE,
         last_green_dir="/nonexistent/last-green",
         framework="arduino",
+        nvs_release_tag=TAG,  # no drift unless a test asks for it
     )
     return replace(cfg, **changes)
 
@@ -296,6 +298,8 @@ def test_the_report_names_tag_asset_digest_and_times(tmp_path):
     assert data["rejoin_s"] == 6.0
     assert data["version"] == VERSION
     assert data["nvs_replayed"] is True
+    assert data["nvs_release_tag"] == TAG
+    assert data["drift_warning"] is None
 
 
 def test_the_report_counts_only_the_digests_that_were_compared(tmp_path):
@@ -306,6 +310,9 @@ def test_the_report_counts_only_the_digests_that_were_compared(tmp_path):
     assert data["digests_compared"] == ["manifest", "sidecar"]
     assert data["flash_s"] is None
     assert data["nvs_replayed"] is False
+    # Without the NVS replay there is no dump whose tag could drift.
+    assert data["nvs_release_tag"] is None
+    assert data["drift_warning"] is None
 
 
 # --- config.baseline_dir ---------------------------------------------------------------------
@@ -400,3 +407,92 @@ def test_cli_releases_the_lines_when_the_dut_never_rejoins(tmp_path, monkeypatch
 def test_run_deletes_the_baseline_reports_of_an_earlier_run():
     assert "baseline-dut-a.json" in cli.STALE_REPORTS
     assert "baseline-flash-dut-a.json" in cli.STALE_REPORTS
+
+
+# --- D-37: tag drift between the release and the NVS dump -------------------------------------
+
+
+def drifted(tmp_path, tag="v1.7.0", nvs_tag="v1.6.0"):
+    found = baseline.load_verified(write_dir(tmp_path / "hil-baseline", tag=tag), dut_config(tmp_path))
+    return found, dut_config(tmp_path, nvs_release_tag=nvs_tag)
+
+
+def test_equal_tags_have_no_drift_warning(tmp_path):
+    found = verified(tmp_path)
+    assert baseline.drift_warning(found, dut_config(tmp_path)) is None
+
+
+@pytest.mark.parametrize(
+    "tag, nvs_tag, text",
+    [
+        ("v1.7.0", "v1.6.0", "NVS captured with v1.6.0, baseline v1.7.0"),
+        ("v2026.11.0", "v1.6.0", "NVS captured with v1.6.0, baseline v2026.11.0"),
+    ],
+)
+def test_different_tags_give_the_drift_warning(tmp_path, tag, nvs_tag, text):
+    found, cfg = drifted(tmp_path, tag, nvs_tag)
+    assert baseline.drift_warning(found, cfg) == text
+
+
+def test_drift_and_no_rejoin_is_a_rig_error_naming_the_action(tmp_path):
+    found, cfg = drifted(tmp_path)
+    dut = FakeDut(failure=RigError("API did not answer within 90s (last: TimeoutError)"))
+    with pytest.raises(RigError) as info:
+        baseline.flash(dut, found, cfg)
+    message = str(info.value)
+    assert re.match(r"^DUT A did not rejoin on the release baseline v1\.7\.0 within 90 s", message)
+    assert message.endswith("; NVS captured with v1.6.0: re-capture NVS for v1.7.0")
+    # The dump is replayed anyway (D-37): both regions were written.
+    assert [int(offset, 16) for offset, _ in dut.events[0][1]] == [0, 0x3A0000]
+
+
+def test_no_drift_and_no_rejoin_does_not_ask_for_a_re_capture(tmp_path):
+    found = verified(tmp_path)
+    with pytest.raises(RigError) as info:
+        baseline.flash(FakeDut(failure=RigError("timeout")), found, dut_config(tmp_path))
+    assert "re-capture" not in str(info.value)
+
+
+def test_drift_and_a_rejoin_warns_and_returns(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    found, cfg = drifted(tmp_path)
+    assert baseline.flash(FakeDut(), found, cfg)[0] == VERSION
+    lines = capsys.readouterr().out.splitlines()
+    assert lines == ["WARNING: NVS captured with v1.6.0, baseline v1.7.0"]
+
+
+def test_drift_under_github_actions_is_also_an_annotation(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    found, cfg = drifted(tmp_path)
+    baseline.flash(FakeDut(), found, cfg)
+    lines = capsys.readouterr().out.splitlines()
+    assert "WARNING: NVS captured with v1.6.0, baseline v1.7.0" in lines
+    assert "::warning title=HIL baseline::NVS captured with v1.6.0, baseline v1.7.0" in lines
+
+
+def test_no_drift_prints_nothing(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    baseline.flash(FakeDut(), verified(tmp_path), dut_config(tmp_path))
+    assert capsys.readouterr().out == ""
+
+
+def test_the_report_carries_the_nvs_tag_and_the_drift_warning(tmp_path):
+    found, cfg = drifted(tmp_path)
+    data = baseline.write_report(config.reports_dir(), found, cfg, VERSION, 7.0)
+    assert data["nvs_release_tag"] == "v1.6.0"
+    assert data["drift_warning"] == "NVS captured with v1.6.0, baseline v1.7.0"
+
+
+def test_cli_with_drift_prints_the_warning_and_exits_0(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    directory = write_dir(tmp_path / "hil-baseline")
+    supervisor = cli_rig(tmp_path, monkeypatch, FakeDut())
+    rig_cfg = dut_config(tmp_path, nvs_release_tag="v1.5.0")
+    monkeypatch.setattr(cli, "load_rig", lambda: SimpleNamespace(duts={"A": rig_cfg}, dut_api_key="hil-key"))
+    assert cli.main(["baseline", "--dut", "A", "--dir", str(directory)]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert "WARNING: NVS captured with v1.5.0, baseline v2026.11.0" in out
+    assert any(line.startswith("baseline v2026.11.0: flashed in ") for line in out)
+    report = json.loads((config.reports_dir() / "baseline-dut-a.json").read_text(encoding="utf-8"))
+    assert report["drift_warning"] == "NVS captured with v1.5.0, baseline v2026.11.0"
+    assert supervisor.events == ["release_all", "release_all", "close"]

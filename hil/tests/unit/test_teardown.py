@@ -141,6 +141,7 @@ def rig(tmp_path, monkeypatch):
         nvs_backup=str(nvs_file),
         nvs_offset="0x3A0000",
         nvs_size="0x60000",
+        nvs_release_tag="v1.6.0",
     )
     net = tmp_path / "hil-network.yaml"
     net.write_text('hil_dut_api_key: "dut-key-0123456789"\n', encoding="utf-8")
