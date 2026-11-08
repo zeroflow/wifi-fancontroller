@@ -448,6 +448,9 @@ def cmd_preflight():
             if check["ok"] and check["detail"]:
                 state = "ok (%s)" % check["detail"]
             teardown.say("Preflight: %s: %s" % (check["name"], state))
+        heal = record.get("heal")
+        if heal:
+            teardown.say("Preflight: heal: %s (first: %s)" % (heal["detail"], heal["first_failure"]))
         for warning in record["warnings"]:
             teardown.say("WARNING: %s" % warning)
         if not ok:

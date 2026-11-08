@@ -601,3 +601,19 @@ def test_hil_run_deletes_the_earlier_final_image_teardown_flash_and_redacted_tre
     assert not (reports / "teardown-flash-dut-a.json").exists()
     assert not (reports / "redacted").exists()
     assert (reports / "preflight.json").exists() and (reports / "heal-flash-dut-a.json").exists()
+
+
+def test_hil_preflight_prints_the_heal_with_its_first_failure(cli_env, monkeypatch, capsys):
+    def run(rig, reports_dir, *, supervisor, **_k):
+        supervisor.close()
+        heal = {"source": "v1.6.0", "ok": True, "detail": "v1.6.0 (2026.11.0) written and confirmed after: x",
+                "first_failure": "boot check failed: y"}
+        record = {"schema": 1, "commit": None, "checks": [], "warnings": ["healed"], "heal": heal,
+                  "watchdog_start": {}}
+        return True, None, record
+
+    monkeypatch.setattr(preflight, "run_preflight", run)
+    assert cli.main(["preflight"]) == 0
+    out = capsys.readouterr().out
+    assert "Preflight: heal: v1.6.0 (2026.11.0) written and confirmed after: x (first: boot check failed: y)" in out
+    assert "WARNING: healed" in out

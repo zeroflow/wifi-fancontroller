@@ -4,7 +4,17 @@ Order (D-43): supervisor reachable, contract conformant, every line released, ea
 Serial Clients 0, watchdog counters recorded, DUT A booting after an EN reset (ROM `boot:0x8`
 on UART0, then an API answer with the HIL key or without encryption). The first check that
 stays broken is the cause and nothing after it runs; every fix made on the way (a line found
-ON and released, a stray bridge client evicted) is a warning, never absorbed silently.
+ON and released, a stray bridge client evicted, DUT A healed) is a warning, never absorbed
+silently.
+
+Heal (HARN-10, D-44): a DUT A that fails the boot check is healed exactly once from the
+runner-local known-good chain (known_good.select, shared with teardown: last-green when the
+store verifies, else v1.6.0 plus NVS replay; never a download, never a broken, qc-auto or
+canary image), with region writes only, and checked again. A heal that cannot start is
+"heal impossible", one that does not bring DUT A back is "heal failed"; both are the cause.
+Preflight is a rig check: a FirmwareFailure or SafeModeError on the way is a failed heal step,
+never a FAIL verdict. The heal leaves DUT A on the known-good image; the run starts with its own
+baseline flash, so a heal never changes what the run tests.
 
 run_preflight never raises for a rig condition: it returns (ok, cause, record). The UART tap
 and the supervisor connection are closed on every path, so the run starts with both bridge
@@ -16,7 +26,7 @@ import re
 import time
 from pathlib import Path
 
-from . import RigError, bootlog, config, contract
+from . import FirmwareFailure, RigError, bootlog, config, contract, known_good
 from .dut import API_WAIT_S
 from .supervisor import Supervisor
 
@@ -40,6 +50,11 @@ class BootFailed(Exception):
 
 def _label(dut_id):
     return "DUT %s" % dut_id
+
+
+def _first(exc):
+    text = str(exc).strip()
+    return text.splitlines()[0] if text else type(exc).__name__
 
 
 def _class_in(exc):
@@ -198,8 +213,41 @@ class Preflight:
         try:
             detail = self.boot_once(dut)
         except BootFailed as exc:
-            self.fail(name, "%s boot check failed: %s" % (_label("A"), exc))
+            detail = self.heal(dut, name, "%s boot check failed: %s" % (_label("A"), exc))
         self.check(name, True, detail)
+
+    def heal(self, dut, name, first_failure):
+        """D-44: exactly one heal from the known-good chain, then the boot check once more. Returns its detail."""
+        heal = {"source": None, "ok": False, "detail": "", "first_failure": first_failure}
+        self.record["heal"] = heal
+        started = self.clock()
+        try:
+            chosen = known_good.select(self.rig, self.rig.dut_api_key)
+        except RigError as exc:
+            heal["detail"] = "heal impossible: %s" % _first(exc)
+            self.fail(name, heal["detail"])
+        heal["source"] = chosen.source
+        try:
+            dut.flash_regions(chosen.regions, report_name=HEAL_FLASH_REPORT)
+            info = dut.wait_api(chosen.psk)
+            if chosen.expected_build_id is not None and info.project_version != chosen.expected_build_id:
+                raise BootFailed(
+                    "%s reports %s, not the last-green %s"
+                    % (_label("A"), info.project_version, chosen.expected_build_id)
+                )
+            detail = self.boot_once(dut)
+        except (BootFailed, RigError, FirmwareFailure) as exc:  # SafeModeError is a RigError
+            heal["detail"] = "heal failed: %s" % _first(exc)
+            heal["duration_s"] = round(self.clock() - started, 1)
+            self.fail(name, heal["detail"])
+        heal.update(
+            ok=True,
+            version=info.project_version,
+            duration_s=round(self.clock() - started, 1),
+            detail="%s (%s) written and confirmed after: %s" % (chosen.source, info.project_version, first_failure),
+        )
+        self.warn("%s healed with %s (%s)" % (_label("A"), chosen.source, info.project_version))
+        return "%s, after a heal with %s" % (detail, chosen.source)
 
     def run(self):
         self.supervisor_reachable()
