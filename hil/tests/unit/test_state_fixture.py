@@ -27,11 +27,12 @@ QC_ID = "3.2+qc." + "c" * 12
 FAKES = '''
 import json
 import os
+import time
 
 import pytest
 from types import SimpleNamespace
 
-from hil import RigError
+from hil import RigError, contract
 from hil.budget import ResetBudgetExhausted, SafeModeError
 
 SCRIPT = json.loads(os.environ["SCRIPT"])
@@ -82,9 +83,45 @@ class FakeLink:
         event("wait_connected", project_version)
 
 
+class FakeSupervisor:
+    """The guard's view of the supervisor (03-08): counters, release lines and driven lines, all scripted.
+
+    SCRIPT["watchdog"] (optional) = {"release": [[dut, line key], ...], "drive": [...], "rise": {dut: n}};
+    the test body calls happen(). Without it the fake is silent and logs nothing.
+    """
+
+    def __init__(self):
+        self.plan = SCRIPT.get("watchdog")
+        self.counts = {"A": 6, "B": 0}
+        self.releases = []
+        self.driven = []
+
+    def _line(self, pair):
+        return contract.SWITCH[pair[0]][pair[1]]
+
+    def happen(self):
+        now = time.monotonic()
+        plan = self.plan or {}
+        self.driven += [(now, self._line(p)) for p in plan.get("drive", [])]
+        self.releases += [(now, self._line(p)) for p in plan.get("release", [])]
+        for dut_id, n in plan.get("rise", {}).items():
+            self.counts[dut_id] += n
+
+    def watchdog_counts(self):
+        if self.plan is not None:
+            event("watchdog_counts")
+        return dict(self.counts)
+
+    def releases_since(self, t):
+        return [line for at, line in self.releases if at >= t]
+
+    def driven_since(self, t):
+        return [line for at, line in self.driven if at >= t]
+
+
 @pytest.fixture(scope="session", autouse=True)
 def supervisor():
-    return None
+    return FakeSupervisor()
 
 
 @pytest.fixture(scope="session")

@@ -725,3 +725,103 @@ def test_a_pass_verdict_with_an_unconfirmed_commit_image_still_becomes_rig_error
     assert out.code == 3
     assert written_verdict(rig) == "RIG ERROR"
     assert not (rig.tmp / "reports" / "rig-errors.json").exists()
+
+
+# ------------------------------------------------- watchdog counters across the run (03-08, D-47, D-48)
+
+RELEASES = contract.WATCHDOG_RELEASES
+LABEL_B = contract.SERIAL_CONNECTED["B"].removesuffix(" Serial Connected")
+
+
+class CountingSupervisor(FakeSupervisor):
+    """FakeSupervisor with the two Watchdog Releases sensors (None: no value; an exception: read fails)."""
+
+    def __init__(self, events, counts):
+        super().__init__(events)
+        self.counts = counts
+
+    def sensor_value(self, name):
+        value = self.counts[name]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+
+def preflight_record(rig, start, commit=COMMIT):
+    reports = rig.tmp / "reports"
+    reports.mkdir(exist_ok=True)
+    (reports / "preflight.json").write_text(json.dumps({"schema": 1, "commit": commit, "watchdog_start": start}), encoding="utf-8")
+
+
+def go_counting(rig, counts, answers=(BUILD_ID,), job_status="success"):
+    events = []
+    sv = CountingSupervisor(events, counts)
+    flasher = Flasher("192.0.2.10", 6638, "esp32s2", esptool_cmd=[sys.executable, str(rig.script)])
+    dut = ScriptedDut("A", rig.dutcfg, sv, flasher, answers=list(answers))
+    code = teardown.run_teardown(rig.cfg, str(rig.fw), job_status, rig.tmp / "reports", supervisor=sv, dut=dut, dut_key="hil-key")
+    return code, json.loads((rig.tmp / "reports" / "watchdog.json").read_text())
+
+
+def test_bridge_wait_covers_the_keepalive_eviction():
+    assert teardown.BRIDGE_FREE_S == 40
+
+
+def test_teardown_writes_the_counter_comparison_with_the_preflight_start(rig, capsys):
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 1.0})
+    assert code == 0
+    assert data == {"start": {"A": 6, "B": 0}, "end": {"A": 6, "B": 1}, "delta": {"A": 0, "B": 1}}
+    out = capsys.readouterr().out
+    assert "WARNING: supervisor watchdog released %s lines 1 time(s) during this run" % LABEL_B in out
+
+
+def test_a_rise_is_an_actions_warning_under_github_actions(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    go_counting(rig, {RELEASES["A"]: 8.0, RELEASES["B"]: 0.0})
+    out = capsys.readouterr().out
+    assert "::warning title=HIL watchdog::supervisor watchdog released %s lines 2 time(s) during this run" % LABEL in out
+    assert "title=HIL watchdog::supervisor watchdog released %s" % LABEL_B not in out
+
+
+def test_no_rise_says_nothing_about_the_watchdog(rig, capsys):
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    _code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 0.0})
+    assert data["delta"] == {"A": 0, "B": 0}
+    assert "watchdog" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("prepare", ["missing", "other commit"])
+def test_without_a_preflight_start_for_this_commit_the_delta_is_not_recorded(rig, prepare):
+    verdict(rig, "PASS")
+    if prepare == "other commit":
+        preflight_record(rig, {"A": 0, "B": 0}, commit="b" * 40)
+    code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 1.0})
+    assert code == 0
+    assert data == {"start": None, "end": {"A": 6, "B": 1}, "delta": {"A": None, "B": None}}
+
+
+def test_a_counter_read_failure_is_not_recorded_and_never_changes_the_exit_code(rig):
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    code, data = go_counting(rig, {RELEASES["A"]: RigError("entity missing"), RELEASES["B"]: None})
+    assert code == 0
+    assert data == {"start": {"A": 6, "B": 0}, "end": {"A": None, "B": None}, "delta": {"A": None, "B": None}}
+
+
+def test_the_counters_are_recorded_after_a_not_green_teardown_too(rig):
+    verdict(rig, "FAIL")
+    preflight_record(rig, {"A": 6, "B": 0})
+    _code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 0.0}, answers=["3.2"], job_status="failure")
+    assert data["delta"] == {"A": 0, "B": 0}
+
+
+def test_a_fake_supervisor_without_sensors_still_tears_down(rig):
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 0
+    data = json.loads((rig.tmp / "reports" / "watchdog.json").read_text())
+    assert data["end"] == {"A": None, "B": None}

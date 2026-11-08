@@ -472,3 +472,51 @@ def test_a_heal_that_could_not_start_shows_its_cause(full):
     assert "| %s boot | heal impossible: no image |" % A in text
     assert "Heal: heal impossible: no image" in text
     assert "Warnings: none" in text
+
+
+# ---------------------------------------------------------- Supervisor watchdog line (03-08, D-47)
+
+
+def watchdog_line(text):
+    return next(line for line in text.splitlines() if line.startswith("Supervisor watchdog:"))
+
+
+def test_no_release_during_the_run_reads_none(full):
+    put(full, "watchdog.json", {"start": {"A": 6, "B": 0}, "end": {"A": 6, "B": 0}, "delta": {"A": 0, "B": 0}})
+    assert watchdog_line(summary.render(full, FULL_MANIFEST)) == "Supervisor watchdog: none"
+
+
+def test_a_release_of_dut_b_is_a_warning_line(full):
+    put(full, "watchdog.json", {"start": {"A": 6, "B": 0}, "end": {"A": 6, "B": 1}, "delta": {"A": 0, "B": 1}})
+    line = watchdog_line(summary.render(full, FULL_MANIFEST))
+    assert line == "Supervisor watchdog: %s released 1 line(s) during this run (WARNING)" % B
+
+
+def test_releases_of_both_duts_are_both_named(full):
+    put(full, "watchdog.json", {"start": {"A": 0, "B": 0}, "end": {"A": 2, "B": 1}, "delta": {"A": 2, "B": 1}})
+    line = watchdog_line(summary.render(full, FULL_MANIFEST))
+    assert "%s released 2 line(s) during this run (WARNING)" % A in line
+    assert "%s released 1 line(s) during this run (WARNING)" % B in line
+
+
+def test_without_watchdog_json_the_line_reads_not_recorded(full):
+    assert watchdog_line(summary.render(full, FULL_MANIFEST)) == "Supervisor watchdog: not recorded"
+
+
+def test_a_dut_without_a_start_value_reads_not_recorded_for_that_dut(full):
+    put(full, "watchdog.json", {"start": None, "end": {"A": 6, "B": 1}, "delta": {"A": None, "B": None}})
+    line = watchdog_line(summary.render(full, FULL_MANIFEST))
+    assert line == "Supervisor watchdog: not recorded (%s, %s)" % (A, B)
+
+
+def test_a_counter_that_fell_says_the_supervisor_restarted(full):
+    put(full, "watchdog.json", {"start": {"A": 6, "B": 0}, "end": {"A": 0, "B": 0}, "delta": {"A": -6, "B": 0}})
+    line = watchdog_line(summary.render(full, FULL_MANIFEST))
+    assert "%s counter fell from 6 to 0" % A in line and "(WARNING)" in line
+
+
+def test_the_watchdog_line_sits_after_the_preflight_section_and_before_dut_a(full):
+    put(full, "preflight.json", PREFLIGHT)
+    put(full, "watchdog.json", {"start": {"A": 6, "B": 0}, "end": {"A": 6, "B": 0}, "delta": {"A": 0, "B": 0}})
+    text = summary.render(full, FULL_MANIFEST)
+    assert text.index("### Preflight") < text.index("Supervisor watchdog: none") < text.index("### DUT A")
