@@ -1,8 +1,8 @@
 """D-23: DUT A goes from the serial-flashed commit image to the qc-auto image by encrypted OTA.
 
 The OTA is firmware under test: a failed upload or a wrong image afterwards is a FAIL
-(D-26, hil.FirmwareFailure). The qc-auto image is never a final image (D-25); the
-last test of the run (test_90_restore_commit.py) puts the commit image back.
+(D-26, hil.FirmwareFailure). The qc-auto image is never a final image (D-25);
+test_35_restore_commit.py puts the commit image back by OTA and test_41_uart_recovery.py ends the run on it.
 """
 
 import pytest

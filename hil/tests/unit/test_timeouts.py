@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from hil import RigError, budget, contract, dut, dutlink, flasher, ota, qc, serial_tap, supervisor, teardown
+from hil import RigError, budget, contract, dut, dutlink, flasher, ota, qc, recovery, serial_tap, supervisor, teardown
 
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
@@ -282,6 +282,26 @@ def smoke_s():
     return serial_tap.TAP_CONNECT_S + flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + dut.BOOT_SETTLE_S + ALLOWANCE_S
 
 
+def broken_dark_s():
+    """test_40: the OTA upload and the Project line on UART0 (no API probe), the state line, the dark window
+    with its last poll and the port probes of one slow poll."""
+    return (
+        ota.OTA_ATTEMPT_S
+        + dut.OTA_BOOT_S
+        + recovery.OTA_STATE_LINE_S
+        + recovery.DARK_WINDOW_S
+        + recovery.DARK_POLL_S
+        + 3 * dut.PORT_PROBE_S
+    )
+
+
+def uart_recovery_s():
+    """test_41: the two port probes, two flash attempts each with a bootloader press and settle, the reset
+    press, the API wait with its last probe."""
+    flash = dut.FLASH_ATTEMPTS * (supervisor.PRESS_S + dut.BOOTLOADER_SETTLE_S + flasher.FLASH_ATTEMPT_S)
+    return 2 * dut.PORT_PROBE_S + flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S
+
+
 # 02-07: the before and after state checks of a test with an image marker (HARN-03) add one fixed
 # allowance: a settle (SETTLE_S) and one wait for the API to answer again (API_WAIT_S). It is a
 # fixed allowance, not the sum of every check at its deadline: a check that hits a deadline fails
@@ -308,6 +328,8 @@ BASE_S = {
     ),
     "test_canary_swap_is_detected": ota_s() + fan_steps_s() + ALLOWANCE_S,
     "test_ota_back_to_commit_image": ota_s() + ALLOWANCE_S,
+    "test_broken_image_is_alive_but_dark": broken_dark_s() + ALLOWANCE_S,
+    "test_uart_flash_recovers_the_dark_dut": uart_recovery_s() + ALLOWANCE_S,
 }
 
 
@@ -397,6 +419,8 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
         "test_safe_mode_boot_is_reported_as_safe_mode": 345,
         "test_canary_swap_is_detected": 605,
         "test_ota_back_to_commit_image": 410,
+        "test_broken_image_is_alive_but_dark": 486,
+        "test_uart_flash_recovers_the_dark_dut": 490,
     }
 
 

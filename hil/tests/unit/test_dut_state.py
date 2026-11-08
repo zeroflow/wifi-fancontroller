@@ -529,7 +529,9 @@ def test_every_rig_test_module_has_the_roles_of_the_traceability_table():
         "test_24_qc_buttons.py": ["qc-auto", "qc-auto"],
         "test_25_qc_safe_mode.py": ["qc-auto", "qc-auto"],
         "test_30_canary.py": ["qc-auto", "canary"],
-        "test_90_restore_commit.py": [None, "commit"],
+        "test_35_restore_commit.py": [None, "commit"],
+        "test_40_broken_image_is_dark.py": ["commit", None],
+        "test_41_uart_recovery.py": [None, "commit"],
     }
 
 

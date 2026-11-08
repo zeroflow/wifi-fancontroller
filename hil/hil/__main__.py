@@ -306,6 +306,7 @@ def _run(holder):
         "ota-dut-a.json",
         "qc-fans-dut-a.json",
         "canary-dut-a.json",
+        "recovery-dut-a.json",
         "raw/uart-dut-a.log",
         "raw/uart-dut-a.marks.json",
         "raw/api-dut-a.log",
