@@ -12,6 +12,7 @@ The release is not the firmware under test: a DUT that does not rejoin on it is 
 """
 
 import json
+import os
 import re
 import time
 from dataclasses import dataclass
@@ -134,11 +135,26 @@ def _first_line(exc):
     return text.splitlines()[0] if text else type(exc).__name__
 
 
+def drift_warning(baseline, dutcfg):
+    """D-37: None when the NVS dump was captured with the baseline's release, else the warning text."""
+    if dutcfg.nvs_release_tag == baseline.tag:
+        return None
+    return "NVS captured with %s, baseline %s" % (dutcfg.nvs_release_tag, baseline.tag)
+
+
+def announce(warning):
+    """The drift warning on stdout, and as a GitHub annotation under Actions."""
+    print("WARNING: %s" % warning)
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("::warning title=HIL baseline::%s" % warning)
+
+
 def flash(dut, baseline, dutcfg, report_name=FLASH_REPORT, with_nvs=True, deadline_s=REJOIN_S):
     """Write the baseline (plus the NVS backup) and wait for DUT A on it. Returns (version, rejoin_s).
 
     Every check runs before the first press. Without the NVS backup the image has no WiFi, so there
-    is nothing to wait for: (None, None).
+    is nothing to wait for: (None, None). A dump captured with another release is replayed anyway
+    (D-37): a rejoin is announced as a warning, no rejoin is RigError naming the re-capture to do.
     """
     if with_nvs:
         _check_nvs(dutcfg)
@@ -154,16 +170,24 @@ def flash(dut, baseline, dutcfg, report_name=FLASH_REPORT, with_nvs=True, deadli
     try:
         info = dut.wait_running(None, dut.last_reset_mark, deadline_s=deadline_s)
     except (RigError, FirmwareFailure) as exc:  # SafeModeError is a RigError
-        raise RigError(
-            "DUT %s did not rejoin on the release baseline %s within %d s (%s)"
-            % (dut.id, baseline.tag, deadline_s, _first_line(exc))
-        ) from None
+        message = "DUT %s did not rejoin on the release baseline %s within %d s (%s)" % (
+            dut.id,
+            baseline.tag,
+            deadline_s,
+            _first_line(exc),
+        )
+        if drift_warning(baseline, dutcfg):
+            message += "; NVS captured with %s: re-capture NVS for %s" % (dutcfg.nvs_release_tag, baseline.tag)
+        raise RigError(message) from None
     rejoin_s = time.monotonic() - started
     if info.project_version != baseline.version:
         raise RigError(
             "DUT %s reports project_version %s, not the baseline's %s"
             % (dut.id, info.project_version, baseline.version)
         )
+    warning = drift_warning(baseline, dutcfg)
+    if warning:
+        announce(warning)
     return info.project_version, rejoin_s
 
 
@@ -194,6 +218,9 @@ def write_report(reports_dir, baseline, dutcfg, version, rejoin_s, *, flash_s=No
         "rejoin_s": None if rejoin_s is None else round(float(rejoin_s), 1),
         "version": version,
         "nvs_replayed": bool(nvs_replayed),
+        # Without the replay there is no dump whose tag could drift.
+        "nvs_release_tag": dutcfg.nvs_release_tag if nvs_replayed else None,
+        "drift_warning": drift_warning(baseline, dutcfg) if nvs_replayed else None,
     }
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / REPORT).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")

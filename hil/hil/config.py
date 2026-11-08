@@ -20,6 +20,7 @@ NETWORK_LINE_RE = re.compile(r'^(hil_[a-z_]+):[ \t]*"([^"]*)"[ \t]*(#.*)?$')
 KEY_LIKE_RE = re.compile(r"^([A-Za-z0-9_.-]+):")
 MAC_RE = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")  # fullmatch: vX.Y.Z, CalVer included
 
 DUT_REQUIRED = (
     "rev",
@@ -33,6 +34,7 @@ DUT_REQUIRED = (
     "nvs_backup",
     "nvs_offset",
     "nvs_size",
+    "nvs_release_tag",
     "last_green_dir",
     "framework",
     "capabilities",
@@ -55,6 +57,7 @@ class DutConfig:
     nvs_backup: str = ""
     nvs_offset: str = ""
     nvs_size: str = ""
+    nvs_release_tag: str = ""  # the release the NVS dump was captured with (D-37); required for DUT A
     last_green_dir: str = ""
     framework: str = ""
     capabilities: tuple = ()
@@ -144,6 +147,9 @@ def _dut(dut_id, table, required):
         for key in ("known_good_image", "nvs_backup"):
             if not isinstance(table[key], str) or not table[key]:
                 raise RigError("rig.toml: %s.%s is empty" % (name, key))
+        # D-37: the baseline's tag is compared with it; a drift warns or names the re-capture to do.
+        if not isinstance(table["nvs_release_tag"], str) or not RELEASE_TAG_RE.fullmatch(table["nvs_release_tag"]):
+            raise RigError("rig.toml: %s.nvs_release_tag is not vX.Y.Z" % name)
         # The directory itself may be missing: last_green.load() reports that and the caller falls back.
         if not isinstance(table["last_green_dir"], str) or not os.path.isabs(table["last_green_dir"]):
             raise RigError("rig.toml: %s.last_green_dir must be an absolute path" % name)
