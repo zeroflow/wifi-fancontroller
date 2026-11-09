@@ -786,3 +786,11 @@ def test_only_test_11_skips_the_uart0_banner_check():
         if needle in path.read_text(encoding="utf-8")
     )
     assert found == ["tests/rig/test_11_upgrade_from_release.py"]
+
+
+def test_reset_records_the_time_of_its_press_for_the_stale_session_check(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID])
+    assert device.last_reset_at is None
+    before = time.monotonic()
+    device.reset()
+    assert before <= device.last_reset_at <= time.monotonic()

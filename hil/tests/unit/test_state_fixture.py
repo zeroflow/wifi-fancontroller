@@ -72,10 +72,13 @@ class FakeDut:
         event("wait_confirmed", "link" if isinstance(link, FakeLink) else link)
         return 0.0
 
+    last_reset_at = None
+
     def reset(self):
         event("reset")
         if SCRIPT.get("budget_exhausted"):
             raise ResetBudgetExhausted("budget exhausted")
+        FakeDut.last_reset_at = 123.5
         return "reset_9"
 
     def wait_running(self, key, mark):
@@ -83,8 +86,10 @@ class FakeDut:
 
 
 class FakeLink:
-    def wait_connected(self, deadline_s, project_version=None):
+    def wait_connected(self, deadline_s, project_version=None, after=None):
         event("wait_connected", project_version)
+        if SCRIPT.get("log_after"):
+            event("after", after)
 
     def use_key(self, key):
         if SCRIPT.get("log_keys"):
@@ -346,3 +351,12 @@ def test_after_baseline_switches_the_link_to_no_key(tmp_path):
 def test_a_manifest_role_never_loads_the_baseline(tmp_path):
     proc, _events = run(tmp_path, {"probes": ["commit", "qc-auto"], "no_baseline": True})
     assert proc.returncode == 0, proc.stdout + proc.stderr
+
+
+def test_every_clean_check_wants_a_session_from_after_the_latest_reset_press(tmp_path):
+    """03-11: a serial flash or an EN reset never closes the DutLink session, so a session from before the
+    latest Reset press is stale and the settle would command a dead link."""
+    script = {"probes": ["commit", "qc-auto"], "settles": [[], ["Fan 3 Speed still reads 5.0"], []], "log_after": True}
+    _proc, events = run(tmp_path, script)
+    afters = [e for e in events if e.startswith("after ")]
+    assert afters == ["after None", "after None", "after 123.5"]

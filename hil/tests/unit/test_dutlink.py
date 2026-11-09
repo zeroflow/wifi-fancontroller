@@ -582,3 +582,31 @@ def test_the_in_memory_log_is_bounded(link, monkeypatch):
         current().on_log(log_message(b"[D][x:1]: %d" % n))
     kept = link.log_since(0)
     assert len(kept) == dutlink.LOG_LINES and kept[-1] == "[D][x:1]: %d" % (dutlink.LOG_LINES + 4)
+
+
+# ---- a session from before a hard reset is stale (03-11 hardware finding after the serial restore) --------
+
+
+def test_wait_connected_after_a_later_reset_ends_the_stale_session_and_waits_for_a_new_one(link):
+    link.wait_connected(5)
+    stale = current()
+    time.sleep(0.02)
+    reset_at = time.monotonic()  # a serial flash or an EN reset: the DUT never closed the old session
+    info = link.wait_connected(5, project_version=FakeClient.version, after=reset_at)
+    assert info.project_version == FakeClient.version
+    assert stale.disconnected and current() is not stale and link.sessions() == 2
+
+
+def test_wait_connected_with_a_session_newer_than_the_reset_keeps_it(link):
+    reset_at = time.monotonic()
+    link.wait_connected(5)
+    first = current()
+    link.wait_connected(5, after=reset_at)
+    assert current() is first and not first.disconnected and link.sessions() == 1
+
+
+def test_wait_connected_without_a_new_session_after_the_reset_is_a_rig_error(link):
+    link.wait_connected(5)
+    FakeClient.refuse = 10**6
+    with pytest.raises(RigError, match="session not ready within 0.3s"):
+        link.wait_connected(0.3, after=time.monotonic())
