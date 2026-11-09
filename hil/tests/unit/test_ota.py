@@ -627,3 +627,162 @@ def test_only_test_11_asks_for_a_plaintext_upload():
         if needle in path.read_text(encoding="utf-8")
     )
     assert found == ["tests/rig/test_11_upgrade_from_release.py"]
+
+
+# wait_confirmed: no press before the new image is marked valid (REG-02) ----------------
+
+
+def test_wait_confirmed_without_a_window_returns_zero_at_once(rig):
+    device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID])
+    assert device.wait_confirmed() == 0.0
+    assert tap.waited == [] and supervisor.pressed == []
+
+
+def test_wait_confirmed_returns_the_seconds_from_the_ota_end_to_boot_ok_and_clears_the_window(rig):
+    device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY)
+    assert device.ota_end_at is not None and device.ota_end_at <= time.monotonic()
+    device.ota_end_at = time.monotonic() - 61.0  # the upload ended 61 s ago
+    seconds = device.wait_confirmed()
+    assert 61.0 <= seconds < 70.0
+    assert device.unconfirmed_until == 0.0 and supervisor.pressed == []
+    regex, since, deadline = tap.waited[-1]
+    assert re.search(regex, BOOT_OK) and since == "ota_end_qc-auto" and deadline <= dut_module.CONFIRM_WAIT_S
+    assert device.wait_confirmed() == 0.0  # confirmed once: nothing left to wait for
+
+
+def test_wait_confirmed_without_boot_ok_refuses_and_presses_nothing(rig):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY)
+    with pytest.raises(RigError, match="the OTA image was not confirmed"):
+        device.wait_confirmed(deadline_s=1)
+    assert supervisor.pressed == [] and device.unconfirmed_until > 0
+
+
+def test_wait_confirmed_takes_the_shorter_of_its_deadline_and_the_window(rig):
+    device, _, _, tap = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY)
+    device.wait_confirmed(deadline_s=5)
+    assert tap.waited[-1][2] == 5
+
+
+def test_the_ota_end_time_is_taken_at_the_done_report_and_without_it_at_the_end_mark(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID])
+    before = time.monotonic()
+    device.ota(rig.image, noise_psk=KEY)
+    assert before <= device.ota_end_at <= time.monotonic()
+    device._ota = FakeOta(ok_result(), reports_done=False)
+    device.ota_end_at = None
+    device.ota(rig.image, noise_psk=KEY)
+    assert device.ota_end_at is not None
+
+
+def test_the_window_start_of_the_last_ota_is_kept_for_the_soak(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY, label="baseline_commit")
+    assert device.last_ota["window_start"] == "ota_end_baseline_commit"
+
+
+def test_the_soak_is_seventy_seconds_and_outlasts_boot_is_good_after():
+    assert dut_module.SOAK_S == 70 and dut_module.SOAK_S > 60
+
+
+# The release-to-commit upgrade under the release bootloader: UART0 is dark, the API is the proof ------
+# (03-11 maintainer decision serial-restore-after-upgrade, 2026-11-09)
+
+NO_UART_BANNER = {"uart_banner": False}  # spelled as a dict: the literal keyword belongs to test_11 alone
+
+
+class FakeLink:
+    def __init__(self, at=None):
+        self.at = at  # monotonic time of the 'Boot seems successful' line, or None: never comes
+        self.waited = []
+
+    def wait_log(self, regex, since, deadline_s):
+        self.waited.append((regex, since, deadline_s))
+        if self.at is None:
+            raise RigError("DUT API log: no match for /%s/ within %ss" % (regex, deadline_s))
+        return self.at
+
+
+def test_the_upgrade_ota_skips_the_uart0_banner_check_and_proves_the_reboot_by_the_build_id(rig, capsys):
+    device, _, _, tap = rig.build(ok_result(), [OLD_ID, NEW_ID], tap=FakeTap(window=""))
+    device.ota(rig.image, noise_psk=KEY, label="baseline_commit", **ASK_PLAINTEXT, **NO_UART_BANNER)
+    (entry,) = read_report(rig)
+    assert entry["ok"] is True and entry["reboot_proof"] == "build id"
+    assert tap.asked == []  # UART0 is not read for a banner
+    assert "ota qc-auto (baseline_commit): ok" in capsys.readouterr().out
+
+
+def test_every_other_ota_keeps_the_uart0_banner_check(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=""))
+    with pytest.raises(FirmwareFailure, match="no reboot seen"):
+        device.ota(rig.image, noise_psk=KEY)
+    device, *_ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY)
+    assert read_report(rig)[-1]["reboot_proof"] == "uart0 banner"
+
+
+def test_skipping_the_banner_check_without_the_plaintext_upgrade_is_refused_before_any_upload(rig):
+    device, fake_ota, *_ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=""))
+    with pytest.raises(RigError, match="only for the release-to-commit upgrade"):
+        device.ota(rig.image, noise_psk=KEY, **NO_UART_BANNER)
+    assert fake_ota.uploads == []
+
+
+def test_the_upgrade_still_needs_the_tap_for_its_soak(rig):
+    device, *_ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window="", closed=True))
+    with pytest.raises(RigError, match="serial tap lost"):
+        device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT, **NO_UART_BANNER)
+
+
+def test_wait_confirmed_after_the_upgrade_reads_the_api_log_since_the_ota_end(rig):
+    device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT, **NO_UART_BANNER)
+    end = device.ota_end_at
+    link = FakeLink(at=end + 60.8)
+    assert device.wait_confirmed(link=link) == pytest.approx(60.8)
+    regex, since, deadline = link.waited[-1]
+    assert re.search(regex, BOOT_OK) and since == end and deadline <= dut_module.CONFIRM_WAIT_S
+    assert tap.waited == []  # UART0 is never asked: it is dark under the release bootloader
+    assert device.unconfirmed_until == 0.0 and supervisor.pressed == []
+    device.reset()  # confirmed over the API: the guard lets the press through
+    assert supervisor.pressed == [contract.BUTTON["A"]["reset"]]
+
+
+def test_a_reset_after_the_upgrade_before_the_api_confirmation_is_refused_explicitly(rig):
+    device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT, **NO_UART_BANNER)
+    with pytest.raises(RigError, match="EN reset refused: the upgraded image is confirmed over the API log only"):
+        device.reset()  # a Boot OK on UART0 does not count here, and reset() has no API log
+    assert supervisor.pressed == [] and tap.waited == []
+
+
+def test_no_boot_ok_in_the_api_log_refuses_and_keeps_the_window(rig):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=""))
+    device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT, **NO_UART_BANNER)
+    with pytest.raises(RigError, match="no 'Boot seems successful' in the API log"):
+        device.wait_confirmed(link=FakeLink(at=None))
+    assert device.unconfirmed_until > 0 and supervisor.pressed == []
+
+
+def test_the_next_uart_confirmed_ota_reads_uart0_again(rig):
+    device, _, _, tap = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT, **NO_UART_BANNER)
+    device.wait_confirmed(link=FakeLink(at=device.ota_end_at + 1))
+    device.ota(rig.image, noise_psk=KEY)
+    link = FakeLink(at=None)
+    device.wait_confirmed(link=link)
+    assert link.waited == [] and tap.waited[-1][1] == "ota_end_qc-auto"
+
+
+def test_only_test_11_skips_the_uart0_banner_check():
+    root = Path(__file__).resolve().parents[2]
+    needle = "uart_banner" + "=False"
+    found = sorted(
+        str(path.relative_to(root))
+        for folder in ("hil", "tests")
+        for path in (root / folder).rglob("*.py")
+        if needle in path.read_text(encoding="utf-8")
+    )
+    assert found == ["tests/rig/test_11_upgrade_from_release.py"]

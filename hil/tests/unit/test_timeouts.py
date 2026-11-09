@@ -38,6 +38,8 @@ def test_named_deadlines():
     assert dut.OTA_CONFIRM_WINDOW_S == 75
     assert dut.BOOTLOADER_BANNER_S == 3
     assert dut.CONFIRM_WAIT_S == 75
+    assert dut.SOAK_S == 70
+    assert dut.LINK_WAIT_S == 30
     assert dut.SETTLE_S == 10
     assert dut.SAFE_MODE_DETECT_S == 45
     assert budget.RESET_BUDGET_LIMIT == 8
@@ -309,6 +311,18 @@ def smoke_s():
     return serial_tap.TAP_CONNECT_S + flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + dut.BOOT_SETTLE_S + ALLOWANCE_S
 
 
+def test_the_soak_ends_inside_the_upgrade_rows_boot_and_confirm_waits():
+    """The soak runs to SOAK_S after the OTA end; the boot wait and the confirm wait come after that end too."""
+    assert dut.SOAK_S <= dut.OTA_BOOT_S + dut.CONFIRM_WAIT_S
+
+
+def restore_s():
+    """test_12 (serial restore after the upgrade, 03-11): two flash attempts each with a bootloader press and
+    settle, the reset press, the API wait with its last probe, and the boot settle window of the D-14 gate."""
+    flash = dut.FLASH_ATTEMPTS * (supervisor.PRESS_S + dut.BOOTLOADER_SETTLE_S + flasher.FLASH_ATTEMPT_S)
+    return flash + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + dut.BOOT_SETTLE_S
+
+
 def test_the_release_baseline_row_waits_as_long_as_baseline_flash_does():
     from hil import baseline
 
@@ -351,7 +365,12 @@ BASE_S = {
     "test_supervisor_exposes_contract": SV_CONNECT_S + SV_RELEASE_S + ALLOWANCE_S,
     "test_switches_released": SWITCHES * supervisor.STATE_WAIT + ALLOWANCE_S,
     "test_release_baseline_boots_and_rejoins": smoke_s(),
-    "test_ota_from_the_release_to_the_commit": ota_s() + ALLOWANCE_S,
+    # REG-02: the OTA, the DutLink session of the new image, the wait for 'Boot seems successful' in the API
+    # log (the 70 s soak overlaps it) and the final probe.
+    "test_ota_from_the_release_to_the_commit": (
+        ota_s() + ALLOWANCE_S + dut.LINK_WAIT_S + dut.CONFIRM_WAIT_S + dut.API_CONNECT_S
+    ),
+    "test_commit_image_is_written_over_serial_after_the_upgrade": restore_s() + ALLOWANCE_S,
     "test_ota_to_qc_auto": ota_s() + ALLOWANCE_S,
     "test_dut_runs_the_shipped_framework": dut.API_WAIT_S + qc.TEXT_SENSOR_WAIT_S + ALLOWANCE_S,
     "test_fan_channels_map_to_their_own_tach": fan_steps_s() + ALLOWANCE_S,
@@ -445,7 +464,8 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
         "test_supervisor_exposes_contract": 105,
         "test_switches_released": 80,
         "test_release_baseline_boots_and_rejoins": 506,
-        "test_ota_from_the_release_to_the_commit": 410,
+        "test_ota_from_the_release_to_the_commit": 525,
+        "test_commit_image_is_written_over_serial_after_the_upgrade": 501,
         "test_ota_to_qc_auto": 410,
         "test_dut_runs_the_shipped_framework": 230,
         "test_fan_channels_map_to_their_own_tach": 325,

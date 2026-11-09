@@ -68,6 +68,10 @@ class FakeDut:
         event("settle", len(problems))
         return problems
 
+    def wait_confirmed(self, deadline_s=None, link=None):
+        event("wait_confirmed", "link" if isinstance(link, FakeLink) else link)
+        return 0.0
+
     def reset(self):
         event("reset")
         if SCRIPT.get("budget_exhausted"):
@@ -251,10 +255,17 @@ def test_a_dirty_dut_after_costs_exactly_one_en_reset_and_a_second_settle(tmp_pa
     after = events[events.index("body") + 1 :]
     assert after == [
         "probe", "wait_connected " + QC_ID, "settle 1",
-        "reset", "wait_running reset_9",
+        "wait_confirmed link", "reset", "wait_running reset_9",
         "wait_connected " + QC_ID, "settle 0",
     ]
     assert events.count("reset") == 1
+
+
+def test_the_after_check_reset_waits_for_the_mark_with_the_api_log_at_hand(tmp_path):
+    """03-11: after the upgrade UART0 is dark, so the guard needs the DutLink to see 'Boot seems successful'."""
+    script = {"probes": ["commit", "qc-auto"], "settles": [[], ["Fan 3 Speed still reads 5.0"], []]}
+    _proc, events = run(tmp_path, script)
+    assert events.index("wait_confirmed link") == events.index("reset") - 1
 
 
 def test_problems_that_survive_the_reset_fail_the_test_after_a_single_reset(tmp_path):

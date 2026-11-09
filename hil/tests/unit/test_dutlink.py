@@ -499,3 +499,86 @@ def test_use_key_before_the_first_connect_is_used_by_the_first_session(monkeypat
         assert current().args[3] is None
     finally:
         made.close()
+
+
+# ---- the API side of the upgrade proof: sessions, the in-memory log and wait_log (03-11) -----------------
+
+OK_LINE = b"[I][safe_mode:154]: Boot seems successful; resetting boot loop counter"
+
+
+def test_sessions_counts_every_established_session(link):
+    link.wait_connected(5)
+    assert link.sessions() == 1
+    drop_on_loop(link, current())
+    wait_for_client(2)
+    link.wait_connected(5)
+    wait_until(lambda: link.sessions() == 2)
+
+
+def test_a_failed_connect_is_no_session(link):
+    link.wait_connected(5)
+    FakeClient.refuse = 3
+    drop_on_loop(link, current())
+    wait_for_client(5)
+    link.wait_connected(5)
+    assert link.sessions() == 2
+
+
+def test_log_since_returns_the_messages_received_from_a_monotonic_time_on(link):
+    link.wait_connected(5)
+    current().on_log(log_message(b"\x1b[0;32m[I][app:1]: before\x1b[0m"))
+    time.sleep(0.02)
+    middle = time.monotonic()
+    current().on_log(log_message(b"[I][app:2]: after\r\n"))
+    assert link.log_since(middle) == ["[I][app:2]: after"]
+    assert link.log_since(0) == ["[I][app:1]: before", "[I][app:2]: after"]
+
+
+def test_the_in_memory_log_needs_no_log_path_and_keeps_boundary_lines_out(logged):
+    logged.start()
+    logged.wait_connected(5)
+    logged.boundary("START x")
+    current().on_log(log_message(b"[I][app:1]: up"))
+    assert logged.log_since(0) == ["[I][app:1]: up"]
+
+
+def test_wait_log_returns_the_receive_time_of_the_first_match_since(link):
+    link.wait_connected(5)
+    current().on_log(log_message(OK_LINE))  # before `since`: an older session's line never counts
+    time.sleep(0.02)
+    since = time.monotonic()
+
+    def later():
+        time.sleep(0.2)
+        current().on_log(log_message(OK_LINE))
+
+    threading.Thread(target=later, daemon=True).start()
+    at = link.wait_log(r"Boot seems successful", since, 5)
+    assert since + 0.15 <= at <= time.monotonic()
+
+
+def test_wait_log_with_a_line_already_received_returns_its_time_at_once(link):
+    link.wait_connected(5)
+    since = time.monotonic()
+    current().on_log(log_message(OK_LINE))
+    received = time.monotonic()
+    started = time.monotonic()
+    at = link.wait_log(r"Boot seems successful", since, 5)
+    assert since <= at <= received and time.monotonic() - started < 0.5
+
+
+def test_wait_log_without_a_match_is_a_rig_error_naming_the_pattern(link):
+    link.wait_connected(5)
+    current().on_log(log_message(b"[I][app:1]: up"))
+    started = time.monotonic()
+    with pytest.raises(RigError, match=r"API log: no match for /Boot seems successful/ within 0.3s"):
+        link.wait_log(r"Boot seems successful", 0, 0.3)
+    assert time.monotonic() - started < 2
+
+
+def test_the_in_memory_log_is_bounded(link, monkeypatch):
+    link.wait_connected(5)
+    for n in range(dutlink.LOG_LINES + 5):
+        current().on_log(log_message(b"[D][x:1]: %d" % n))
+    kept = link.log_since(0)
+    assert len(kept) == dutlink.LOG_LINES and kept[-1] == "[D][x:1]: %d" % (dutlink.LOG_LINES + 4)

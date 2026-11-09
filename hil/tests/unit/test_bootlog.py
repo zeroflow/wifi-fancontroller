@@ -1,11 +1,12 @@
 """Boot-log gate parsing, on synthetic text only."""
 
+import json
 import re
 from pathlib import Path
 
 import pytest
 
-from hil import bootlog
+from hil import RigError, bootlog
 
 ESC = "\x1b"
 
@@ -209,3 +210,88 @@ def test_allowlist_does_not_outlive_its_esphome_pin():
         "ESPHome pin is %s but bootlog.ALLOWED_ERRORS still carries entries for %s: "
         "remove them or re-justify them (D-14 amendment expiry)" % (pin, stale)
     )
+
+
+# ---- count_boot_banners: the soak after the upgrade OTA (REG-02) -----------------------------------
+
+NORMAL = "rst:0xc (RTC_SW_CPU_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)\r\n"
+DOWNLOAD = "rst:0x1 (POWERON),boot:0x0 (DOWNLOAD(USB/UART0))\r\n"
+
+
+def test_count_boot_banners_counts_normal_boot_banners_only():
+    text = NORMAL + "[I][app:1]: up\r\n" + DOWNLOAD + ESC + "[0;32m" + NORMAL + "rst:0x1 (POWERON),boot:0x"
+    assert bootlog.count_boot_banners(text, "esp32s2") == 2
+
+
+def test_count_boot_banners_is_zero_for_no_banner_and_one_for_one():
+    assert bootlog.count_boot_banners("[I][app:1]: up\r\n", "esp32s2") == 0
+    assert bootlog.count_boot_banners(NORMAL, "esp32s2") == 1
+
+
+def test_count_boot_banners_does_not_count_a_longer_code_or_another_chip():
+    assert bootlog.count_boot_banners("boot:0x8f (x)\r\nboot:0x6f (x)\r\n", "esp32s2") == 0
+    assert bootlog.count_boot_banners("boot:0x6f (x)\r\nboot:0x6f (y)\r\n", "esp32c6") == 2
+
+
+def test_count_boot_banners_agrees_with_has_boot_banner():
+    for text in ("", NORMAL, DOWNLOAD, NORMAL + NORMAL):
+        assert (bootlog.count_boot_banners(text, "esp32s2") > 0) == bootlog.has_boot_banner(text, "esp32s2")
+
+
+# ---- check_api_log: the D-14 gate on the API log of the upgraded boot (03-11 serial-restore-after-upgrade)
+
+API_OK = "[I][safe_mode:154]: Boot seems successful; resetting boot loop counter"
+API_WDT = "[D][esp-idf:000]: E (4321) task_wdt: esp_task_wdt_reset(707): task not found"
+PLAIN_WDT = "E (4321) task_wdt: esp_task_wdt_reset(707): task not found"
+
+
+@pytest.fixture
+def api_reports(tmp_path, monkeypatch):
+    monkeypatch.setenv("HIL_REPORTS_DIR", str(tmp_path))
+    return tmp_path
+
+
+def test_a_clean_api_log_with_the_mark_passes_and_records_nothing(api_reports):
+    errors, allowed = bootlog.check_api_log(["[I][app:1]: up", API_OK], "upgrade")
+    assert (errors, allowed) == ([], [])
+    assert json.loads((api_reports / "allowlisted-errors.json").read_text()) == {"lines": []}
+
+
+def test_esphome_and_forwarded_idf_errors_in_the_api_log_are_gate_errors(api_reports):
+    log = ["[E][wifi:1]: lost", "[D][esp-idf:000]: E (641) rmt: no free channel", API_OK]
+    errors, allowed = bootlog.check_api_log(log, "upgrade")
+    assert errors == ["[E][wifi:1]: lost", "[D][esp-idf:000]: E (641) rmt: no free channel"] and allowed == []
+
+
+def test_one_plain_task_wdt_line_in_the_api_log_is_allowed_and_recorded(api_reports):
+    with pytest.warns(UserWarning, match="ALLOWLISTED boot-log line"):
+        errors, allowed = bootlog.check_api_log([PLAIN_WDT, API_OK], "upgrade")
+    assert errors == [] and allowed == [PLAIN_WDT]
+    assert json.loads((api_reports / "allowlisted-errors.json").read_text()) == {"lines": ["upgrade: " + PLAIN_WDT]}
+
+
+def test_an_api_log_without_the_mark_is_a_rig_error_not_a_pass(api_reports):
+    with pytest.raises(RigError, match=r"no 'Boot seems successful'.*vacuous \(upgrade\)"):
+        bootlog.check_api_log(["[I][app:1]: up"], "upgrade")
+    with pytest.raises(RigError, match="vacuous"):
+        bootlog.check_api_log([], "upgrade")
+
+
+def test_the_api_gate_and_the_uart_gate_share_the_allowlist_file(api_reports):
+    class Tap:
+        closed = False
+
+        def text(self, since, until=None):
+            return NORMAL + PLAIN_WDT + "\r\n"
+
+    with pytest.warns(UserWarning):
+        bootlog.check_boot_window(Tap(), "a", "b", "esp32s2", "restore")
+        bootlog.check_api_log([PLAIN_WDT, API_OK], "upgrade")
+    lines = json.loads((api_reports / "allowlisted-errors.json").read_text())["lines"]
+    assert lines == ["restore: " + PLAIN_WDT, "upgrade: " + PLAIN_WDT]
+
+
+def test_a_task_wdt_line_forwarded_through_the_logger_is_not_covered_by_amendment_4(api_reports):
+    """Amendment 4 names the exact unwrapped line; widening it to the logger-wrapped form is a maintainer decision."""
+    errors, allowed = bootlog.check_api_log([API_WDT, API_OK], "upgrade")
+    assert errors == [API_WDT] and allowed == []

@@ -532,6 +532,7 @@ def test_every_rig_test_module_has_the_roles_of_the_traceability_table():
         "test_00_contract.py": None,
         "test_10_release_baseline.py": [None, "baseline"],
         "test_11_upgrade_from_release.py": ["baseline", "commit"],
+        "test_12_serial_restore.py": ["commit", "commit"],
         "test_20_ota_qc_auto.py": ["commit", "qc-auto"],
         "test_21_qc_framework.py": ["qc-auto", "qc-auto"],
         "test_22_qc_fans.py": ["qc-auto", "qc-auto"],
