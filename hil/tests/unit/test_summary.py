@@ -44,7 +44,9 @@ def reports(tmp_path):
 def test_the_heading_is_the_verdict_of_verdict_json(reports):
     text = summary.render(reports, MANIFEST)
     assert text.startswith("## HIL run: PASS\n")
-    assert "Commit `0123456789ab` | ESPHome 2026.10.1 | Baseline: commit image over serial (no release baseline in this run)" in text
+    assert "\nCommit `0123456789ab` | ESPHome 2026.10.1\n" in text
+    assert "\nBaseline: not run in this run\n" in text
+    assert "\nUpgrade: not run in this run\n" in text
 
 
 @pytest.mark.parametrize("verdict", ["FAIL", "RIG ERROR", "INTERRUPTED"])
@@ -151,12 +153,14 @@ def test_every_section_shows_in_the_documented_order(full):
     markers = [
         "## HIL run: FAIL",
         "Commit `0123456789ab` | ESPHome 2026.10.1",
-        "Baseline: commit image over serial",
+        "Baseline: not run in this run",
+        "Upgrade: not run in this run",
         "### Preflight",
         "### DUT A (Rev 3.2, esp32s2)",
         "**Canary:** detected",
         "### Images",
         "### Timings",
+        "### Entity list",
         "### Skipped",
         "### Rig conditions",
         "### Allowlisted boot-log lines",
@@ -350,8 +354,8 @@ def test_a_rendered_summary_with_addresses_macs_and_keys_is_masked_by_write(full
     assert "RIG ERROR: " in text
 
 
-def test_the_baseline_line_is_the_phase_2_wording(reports):
-    assert summary.BASELINE_LINE == "Baseline: commit image over serial (no release baseline in this run)"
+def test_the_phase_2_baseline_constant_is_gone(reports):
+    assert not hasattr(summary, "BASELINE_LINE")
 
 
 # ------------------------------------------------------------------ hil teardown wiring
@@ -520,3 +524,186 @@ def test_the_watchdog_line_sits_after_the_preflight_section_and_before_dut_a(ful
     put(full, "watchdog.json", {"start": {"A": 6, "B": 0}, "end": {"A": 6, "B": 0}, "delta": {"A": 0, "B": 0}})
     text = summary.render(full, FULL_MANIFEST)
     assert text.index("### Preflight") < text.index("Supervisor watchdog: none") < text.index("### DUT A")
+
+
+# ------------------------------------------------------------------ 03-12: SC1 lines (baseline, upgrade, timings) and the entity list
+
+SHA = "ab" * 32
+BASELINE_REPORT = {
+    "schema": 1, "tag": "v2026.11.0", "rev": "3.2", "asset": "fancontroller-r3-2-esp32s2.factory.bin", "sha256": SHA,
+    "digests_compared": ["asset", "manifest"], "flash_s": 73.3, "rejoin_s": 5.6, "version": "2026.11.0",
+    "nvs_replayed": True, "nvs_release_tag": "v2026.11.0", "drift_warning": None,
+}
+UPGRADE_REPORT = {
+    "schema": 1, "tag": "v2026.11.0", "from_version": "2026.11.0", "build_id": "3.2+hil.0123456789ab",
+    "reported_build_id": "3.2+hil.0123456789ab", "label": "baseline_commit", "reboot_proof": "build id",
+    "transfer_s": 28.0, "boot_s": 4.6, "mark_s": 60.8, "mark_source": "api", "soak_s": 70.0, "banners": 0,
+    "api_session_dropped": False, "api_log_lines": 259, "errors": [], "allowed": [], "gate": "pass", "gate_source": "api",
+}
+BASELINE_TEXT = (
+    "Baseline: release v2026.11.0 (fancontroller-r3-2-esp32s2.factory.bin, sha256 abababababab, 2 digests agree)"
+    " + NVS replay captured with v2026.11.0"
+)
+UPGRADE_TEXT = (
+    "Upgrade: v2026.11.0 -> 3.2+hil.0123456789ab by OTA, transfer 28.0 s, boot 4.6 s, marked valid after 60.8 s,"
+    " soak 70.0 s: 0 UART0 banners, no API drop, API boot log clean"
+)
+
+
+def lines_of(text):
+    return text.splitlines()
+
+
+def test_the_baseline_line_names_tag_asset_hash_and_digests_and_follows_the_commit_line(reports):
+    put(reports, "baseline-dut-a.json", BASELINE_REPORT)
+    lines = lines_of(summary.render(reports, MANIFEST))
+    assert BASELINE_TEXT in lines
+    assert not [line for line in lines if line.startswith("WARNING: NVS")]
+    assert lines.index(BASELINE_TEXT) > lines.index("Commit `0123456789ab` | ESPHome 2026.10.1")
+
+
+def test_a_tag_drift_adds_the_warning_line_right_after_the_baseline_line(reports):
+    put(reports, "baseline-dut-a.json", {
+        **BASELINE_REPORT, "tag": "v1.7.0", "nvs_release_tag": "v1.6.0", "drift_warning": "NVS captured with v1.6.0, baseline v1.7.0",
+    })
+    lines = lines_of(summary.render(reports, MANIFEST))
+    head = [line for line in lines if line.startswith("Baseline: release v1.7.0")]
+    assert head == [
+        "Baseline: release v1.7.0 (fancontroller-r3-2-esp32s2.factory.bin, sha256 abababababab, 2 digests agree)"
+        " + NVS replay captured with v1.6.0"
+    ]
+    after = [line for line in lines[lines.index(head[0]) + 1:] if line][0]
+    assert after == "WARNING: NVS captured with v1.6.0, baseline v1.7.0"
+
+
+def test_a_baseline_without_the_nvs_replay_says_so(reports):
+    put(reports, "baseline-dut-a.json", {**BASELINE_REPORT, "nvs_replayed": False, "nvs_release_tag": None})
+    text = summary.render(reports, MANIFEST)
+    assert "sha256 abababababab, 2 digests agree) + no NVS replay" in text
+
+
+@pytest.mark.parametrize("content", [None, "not json", [], {"schema": 1}])
+def test_without_a_usable_baseline_report_the_baseline_was_not_run(reports, content):
+    if content is not None:
+        put(reports, "baseline-dut-a.json", content)
+    lines = lines_of(summary.render(reports, MANIFEST))
+    assert "Baseline: not run in this run" in lines
+
+
+def test_the_upgrade_line_comes_from_the_upgrade_report_after_the_baseline_line(reports):
+    put(reports, "baseline-dut-a.json", BASELINE_REPORT)
+    put(reports, "upgrade-dut-a.json", UPGRADE_REPORT)
+    lines = lines_of(summary.render(reports, MANIFEST))
+    assert UPGRADE_TEXT in lines
+    assert lines.index(UPGRADE_TEXT) > lines.index(BASELINE_TEXT)
+
+
+def test_the_upgrade_line_shows_banners_drop_and_gate_errors(reports):
+    put(reports, "upgrade-dut-a.json", {
+        **UPGRADE_REPORT, "banners": 1, "api_session_dropped": True, "errors": ["[E] a", "[E] b"], "gate": "fail",
+    })
+    text = summary.render(reports, MANIFEST)
+    assert "soak 70.0 s: 1 UART0 banner, API session dropped, API boot log 2 errors" in text
+
+
+def test_the_upgrade_line_with_a_uart0_gate_and_one_error(reports):
+    put(reports, "upgrade-dut-a.json", {**UPGRADE_REPORT, "gate_source": "uart0", "banners": 2, "errors": ["[E] a"]})
+    assert "soak 70.0 s: 2 UART0 banners, no API drop, UART0 boot log 1 error" in summary.render(reports, MANIFEST)
+
+
+def test_an_upgrade_report_with_missing_numbers_shows_question_marks_never_raises(reports):
+    put(reports, "upgrade-dut-a.json", {"schema": 1, "tag": "v2026.11.0", "build_id": "3.2+hil.0123456789ab"})
+    text = summary.render(reports, MANIFEST)
+    assert "Upgrade: v2026.11.0 -> 3.2+hil.0123456789ab by OTA, transfer ? s, boot ? s, marked valid after ? s, soak ? s" in text
+
+
+@pytest.mark.parametrize("content", [None, "not json", [], {"schema": 1}])
+def test_without_a_usable_upgrade_report_the_upgrade_was_not_run(reports, content):
+    if content is not None:
+        put(reports, "upgrade-dut-a.json", content)
+    assert "Upgrade: not run in this run" in lines_of(summary.render(reports, MANIFEST))
+
+
+def test_the_head_lines_are_masked_like_the_rest(reports):
+    put(reports, "upgrade-dut-a.json", {**UPGRADE_REPORT, "tag": "v2026.11.0 HIL-Example-Net"})
+    text = summary.write(reports, MANIFEST, ["HIL-Example-Net"])
+    assert "HIL-Example-Net" not in text and "Upgrade: v2026.11.0 " in text
+
+
+def test_timing_order_starts_with_the_upgrade_leg_and_ends_with_the_last_serial_flash():
+    assert summary.TIMING_ORDER == (
+        "baseline_flash", "ota_baseline_commit", "ota_baseline_commit_boot", "soak_mark", "restore_flash", "restore_boot",
+        "ota_qc-auto", "ota_qc-auto_boot", "ota_canary", "ota_canary_boot", "ota_commit", "ota_commit_boot", "ota_broken",
+        "flash", "boot",
+    )
+
+
+def test_the_upgrade_timings_lead_the_timings_table(full):
+    put(full, "timings.json", {"flash": 74.0, "soak_mark": 60.8, "baseline_flash": 73.3, "ota_baseline_commit": 28.0, "zz_extra": 1.0})
+    text = summary.render(full, FULL_MANIFEST)
+    order = [text.index("| %s |" % name) for name in ("baseline_flash", "ota_baseline_commit", "soak_mark", "flash", "zz_extra")]
+    assert order == sorted(order)
+
+
+def entity_report(removed=(), added=(), actual=None, error=None):
+    actual = [{"type": "fan", "name": "Fan X"}, {"type": "sensor", "name": "Speed X"}] if actual is None else actual
+    return {
+        "schema": 1, "rev": "3.2", "golden_file": "hil/golden/entities-3.2.json", "actual": actual,
+        "removed": [{"type": t, "name": n} for t, n in removed], "added": [{"type": t, "name": n} for t, n in added],
+        "error": error,
+    }
+
+
+def entity_section(text):
+    start = text.index("### Entity list\n")
+    end = text.index("\n### ", start + 1)
+    return text[start:end]
+
+
+def test_the_entity_list_section_says_it_matches_golden(full):
+    put(full, "golden-dut-a.json", entity_report())
+    assert "matches golden (2 entities)" in entity_section(summary.render(full, FULL_MANIFEST))
+
+
+def test_the_entity_list_section_lists_removed_and_added_entries_one_per_line(full):
+    put(full, "golden-dut-a.json", entity_report(
+        removed=[("light", "NeoPixel X"), ("sensor", "Speed Y")], added=[("sensor", "HIL Invented Sensor")],
+    ))
+    section = entity_section(summary.render(full, FULL_MANIFEST))
+    lines = lines_of(section)
+    assert "- removed: light: NeoPixel X" in lines and "- removed: sensor: Speed Y" in lines
+    assert "- added: sensor: HIL Invented Sensor" in lines
+    assert "matches golden" not in section
+    assert "golden from-run" in section  # how to accept an intended change (D-38)
+
+
+def test_an_entity_name_cannot_break_the_markdown(full):
+    put(full, "golden-dut-a.json", entity_report(added=[("sensor", "a | b\n### Fake")]))
+    section = entity_section(summary.render(full, FULL_MANIFEST))
+    assert "- added: sensor: a \\| b ### Fake" in lines_of(section)
+
+
+def test_a_golden_file_error_is_shown_in_the_entity_list_section(full):
+    put(full, "golden-dut-a.json", entity_report(error="golden entity list hil/golden/entities-3.2.json is missing"))
+    section = entity_section(summary.render(full, FULL_MANIFEST))
+    assert "golden list not usable: golden entity list hil/golden/entities-3.2.json is missing" in section
+    assert "matches golden" not in section
+
+
+def test_an_empty_device_list_never_reads_as_a_match(full):
+    put(full, "golden-dut-a.json", entity_report(actual=[]))
+    section = entity_section(summary.render(full, FULL_MANIFEST))
+    assert "matches golden" not in section and "listed no entities" in section
+
+
+@pytest.mark.parametrize("content", [None, "not json", [], {"schema": 1}])
+def test_without_a_usable_entity_report_the_list_was_not_checked(full, content):
+    if content is not None:
+        put(full, "golden-dut-a.json", content)
+    assert "### Entity list\n\nnot checked in this run" in summary.render(full, FULL_MANIFEST)
+
+
+def test_the_entity_list_section_follows_the_timings_and_precedes_skipped(full):
+    put(full, "golden-dut-a.json", entity_report())
+    text = summary.render(full, FULL_MANIFEST)
+    assert text.index("### Timings") < text.index("### Entity list") < text.index("### Skipped")

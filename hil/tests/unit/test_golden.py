@@ -347,3 +347,68 @@ def test_the_committed_golden_file_is_schema_1_sorted_and_named_for_its_revision
         entries = golden.load(path)
         assert path.name == "entities-%s.json" % data["rev"]
         assert path.read_text(encoding="utf-8") == golden.render(entries, data["rev"])
+
+
+# ---- 03-12 Task 3: from_run and the stale list ----------------------------------------------------------
+
+
+def write_run_report(path, actual, rev="3.2", **extra):
+    golden.write_report(path.parent, rev, golden.golden_file(rev), actual, [], [], **extra)
+    return path.parent / golden.REPORT
+
+
+def test_from_run_writes_a_file_identical_to_a_direct_capture_of_the_same_list(tmp_path):
+    shuffled = list(ENTRIES)
+    random.Random(7).shuffle(shuffled)
+    report_path = write_run_report(tmp_path / "reports" / golden.REPORT, shuffled)
+    entries = golden.from_run(report_path, tmp_path / "out" / "entities-3.2.json", "3.2")
+    golden.dump(shuffled, tmp_path / "direct.json", "3.2")
+    assert (tmp_path / "out" / "entities-3.2.json").read_bytes() == (tmp_path / "direct.json").read_bytes()
+    assert sorted(entries) == sorted(ENTRIES)
+
+
+def test_from_run_keeps_duplicates_of_the_device(tmp_path):
+    report_path = write_run_report(tmp_path / "r" / golden.REPORT, ENTRIES + [("fan", "Fan X")])
+    golden.from_run(report_path, tmp_path / "g.json", "3.2")
+    assert golden.compare(golden.load(tmp_path / "g.json"), ENTRIES + [("fan", "Fan X")]) == ([], [])
+
+
+def test_from_run_takes_the_reports_revision_when_none_is_given(tmp_path):
+    report_path = write_run_report(tmp_path / "r" / golden.REPORT, ENTRIES, rev="3.3")
+    golden.from_run(report_path, tmp_path / "g.json", None)
+    assert json.loads((tmp_path / "g.json").read_text(encoding="utf-8"))["rev"] == "3.3"
+
+
+def test_from_run_refuses_a_report_of_another_revision(tmp_path):
+    report_path = write_run_report(tmp_path / "r" / golden.REPORT, ENTRIES, rev="3.3")
+    with pytest.raises(RigError, match="3.3"):
+        golden.from_run(report_path, tmp_path / "g.json", "3.2")
+    assert not (tmp_path / "g.json").exists()
+
+
+@pytest.mark.parametrize("content", [None, "not json", [], {"schema": 1, "rev": "3.2", "actual": []}, {"schema": 2, "actual": [{"type": "fan", "name": "x"}]}])
+def test_from_run_refuses_a_missing_empty_or_foreign_report_and_writes_nothing(tmp_path, content):
+    report_path = tmp_path / golden.REPORT
+    if content is not None:
+        report_path.write_text(content if isinstance(content, str) else json.dumps(content), encoding="utf-8")
+    with pytest.raises(RigError, match="golden: "):
+        golden.from_run(report_path, tmp_path / "g.json", "3.2")
+    assert not (tmp_path / "g.json").exists()
+
+
+def test_the_golden_cli_has_from_run():
+    args = entry.build_parser().parse_args(["golden", "from-run", "--report", "reports/golden-dut-a.json", "--out", "g.json"])
+    assert (args.golden_command, args.report, args.out, args.rev) == ("from-run", "reports/golden-dut-a.json", "g.json", None)
+
+
+def test_from_run_needs_no_rig_and_prints_what_it_wrote(tmp_path, monkeypatch, capsys):
+    report_path = write_run_report(tmp_path / "r" / golden.REPORT, ENTRIES)
+    monkeypatch.setattr(entry, "load_rig", lambda: pytest.fail("from-run must not need rig.toml"))
+    code = entry.main(["golden", "from-run", "--report", str(report_path), "--out", str(tmp_path / "g.json")])
+    assert code == 0
+    assert "golden: wrote %s (7 entities)" % (tmp_path / "g.json") in capsys.readouterr().out
+
+
+def test_a_run_deletes_the_golden_and_upgrade_reports_of_an_earlier_run():
+    assert golden.REPORT in entry.STALE_REPORTS
+    assert "upgrade-dut-a.json" in entry.STALE_REPORTS
