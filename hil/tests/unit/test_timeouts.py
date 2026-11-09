@@ -38,6 +38,7 @@ def test_named_deadlines():
     assert dut.OTA_CONFIRM_WINDOW_S == 75
     assert dut.BOOTLOADER_BANNER_S == 3
     assert dut.CONFIRM_WAIT_S == 75
+    assert dut.MARK_COMMIT_S == 2
     assert dut.SOAK_S == 70
     assert dut.LINK_WAIT_S == 30
     assert dut.SETTLE_S == 10
@@ -369,7 +370,7 @@ BASE_S = {
     # REG-02: the OTA, the DutLink session of the new image, the wait for 'Boot seems successful' in the API
     # log (the 70 s soak overlaps it) and the final probe.
     "test_ota_from_the_release_to_the_commit": (
-        ota_s() + ALLOWANCE_S + dut.LINK_WAIT_S + dut.CONFIRM_WAIT_S + dut.API_CONNECT_S
+        ota_s() + ALLOWANCE_S + dut.LINK_WAIT_S + dut.CONFIRM_WAIT_S + dut.MARK_COMMIT_S + dut.API_CONNECT_S
     ),
     # REG-03: one fresh API session that connects and lists every entity (golden.capture's deadline).
     "test_entities_match_the_golden_list": dut.API_CONNECT_S + 10 + ALLOWANCE_S,
@@ -380,7 +381,8 @@ BASE_S = {
     "test_hdc1080_reports_plausible_climate": qc.HDC_WINDOW_S + ALLOWANCE_S,
     "test_usr_button_reaches_dut": 3 * qc.USR_WAIT_S + 3 * supervisor.PRESS_S,
     "test_safe_mode_boot_is_reported_as_safe_mode": (
-        dut.SAFE_MODE_DETECT_S + dut.CONFIRM_WAIT_S + supervisor.PRESS_S + dut.API_WAIT_S + ALLOWANCE_S
+        dut.SAFE_MODE_DETECT_S + dut.CONFIRM_WAIT_S + dut.MARK_COMMIT_S + supervisor.PRESS_S + dut.API_WAIT_S
+        + ALLOWANCE_S
     ),
     "test_canary_swap_is_detected": ota_s() + fan_steps_s() + ALLOWANCE_S,
     # REG-05, D-39: the armed canary -> commit OTA, the wait for its rollback-state line, the forced EN reset and
@@ -388,9 +390,10 @@ BASE_S = {
     "test_en_reset_before_the_mark_rolls_back": (
         ota_s() + rollback.ROLLBACK_LINE_S + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + ALLOWANCE_S
     ),
-    # The OTA back to commit, the wait for its mark, a normal (guarded) EN reset and the boot of the same image.
+    # The OTA back to commit, the wait for its mark and its otadata commit (03-14), a normal (guarded) EN reset
+    # and the boot of the same image.
     "test_en_reset_after_the_mark_keeps_the_image": (
-        ota_s() + dut.CONFIRM_WAIT_S + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + ALLOWANCE_S
+        ota_s() + dut.CONFIRM_WAIT_S + dut.MARK_COMMIT_S + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + ALLOWANCE_S
     ),
     "test_broken_image_is_alive_but_dark": broken_dark_s() + ALLOWANCE_S,
     "test_uart_flash_recovers_the_dark_dut": uart_recovery_s() + ALLOWANCE_S,
@@ -475,7 +478,7 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
         "test_supervisor_exposes_contract": 105,
         "test_switches_released": 80,
         "test_release_baseline_boots_and_rejoins": 506,
-        "test_ota_from_the_release_to_the_commit": 525,
+        "test_ota_from_the_release_to_the_commit": 527,
         "test_entities_match_the_golden_list": 150,
         "test_commit_image_is_written_over_serial_after_the_upgrade": 501,
         "test_ota_to_qc_auto": 410,
@@ -483,10 +486,10 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
         "test_fan_channels_map_to_their_own_tach": 325,
         "test_hdc1080_reports_plausible_climate": 160,
         "test_usr_button_reaches_dut": 130,
-        "test_safe_mode_boot_is_reported_as_safe_mode": 345,
+        "test_safe_mode_boot_is_reported_as_safe_mode": 347,
         "test_canary_swap_is_detected": 605,
         "test_en_reset_before_the_mark_rolls_back": 535,
-        "test_en_reset_after_the_mark_keeps_the_image": 590,
+        "test_en_reset_after_the_mark_keeps_the_image": 592,
         "test_broken_image_is_alive_but_dark": 486,
         "test_uart_flash_recovers_the_dark_dut": 505,
     }
@@ -502,7 +505,8 @@ def test_the_canary_worst_case_with_its_state_checks_fits_the_per_test_timeout()
 
 
 def test_the_safe_mode_test_row_is_its_waits_plus_the_allowances():
-    expected = dut.SAFE_MODE_DETECT_S + dut.CONFIRM_WAIT_S + supervisor.PRESS_S + dut.API_WAIT_S + ALLOWANCE_S + STATE_CHECK_S
+    expected = (dut.SAFE_MODE_DETECT_S + dut.CONFIRM_WAIT_S + dut.MARK_COMMIT_S + supervisor.PRESS_S + dut.API_WAIT_S
+                + ALLOWANCE_S + STATE_CHECK_S)
     assert WORST_CASE_S["test_safe_mode_boot_is_reported_as_safe_mode"] == expected < ini()["timeout"]
 
 

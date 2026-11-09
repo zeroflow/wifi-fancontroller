@@ -823,3 +823,55 @@ def test_a_forced_reset_still_honours_the_budget(rig):
     with pytest.raises(dut_module.RigError, match="reset budget exhausted"):
         device.reset(**FORCE)
     assert supervisor.pressed == []
+
+
+# The mark is logged before the otadata rewrite (03-14, p1) ------------------------------
+# ESPHome 2026.10.1 prints 'Boot seems successful' and only then marks the image valid
+# (esp_ota_mark_app_valid_cancel_rollback erases and rewrites the active otadata sector). An EN
+# reset in that window left only the older otadata copy: p1's test_37 booted the canary again.
+
+
+def held(monkeypatch, supervisor):
+    """Record every sleep of dut.py with the presses made before it."""
+    calls = []
+    monkeypatch.setattr(dut_module.time, "sleep", lambda seconds: calls.append((seconds, list(supervisor.pressed))))
+    return calls
+
+
+def test_wait_confirmed_holds_the_otadata_commit_time_after_the_mark_on_uart0(rig, monkeypatch):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY)
+    calls = held(monkeypatch, supervisor)
+    device.ota_end_at = time.monotonic() - 61.0
+    seconds = device.wait_confirmed()
+    assert 61.0 <= seconds < 70.0  # still the mark's own time: the hold is not part of it
+    assert dut_module.MARK_COMMIT_S >= 1
+    assert sum(s for s, _ in calls) == pytest.approx(dut_module.MARK_COMMIT_S, abs=0.5)
+
+
+def test_wait_confirmed_holds_after_the_mark_in_the_api_log_too(rig, monkeypatch):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT, **NO_UART_BANNER)
+    calls = held(monkeypatch, supervisor)
+    device.wait_confirmed(link=FakeLink(at=time.monotonic()))
+    assert sum(s for s, _ in calls) == pytest.approx(dut_module.MARK_COMMIT_S, abs=0.5)
+
+
+def test_a_guarded_reset_presses_only_after_the_hold(rig, monkeypatch):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    device.ota(rig.image, noise_psk=KEY)
+    calls = held(monkeypatch, supervisor)
+    device.reset()
+    assert supervisor.pressed == [contract.BUTTON["A"]["reset"]]
+    assert calls and all(before == [] for _, before in calls)  # every sleep came before the press
+    assert sum(s for s, _ in calls) == pytest.approx(dut_module.MARK_COMMIT_S, abs=0.5)
+
+
+def test_no_hold_without_a_window_or_for_the_forced_reset(rig, monkeypatch):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=BANNER + BOOT_OK))
+    calls = held(monkeypatch, supervisor)
+    assert device.wait_confirmed() == 0.0 and calls == []
+    device.ota(rig.image, noise_psk=KEY)
+    calls.clear()
+    device.reset(**FORCE)  # test_36's deliberate press before the mark stays immediate
+    assert calls == []
