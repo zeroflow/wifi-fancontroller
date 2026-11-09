@@ -14,7 +14,7 @@ from pathlib import Path
 
 import pytest
 
-from . import RigError, baseline, config, contract, manifest, nvs, preflight, redact, summary, teardown
+from . import RigError, baseline, config, contract, golden, manifest, nvs, preflight, redact, summary, teardown
 from .dut import Dut
 from .flasher import Flasher
 from .serial_tap import SerialTap
@@ -630,6 +630,59 @@ def cmd_nvs(args):
             supervisor.close()
 
 
+def capture_source_problem(project_version, rev, commit):
+    """Why a device answer must not become the golden list (RESEARCH Pitfall 20), or None.
+
+    Only the commit (HIL) image of the revision may be captured, and with HIL_EXPECTED_COMMIT set only the build of
+    that commit: a capture from a release, qc-auto or canary image would bless that image's entities.
+    """
+    prefix = "%s+hil." % rev
+    if not str(project_version).startswith(prefix):
+        return "DUT A runs %s, not a commit image (%s<commit>)" % (project_version, prefix)
+    if commit and project_version != prefix + commit[:12]:
+        return "DUT A runs %s, not the commit image of %s (HIL_EXPECTED_COMMIT)" % (project_version, commit[:12])
+    return None
+
+
+def cmd_golden(args):
+    """golden capture | check (D-38). Only `capture` writes a file, and only where --out says."""
+    rig = load_rig()
+    cfg = rig.duts["A"]
+    if args.golden_command == "capture":
+        # The HIL key only: the commit image answers with it, the release image does not.
+        version, entries = golden.capture_device(cfg.host, rig.dut_api_key)
+        problem = capture_source_problem(version, cfg.rev, config.expected_commit())
+        if problem:
+            raise RigError("golden: refusing to capture: %s" % problem)
+        if not entries:
+            raise RigError("golden: DUT A listed no entities; nothing written")
+        golden.dump(entries, args.out, cfg.rev)
+        print("golden: wrote %s (%d entities) from %s" % (args.out, len(entries), version))
+        return 0
+    path = args.file or golden.golden_file(cfg.rev)
+    version, actual = None, None
+    for psk in (rig.dut_api_key, None):
+        try:
+            version, actual = golden.capture_device(cfg.host, psk)
+            break
+        except RigError:  # wrong key or image without encryption: try the other mode
+            continue
+    if actual is None:
+        raise RigError("golden: DUT A did not answer with the HIL key or without encryption")
+    try:
+        want = golden.load(path)
+    except AssertionError as exc:
+        print("golden: %s" % exc)
+        return 1
+    removed, added = golden.compare(want, actual)
+    if removed or added or not actual:
+        print("golden: DUT A runs %s" % version)
+        print(golden.problems_text(removed, added, cfg.rev) if (removed or added) else "golden: DUT A listed no entities")
+        return 1
+    print("golden: matches (%d entities, %s)" % (len(actual), version))
+    return 0
+
+
 def build_parser():
     parser = argparse.ArgumentParser(prog="python -m hil")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -655,6 +708,14 @@ def build_parser():
     capture.add_argument("--plain", action="store_true", help="key=value output")
     restore = nvs_sub.add_parser("restore", help="write nvs_backup back at nvs_offset")
     restore.add_argument("--dut", choices=["A"], required=True)
+    gold = sub.add_parser("golden", help="capture, check or regenerate the golden entity list of DUT A (D-38)")
+    gold_sub = gold.add_subparsers(dest="golden_command", required=True)
+    gcap = gold_sub.add_parser("capture", help="write the entity list of DUT A (commit image only) to a golden file")
+    gcap.add_argument("--dut", choices=["A"], required=True)
+    gcap.add_argument("--out", required=True)
+    gcheck = gold_sub.add_parser("check", help="compare the entity list of DUT A with the golden file; exit 1 on a difference")
+    gcheck.add_argument("--dut", choices=["A"], required=True)
+    gcheck.add_argument("--file", help="golden file (default: hil/golden/entities-<rev>.json)")
     return parser
 
 
@@ -673,6 +734,8 @@ def main(argv=None):
             return cmd_baseline(args)
         if args.command == "status":
             return cmd_status(args)
+        if args.command == "golden":
+            return cmd_golden(args)
         return cmd_nvs(args)
     except RigError as exc:
         print("RIG ERROR: %s" % exc)

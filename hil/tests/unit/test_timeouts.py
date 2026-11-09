@@ -370,6 +370,8 @@ BASE_S = {
     "test_ota_from_the_release_to_the_commit": (
         ota_s() + ALLOWANCE_S + dut.LINK_WAIT_S + dut.CONFIRM_WAIT_S + dut.API_CONNECT_S
     ),
+    # REG-03: one fresh API session that connects and lists every entity (golden.capture's deadline).
+    "test_entities_match_the_golden_list": dut.API_CONNECT_S + 10 + ALLOWANCE_S,
     "test_commit_image_is_written_over_serial_after_the_upgrade": restore_s() + ALLOWANCE_S,
     "test_ota_to_qc_auto": ota_s() + ALLOWANCE_S,
     "test_dut_runs_the_shipped_framework": dut.API_WAIT_S + qc.TEXT_SENSOR_WAIT_S + ALLOWANCE_S,
@@ -465,6 +467,7 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
         "test_switches_released": 80,
         "test_release_baseline_boots_and_rejoins": 506,
         "test_ota_from_the_release_to_the_commit": 525,
+        "test_entities_match_the_golden_list": 150,
         "test_commit_image_is_written_over_serial_after_the_upgrade": 501,
         "test_ota_to_qc_auto": 410,
         "test_dut_runs_the_shipped_framework": 230,
