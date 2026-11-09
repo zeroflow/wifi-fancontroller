@@ -30,6 +30,12 @@ OTA_BOOT_S = 90  # upload finished -> the new build ID answers on the API
 OTA_CONFIRM_WINDOW_S = 75  # safe_mode boot_is_good_after (60 s) plus margin; see Dut.reset
 BOOTLOADER_BANNER_S = 3  # Bootloader pressed -> the ROM download-mode banner is on UART0
 CONFIRM_WAIT_S = 75  # most an EN reset waits for 'Boot seems successful' of an unconfirmed OTA image
+# ESPHome 2026.10.1 (safe_mode.cpp) logs 'Boot seems successful' first and only then marks the image valid:
+# esp_ota_mark_app_valid_cancel_rollback erases and rewrites the active otadata sector (a 4 KB erase, at
+# most a few hundred ms). An EN reset inside that window leaves only the older otadata copy, and the
+# bootloader boots the previous image without any rollback line (03-14, p1 test_37: the press came under
+# 0.1 s after the line). wait_confirmed therefore holds this long after the line before it returns.
+MARK_COMMIT_S = 2
 SOAK_S = 70  # test_11 observes the upgraded image until this long after the OTA end (boot_is_good_after 60 s + margin)
 LINK_WAIT_S = 30  # the DutLink session of an image whose probe already answered: a few reconnect polls
 SETTLE_S = 10  # one shared deadline for the whole of Dut.settle
@@ -184,7 +190,8 @@ class Dut:
         """Inside the rollback window: wait for 'Boot seems successful' or refuse. Never presses.
 
         Returns the seconds from the OTA end to the mark and closes the window; 0.0 at once when no window
-        is open. A signal wait within min(window left, deadline_s). The mark is read where the OTA said:
+        is open. After the mark it holds until MARK_COMMIT_S have passed since the line arrived, because
+        ESPHome logs the line before it rewrites otadata (the returned seconds exclude the hold). A signal wait within min(window left, deadline_s). The mark is read where the OTA said:
         on UART0 since the OTA end mark, or, after the release-to-commit upgrade (Dut.ota with
         uart_banner off), in the API log of `link` (a DutLink) since ota_end_at, because UART0 is dark
         under the release bootloader. Without that link the upgrade cannot be confirmed and the refusal
@@ -215,6 +222,10 @@ class Dut:
                 raise refusal from None
             at = time.monotonic()  # the tap polls every 0.1 s, so this is the line's arrival within that
         self.unconfirmed_until = 0.0
+        # The line precedes the otadata rewrite (MARK_COMMIT_S): no press may follow it at once.
+        hold = MARK_COMMIT_S - max(0.0, time.monotonic() - at)
+        if hold > 0:
+            time.sleep(min(hold, MARK_COMMIT_S))
         return max(0.0, at - self.ota_end_at) if self.ota_end_at is not None else 0.0
 
     def reset(self, force=False):
