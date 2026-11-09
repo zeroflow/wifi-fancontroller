@@ -6,6 +6,7 @@ Every failure raises RigError naming the key, never the value.
 import ipaddress
 import os
 import re
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -45,11 +46,13 @@ HEX_FIELDS = ("flash_offset", "nvs_offset", "nvs_size")
 
 @dataclass(frozen=True)
 class DutConfig:
+    # host and mac stay out of repr: pytest truncates a long repr in a traceback ("192.0.2..."),
+    # and no full-value log mask matches a truncated address (03-14, run p1).
     id: str
     rev: str
     chip: str
-    host: str
-    mac: str
+    host: str = field(repr=False)
+    mac: str = field(repr=False)
     flash_offset: str = ""
     known_good_image: str = ""
     known_good_sha256: str = ""
@@ -65,9 +68,9 @@ class DutConfig:
 
 @dataclass(frozen=True)
 class RigConfig:
-    # The keys stay out of repr: a RigConfig in a traceback or log line would
-    # otherwise print them into public CI logs.
-    supervisor_host: str
+    # The keys and the supervisor address stay out of repr: a RigConfig in a traceback or log line
+    # would otherwise print them into public CI logs (a truncated address escapes the masks).
+    supervisor_host: str = field(repr=False)
     supervisor_key: str = field(repr=False)
     duts: dict
     dut_api_key: str = field(repr=False)
@@ -304,9 +307,14 @@ def mask_literals(cfg, env=None, network_file=None):
 
 
 def emit_masks(cfg, env=None, network_file=None):
-    """Under GitHub Actions print ::add-mask:: for every literal, before any other output."""
+    """Under GitHub Actions print ::add-mask:: for every literal, before any other output.
+
+    The lines are flushed before returning. stdout on the runner is a block-buffered pipe, while
+    aioesphomeapi logs connection errors (with the address) to unbuffered stderr: without the flush
+    the masks reached the runner after such a line and it was published unmasked (03-14, run p1)."""
     env = os.environ if env is None else env
     literals = mask_literals(cfg, env, network_file)
     if env.get("GITHUB_ACTIONS") == "true":
         for literal in literals:
             print("::add-mask::%s" % literal)
+        sys.stdout.flush()
