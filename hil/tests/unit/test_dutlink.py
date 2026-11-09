@@ -532,6 +532,7 @@ def test_log_since_returns_the_messages_received_from_a_monotonic_time_on(link):
     current().on_log(log_message(b"[I][app:2]: after\r\n"))
     assert link.log_since(middle) == ["[I][app:2]: after"]
     assert link.log_since(0) == ["[I][app:1]: before", "[I][app:2]: after"]
+    assert link.log_since(0, middle) == ["[I][app:1]: before"]  # until excludes what arrived at or after it
 
 
 def test_the_in_memory_log_needs_no_log_path_and_keeps_boundary_lines_out(logged):

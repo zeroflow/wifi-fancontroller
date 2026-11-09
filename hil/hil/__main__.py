@@ -285,6 +285,8 @@ STALE_REPORTS = (
     baseline.FLASH_REPORT,
     "upgrade-dut-a.json",
     golden.REPORT,
+    "rollback-states.json",
+    "rollback-dut-a.json",
 )
 # What `hil preflight` writes before the run; `hil run` keeps these (RESEARCH Pattern 7).
 PREFLIGHT_REPORTS = (

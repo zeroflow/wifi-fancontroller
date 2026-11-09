@@ -39,6 +39,8 @@ TIMING_ORDER = (
 BASELINE_REPORT = "baseline-dut-a.json"
 UPGRADE_REPORT = "upgrade-dut-a.json"
 GOLDEN_REPORT = "golden-dut-a.json"
+ROLLBACK_STATES_REPORT = "rollback-states.json"  # rollback.STATES_REPORT (summary imports no harness module)
+ROLLBACK_TEST_REPORT = "rollback-dut-a.json"  # rollback.TEST_REPORT
 BASELINE_NOT_RUN = "Baseline: not run in this run"
 UPGRADE_NOT_RUN = "Upgrade: not run in this run"
 ENTITIES_NOT_CHECKED = "not checked in this run"
@@ -340,6 +342,52 @@ def _flash_and_ota(reports):
     return lines
 
 
+def _uptime_text(value):
+    return "%.1f s" % value if isinstance(value, (int, float)) and not isinstance(value, bool) else "?"
+
+
+def _rollback_states(reports):
+    """### OTA rollback states (D-39, D-41) from reports/rollback-states.json, one row per OTA, and the rollback tests."""
+    data = _read_json(reports / ROLLBACK_STATES_REPORT)
+    if not isinstance(data, list):
+        lines = [NOT_RECORDED]
+    elif not data:
+        lines = ["no OTA in this run"]
+    else:
+        lines = ["| OTA | Role | Rollback state | Source | Image state | Old image up |", "|---|---|---|---|---|---|"]
+        for row in data:
+            if not isinstance(row, dict):
+                continue
+            state = row.get("state") or "no line"
+            lines.append(
+                "| %s | %s | %s | %s | %s | %s |"
+                % (
+                    _cell(row.get("label") or "?"),
+                    _cell(row.get("role") or "?"),
+                    _cell(state),
+                    _cell(row.get("source") or "?"),
+                    _cell(row.get("image_state") or "-"),
+                    _uptime_text(row.get("old_uptime_s")),
+                )
+            )
+    tests = _read_json(reports / ROLLBACK_TEST_REPORT)
+    if isinstance(tests, dict):
+        fresh, marked = tests.get("fresh"), tests.get("marked")
+        if isinstance(fresh, dict):
+            lines += [
+                "",
+                "Rollback before the mark: %s (state %s, build after %s)"
+                % (_cell(fresh.get("outcome") or "?"), _cell(fresh.get("state") or "no line"), _cell(fresh.get("build_after") or "?")),
+            ]
+        if isinstance(marked, dict):
+            lines += [
+                "",
+                "Reset after the mark: build after %s, marked valid after %s"
+                % (_cell(marked.get("build_after") or "?"), _uptime_text(marked.get("mark_s"))),
+            ]
+    return lines
+
+
 def _entity_list(reports):
     """### Entity list (REG-03, D-38) from reports/golden-dut-a.json: the match, or every removed and added entry."""
     data = _read_json(reports / GOLDEN_REPORT)
@@ -419,8 +467,8 @@ def render(reports_dir, manifest):
     """The job summary as Markdown. Pure: reads files, writes nothing, never raises for a missing report.
 
     Order: verdict, commit/ESPHome line, Baseline line (and its drift warning), Upgrade line, Preflight,
-    Supervisor watchdog, DUT A table (JUnit order) and failures, Canary, Images, Timings, Flash and OTA, Entity
-    list, Skipped, Rig conditions, Reset budget, Final image.
+    Supervisor watchdog, DUT A table (JUnit order) and failures, Canary, Images, Timings, Flash and OTA, OTA
+    rollback states, Entity list, Skipped, Rig conditions, Reset budget, Final image.
     """
     reports = Path(reports_dir)
     lines = _head(reports, manifest)
@@ -430,6 +478,7 @@ def render(reports_dir, manifest):
     lines += ["", _canary_line(reports)]
     lines += ["", "### Images", ""] + _images(manifest)
     lines += ["", "### Timings", ""] + _timings(reports) + [""] + _flash_and_ota(reports)
+    lines += ["", "### OTA rollback states", ""] + _rollback_states(reports)
     lines += ["", "### Entity list", ""] + _entity_list(reports)
     lines += ["", "### Skipped", ""] + _skipped(reports)
     lines += ["", "### Rig conditions", ""] + _rig_conditions(reports)

@@ -330,10 +330,10 @@ class DutLink:
         with self._cond:
             return self._sessions
 
-    def log_since(self, since):
-        """The API log messages received at or after the monotonic time `since`, in arrival order."""
+    def log_since(self, since, until=None):
+        """The API log messages received at or after the monotonic time `since` (and before `until`), in order."""
         with self._cond:
-            return [line for at, line in self._lines if at >= since]
+            return [line for at, line in self._lines if at >= since and (until is None or at < until)]
 
     def wait_log(self, regex, since, deadline_s):
         """time.monotonic() at which the first message matching `regex` at or after `since` arrived.

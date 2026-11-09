@@ -114,6 +114,10 @@ class Dut:
         self.last_reset_at = None  # time.monotonic() right after that press: API sessions from before it are stale
         self.last_bootloader_mark = None  # the mark of the latest Bootloader press (enter_bootloader())
         self.last_ota = None  # label, transfer_s and boot_s of the latest successful ota()
+        self.api_ready_at = None  # time.monotonic() of the latest api_ready mark (a boot answered on the API)
+        self._ota_window = {}  # end_at/until_at (monotonic) per OTA log index; kept out of ota-dut-a.json
+        self._upload_end_mark = None  # the end mark of the upload in progress, once it is set
+        self._upload_old_uptime = None  # seconds the old image had answered on the API when the upload started
 
     def _mark(self, name):
         if self.tap is not None:
@@ -122,6 +126,34 @@ class Dut:
     def _next_mark(self, prefix):
         self._marks += 1
         return "%s_%d" % (prefix, self._marks)
+
+    def _api_ready(self):
+        """Mark api_ready and keep its time: the old image's uptime at the next OTA start counts from here."""
+        self.api_ready_at = time.monotonic()
+        self._mark("api_ready")
+
+    def _close_ota_window(self, mark):
+        """End the latest OTA's log window at `mark` (the next upload's start or a Bootloader press).
+
+        A later boot's lines are then never read as that OTA's (rollback.rows). Only the latest entry can
+        be open, and only once: an entry without an end mark (the upload failed early) has no window.
+        """
+        if not self._ota_log:
+            return
+        entry = self._ota_log[-1]
+        if entry.get("end_mark") is None or entry.get("until_mark") is not None:
+            return
+        entry["until_mark"] = mark
+        self._ota_window.setdefault(len(self._ota_log) - 1, {})["until_at"] = time.monotonic()
+        self._write_ota_report()
+
+    def ota_windows(self):
+        """Copies of the OTA log entries with their window times end_at and until_at (monotonic, None if open)."""
+        out = []
+        for index, entry in enumerate(self._ota_log):
+            times = self._ota_window.get(index, {})
+            out.append(dict(entry, end_at=times.get("end_at"), until_at=times.get("until_at")))
+        return out
 
     def enter_bootloader(self):
         """Press Bootloader and, with a tap, wait for the ROM download-mode banner (RigError without it).
@@ -138,6 +170,7 @@ class Dut:
         mark = self._next_mark("bootloader")
         self.last_bootloader_mark = mark
         self._mark(mark)
+        self._close_ota_window(mark)  # the running OTA image's boot ends here (serial flash or read)
         self._supervisor.press(contract.BUTTON[self.id]["bootloader"])
         code = bootlog.DOWNLOAD_BOOT[self.cfg.chip]
         try:
@@ -319,7 +352,7 @@ class Dut:
         while time.monotonic() < end:
             try:
                 info = self.probe(noise_psk)
-                self._mark("api_ready")
+                self._api_ready()
                 self._record_boot()
                 return info
             except RigError:
@@ -377,7 +410,7 @@ class Dut:
             if booted:
                 try:
                     info = self.probe(noise_psk)
-                    self._mark("api_ready")
+                    self._api_ready()
                     self._record_boot()
                     return info
                 except RigError:
@@ -455,10 +488,17 @@ class Dut:
             "ok": ok,
             "reason": reason,
             "reboot_proof": reboot_proof,
+            # The log window of this OTA's boot (rollback.rows): from its end mark to the next upload's start
+            # or the next Bootloader press (until_mark, None while open or for the last OTA of the run).
+            "end_mark": self._upload_end_mark,
+            "until_mark": None,
+            "old_uptime_s": None if self._upload_old_uptime is None else round(self._upload_old_uptime, 1),
         }
         if dark:
             entry["dark"] = True  # delivered without an API to confirm it (ota_dark)
         self._ota_log.append(entry)
+        if self._upload_end_mark is not None:
+            self._ota_window[len(self._ota_log) - 1] = {"end_at": self.ota_end_at, "until_at": None}
         self._write_ota_report()
 
     def _upload(self, image, noise_psk, label, dark=False, allow_plaintext=False):
@@ -478,7 +518,11 @@ class Dut:
         if digest != image.ota_sha256:
             raise RigError("OTA file of the '%s' image does not match its manifest sha256" % role)
 
-        self._mark("ota_start_%s" % label)
+        start_mark = "ota_start_%s" % label
+        self._mark(start_mark)
+        self._close_ota_window(start_mark)  # the previous OTA image's window ends where this upload starts
+        self._upload_end_mark = None
+        self._upload_old_uptime = None if self.api_ready_at is None else time.monotonic() - self.api_ready_at
         if self._ota is None:
             self._ota = Ota(self.cfg.host)
         end_mark = "ota_end_%s" % label
@@ -491,6 +535,7 @@ class Dut:
             reported_done.append(True)
             self.ota_end_at = time.monotonic()
             self._mark(end_mark)
+            self._upload_end_mark = end_mark
 
         self.ota_count += 1
         # The flag is passed only when set, so every other upload is the plain refusing call (T-03-25).
@@ -504,6 +549,7 @@ class Dut:
         if not reported_done:
             self.ota_end_at = time.monotonic()
             self._mark(end_mark)
+            self._upload_end_mark = end_mark
         self.budget.record("ota_reboot", orderly=True)  # the DUT reboots at once after the upload, orderly
         return result, end_mark if reported_done else "ota_start_%s" % label
 
@@ -555,7 +601,7 @@ class Dut:
             time.sleep(1)
         boot_s = time.monotonic() - started
         self.unconfirmed_until = time.monotonic() + OTA_CONFIRM_WINDOW_S
-        self._mark("api_ready")
+        self._api_ready()
 
         if self.tap is None or self.tap.closed:
             self._record_ota(image, label, result.duration_s, boot_s, False, "serial tap lost", reboot_proof=proof)

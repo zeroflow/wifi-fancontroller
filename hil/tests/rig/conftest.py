@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 from aioesphomeapi import APIConnectionError
 
-from hil import RigError, baseline, caps, config, contract, manifest
+from hil import RigError, baseline, caps, config, contract, manifest, rollback
 from hil.dut import API_WAIT_S, BASELINE_ROLE, STATE_EXEMPT, Dut, state_roles
 from hil.dutlink import DutLink
 from hil.flasher import Flasher
@@ -211,7 +211,37 @@ def dut_link(request, rig_config, dut_a, tap_a):
     link.start()
     add_log_sink(link)
     request.addfinalizer(lambda: remove_log_sink(link))  # runs before link.close
+    request.addfinalizer(lambda: write_rollback_states(dut_a, tap_a, link))  # first: the tap and the link still hold the logs
     return link
+
+
+def _uart_window(tap, entry):
+    """UART0 text of one OTA's window (end mark to until mark, or to now), None without its marks."""
+    end, until = entry.get("end_mark"), entry.get("until_mark")
+    if end is None or not tap.has_mark(end) or (until is not None and not tap.has_mark(until)):
+        return None
+    return tap.text(end, until)
+
+
+def _api_window(link, entry):
+    """API-log text of one OTA's window (end_at to until_at), None without an end time."""
+    if entry.get("end_at") is None:
+        return None
+    return "\n".join(link.log_since(entry["end_at"], entry.get("until_at")))
+
+
+def write_rollback_states(dut_a, tap_a, link):
+    """D-39: reports/rollback-states.json, the rollback state of every OTA boot of the run, from its own window.
+
+    Runs before the link closes and before the tap stops (registered last in dut_link, which depends on
+    dut_a and tap_a). Adds no wait to any OTA. A fault here is printed, never raised: it must not turn a
+    finished run's teardown into an error, and the summary then reads "not recorded".
+    """
+    try:
+        found = rollback.rows(dut_a.ota_windows(), lambda e: _uart_window(tap_a, e), lambda e: _api_window(link, e))
+        rollback.write_states(found)
+    except Exception as exc:  # noqa: BLE001 - a report, never a reason to fail the session teardown
+        print("WARNING: rollback states not written (%s: %s)" % (type(exc).__name__, exc))
 
 
 _TEST_STARTS = [0]  # counter of the UART0 marks taken at each test's start

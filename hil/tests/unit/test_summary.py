@@ -160,6 +160,7 @@ def test_every_section_shows_in_the_documented_order(full):
         "**Canary:** detected",
         "### Images",
         "### Timings",
+        "### OTA rollback states",
         "### Entity list",
         "### Skipped",
         "### Rig conditions",
@@ -707,3 +708,67 @@ def test_the_entity_list_section_follows_the_timings_and_precedes_skipped(full):
     put(full, "golden-dut-a.json", entity_report())
     text = summary.render(full, FULL_MANIFEST)
     assert text.index("### Timings") < text.index("### Entity list") < text.index("### Skipped")
+
+
+# OTA rollback states (D-39, D-41) ---------------------------------------------------------
+
+
+def rollback_section(text):
+    start = text.index("### OTA rollback states\n")
+    end = text.index("\n### ", start + 1)
+    return text[start:end]
+
+
+ROLLBACK_ROWS = [
+    {"label": "baseline_commit", "role": "commit", "ok": True, "state": None, "source": "unobservable (release bootloader)",
+     "image_state": None, "old_uptime_s": 83.2, "rolled_back": False},
+    {"label": "qc-auto", "role": "qc-auto", "ok": True, "state": "support unknown", "source": "uart0",
+     "image_state": None, "old_uptime_s": 121.0, "rolled_back": False},
+    {"label": "broken", "role": "broken", "ok": True, "state": None, "source": "uart0",
+     "image_state": "valid", "old_uptime_s": 40.5, "rolled_back": False},
+]
+
+
+def test_the_rollback_section_has_one_row_per_ota_with_state_source_image_state_and_old_uptime(full):
+    put(full, "rollback-states.json", ROLLBACK_ROWS)
+    lines = lines_of(rollback_section(summary.render(full, FULL_MANIFEST)))
+    assert "| OTA | Role | Rollback state | Source | Image state | Old image up |" in lines
+    assert "| baseline_commit | commit | no line | unobservable (release bootloader) | - | 83.2 s |" in lines
+    assert "| qc-auto | qc-auto | support unknown | uart0 | - | 121.0 s |" in lines
+    assert "| broken | broken | no line | uart0 | valid | 40.5 s |" in lines
+
+
+@pytest.mark.parametrize("content", [None, "not json", {"rows": []}])
+def test_without_a_usable_rollback_report_the_section_reads_not_recorded(full, content):
+    if content is not None:
+        put(full, "rollback-states.json", content)
+    assert "### OTA rollback states\n\nnot recorded" in summary.render(full, FULL_MANIFEST)
+
+
+def test_a_missing_uptime_reads_as_a_question_mark(full):
+    put(full, "rollback-states.json", [dict(ROLLBACK_ROWS[1], old_uptime_s=None)])
+    assert "| qc-auto | qc-auto | support unknown | uart0 | - | ? |" in lines_of(rollback_section(summary.render(full, FULL_MANIFEST)))
+
+
+def test_the_rollback_tests_add_one_line_each(full):
+    put(full, "rollback-states.json", ROLLBACK_ROWS)
+    put(full, "rollback-dut-a.json", {
+        "fresh": {"state": "support unknown", "outcome": "skipped", "build_after": "3.2+qc.0123456789ab"},
+        "marked": {"mark_s": 60.8, "ota_done": False, "build_after": "3.2+qc.0123456789ab"},
+    })
+    section = rollback_section(summary.render(full, FULL_MANIFEST))
+    assert "Rollback before the mark: skipped (state support unknown, build after 3.2+qc.0123456789ab)" in section
+    assert "Reset after the mark: build after 3.2+qc.0123456789ab, marked valid after 60.8 s" in section
+
+
+def test_the_rollback_section_follows_the_timings_and_precedes_the_entity_list(full):
+    text = summary.render(full, FULL_MANIFEST)
+    assert text.index("### Timings") < text.index("### OTA rollback states") < text.index("### Entity list")
+
+
+def test_the_rollback_reports_are_stale_at_the_start_of_a_run():
+    from hil import __main__ as entry
+    from hil import rollback
+
+    assert {rollback.STATES_REPORT, rollback.TEST_REPORT} <= set(entry.STALE_REPORTS)
+    assert (summary.ROLLBACK_STATES_REPORT, summary.ROLLBACK_TEST_REPORT) == (rollback.STATES_REPORT, rollback.TEST_REPORT)
