@@ -32,9 +32,9 @@ name: HIL
 # independent digests (the release's .sha256 sidecar, the release manifest and GitHub's
 # asset digest) and uploads only the image and baseline.json as hil-baseline. So the LAN
 # runner needs neither a GitHub token nor egress to release storage: its only token is
-# this job's github.token (contents: read), in the one step that calls gh. Once the hil
-# job needs prepare (03-14 wires the needs and the download), a failed prepare job skips
-# it: the run is red and no hardware was touched (fail-closed, RESEARCH Pitfall 18).
+# this job's github.token (contents: read), in the one step that calls gh. The hil job
+# needs prepare and downloads hil-baseline, so a failed prepare job skips it: the run is
+# red and no hardware was touched (fail-closed, RESEARCH Pitfall 18).
 on:
   push:
     branches:
@@ -151,15 +151,15 @@ jobs:
   hil:
     name: Hardware check on DUT A
     runs-on: [self-hosted, hil]
-    needs: build
+    needs: [build, prepare]
     environment: hil
     # Only main and claude/main may reach the LAN runner. The environment's branch rule lives in
     # the repository settings, outside this file; this condition keeps a workflow_dispatch from any
     # other branch off the rig even if that rule were loosened (WR-07). The refuse job below turns
     # such a run red.
     if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/main' }}
-    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + preflight 14 +
-    # run 38 + teardown 15 + upload 3 = 85, so the job deadline can never fall inside Teardown
+    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + baseline 3 + sync 4 +
+    # preflight 14 + run 38 + teardown 15 + upload 3 = 88, so the job deadline can never fall inside Teardown
     # and cut a flash mid-write. Preflight (D-43) checks the rig before any test and heals DUT A
     # at most once: about 7 s on a healthy rig, about 200 s with a heal, and about 13.4 minutes
     # with every deadline hit (two bridge evictions, a heal with both flash attempts, the
@@ -170,10 +170,10 @@ jobs:
     # commit-image fallback, a 40 s bridge wait) is about 14 minutes; test_timeouts.py
     # computes all three sums from the code and fails if they drift. A user cancel is
     # different: GitHub gives always() steps a fixed 5 minutes and the job syntax has no
-    # key to change it; a nominal teardown needs about 2 minutes. The 86 minute job deadline
-    # sits under the 90 minute policy cap the maintainer chose in 03-04; a later step (baseline
-    # download) raises the step sum and the job deadline with it, never past the cap.
-    timeout-minutes: 86
+    # key to change it; a nominal teardown needs about 2 minutes. The 89 minute job deadline
+    # (step sum + 1, the baseline download added 3 in 03-14) sits under the 90 minute policy
+    # cap the maintainer chose in 03-04.
+    timeout-minutes: 89
     steps:
       - name: Checkout harness
         uses: actions/checkout@v7
@@ -195,6 +195,15 @@ jobs:
         with:
           name: hil-firmware
           path: hil-fw
+
+      - name: Download release baseline
+        # The latest release's Rev 3.2 factory image and baseline.json, verified by the hosted
+        # prepare job (REG-01). Only the run step reads it, through HIL_BASELINE_DIR.
+        uses: actions/download-artifact@v8
+        timeout-minutes: 3
+        with:
+          name: hil-baseline
+          path: hil-baseline
 
       - name: Sync environment
         timeout-minutes: 4
@@ -220,6 +229,7 @@ jobs:
           HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
           HIL_FW_DIR: ${{ github.workspace }}/hil-fw
           HIL_EXPECTED_COMMIT: ${{ github.sha }}
+          HIL_BASELINE_DIR: ${{ github.workspace }}/hil-baseline
         run: exec .venv/bin/python -m hil run
 
       - name: Teardown

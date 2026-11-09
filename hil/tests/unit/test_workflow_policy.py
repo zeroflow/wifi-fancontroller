@@ -51,9 +51,15 @@ PREFLIGHT_ENV = {
     "HIL_FW_DIR": "${{ github.workspace }}/hil-fw",
     "HIL_EXPECTED_COMMIT": "${{ github.sha }}",
 }
+# REG-01 (03-14): the hil job needs prepare and downloads hil-baseline right after the firmware; only the run
+# step reads it (HIL_BASELINE_DIR). A failed prepare job therefore skips the hil job (fail-closed).
+HIL_NEEDS = ["build", "prepare"]
+BASELINE_STEP = "Download release baseline"
+BASELINE_DOWNLOAD = {"name": BASELINE_ARTIFACT, "path": "hil-baseline"}
+RUN_ENV = dict(PREFLIGHT_ENV, HIL_BASELINE_DIR="${{ github.workspace }}/hil-baseline")
 HIL_STEP_NAMES = [
-    "Checkout harness", "Runner credential canary", "Download firmware and manifest", "Sync environment",
-    "Preflight", "Run hardware check", "Teardown", "Upload masked logs",
+    "Checkout harness", "Runner credential canary", "Download firmware and manifest", BASELINE_STEP,
+    "Sync environment", "Preflight", "Run hardware check", "Teardown", "Upload masked logs",
 ]
 LOG_PATH = "hil/reports/redacted/"
 # validate.yml's pin reader, copied verbatim on purpose, interpolates an expression in a
@@ -214,6 +220,35 @@ def preflight_violations(data):
     return found
 
 
+def baseline_violations(data):
+    """REG-01 (03-14): the hil job needs exactly build and prepare, downloads hil-baseline in one step named
+    BASELINE_STEP right after the firmware download with a first-party download action, and the run step
+    (only it) gets HIL_BASELINE_DIR."""
+    hil = data["jobs"].get("hil", {})
+    found = []
+    needs = hil.get("needs", [])
+    if (needs if isinstance(needs, list) else [needs]) != HIL_NEEDS:
+        found.append("hil job needs must be exactly %s (no baseline without prepare)" % HIL_NEEDS)
+    steps = steps_of(data, "hil")
+    names = [s.get("name") for s in steps]
+    downloads = [s for s in steps if s.get("with", {}).get("name") == BASELINE_ARTIFACT]
+    if len(downloads) != 1 or downloads[0].get("name") != BASELINE_STEP:
+        found.append("hil job must download %s exactly once, in the step %r" % (BASELINE_ARTIFACT, BASELINE_STEP))
+    else:
+        step = downloads[0]
+        if not str(step.get("uses", "")).startswith("actions/download-artifact@"):
+            found.append("%r must use actions/download-artifact" % BASELINE_STEP)
+        if step.get("with") != BASELINE_DOWNLOAD:
+            found.append("%r must download exactly %s" % (BASELINE_STEP, BASELINE_DOWNLOAD))
+        at = names.index(BASELINE_STEP)
+        if at == 0 or names[at - 1] != "Download firmware and manifest":
+            found.append("%r must come right after 'Download firmware and manifest'" % BASELINE_STEP)
+    run = step_named(data, "hil", "Run hardware check")
+    if run is not None and run.get("env") != RUN_ENV:
+        found.append("Run hardware check env must be exactly %s" % sorted(RUN_ENV))
+    return found
+
+
 def violations(data):
     """Every policy violation of a parsed workflow, as short messages."""
     found = []
@@ -279,6 +314,7 @@ def violations(data):
         found.append("the step right after checkout must be 'Runner credential canary' running %s" % CANARY_RUN)
 
     found.extend(preflight_violations(data))
+    found.extend(baseline_violations(data))
 
     teardown = step_named(data, "hil", "Teardown")
     if teardown is None:
@@ -325,11 +361,11 @@ def test_the_real_workflow_has_the_expected_shape():
     data = load_workflow()
     assert set(data["jobs"]) == {"release-version", "build", "prepare", "hil", "refuse"}
     assert data["on"]["push"]["branches"] == list(EXPECTED_BRANCHES)
-    assert data["jobs"]["hil"]["needs"] == "build"
+    assert data["jobs"]["hil"]["needs"] == HIL_NEEDS
     assert data["jobs"]["build"]["timeout-minutes"] == 40
     build_run = next(s for s in steps_of(data, "build") if s.get("name") == "Build image and manifest")["run"]
     assert "build_image.py --all --out hil-out" in build_run
-    assert data["jobs"]["hil"]["timeout-minutes"] == 86 <= HIL_JOB_CAP_MINUTES
+    assert data["jobs"]["hil"]["timeout-minutes"] == 89 <= HIL_JOB_CAP_MINUTES
     assert data["jobs"]["hil"]["if"] == HIL_GUARD
     assert data["jobs"]["refuse"]["if"] == REFUSE_GUARD
     assert data["jobs"]["refuse"]["runs-on"] == "ubuntu-latest"
@@ -338,7 +374,10 @@ def test_the_real_workflow_has_the_expected_shape():
     assert names == HIL_STEP_NAMES
     preflight = step_named(data, "hil", "Preflight")
     assert preflight["env"] == PREFLIGHT_ENV and preflight["timeout-minutes"] == 14
-    assert step_named(data, "hil", "Run hardware check")["env"] == PREFLIGHT_ENV
+    assert step_named(data, "hil", "Run hardware check")["env"] == RUN_ENV
+    baseline = step_named(data, "hil", BASELINE_STEP)
+    assert baseline["uses"] == "actions/download-artifact@v8" and baseline["timeout-minutes"] == 3
+    assert baseline["with"] == BASELINE_DOWNLOAD
     prepare = data["jobs"]["prepare"]
     assert prepare["runs-on"] == "ubuntu-latest" and prepare["timeout-minutes"] == 10
     assert [s.get("uses", "run") for s in prepare["steps"]] == [
@@ -347,8 +386,7 @@ def test_the_real_workflow_has_the_expected_shape():
     assert prepare["steps"][1]["run"].strip() == PREPARE_RUN
     assert prepare["steps"][1]["env"] == {"GH_TOKEN": PREPARE_TOKEN}
     assert prepare["steps"][2]["with"]["retention-days"] == 7
-    # Until 03-14 wires it, the hil job neither needs prepare nor downloads hil-baseline.
-    assert not any(s.get("with", {}).get("name") == BASELINE_ARTIFACT for s in steps_of(data, "hil"))
+    assert [s for s in steps_of(data, "hil") if s.get("with", {}).get("name") == BASELINE_ARTIFACT] == [baseline]
 
 
 def test_a_wrapped_always_condition_is_accepted():
@@ -813,9 +851,35 @@ def remove_the_prepare_job(d):
 
 
 @mutate
-def hil_downloads_the_baseline_without_needing_prepare(d):
-    hil_steps(d).insert(3, {"name": "Download release baseline", "uses": "actions/download-artifact@v8",
-                            "timeout-minutes": 1, "with": {"name": BASELINE_ARTIFACT, "path": "hil-baseline"}})
+def hil_does_not_need_prepare(d):
+    d["jobs"]["hil"]["needs"] = "build"
+
+
+@mutate
+def hil_needs_only_prepare(d):
+    d["jobs"]["hil"]["needs"] = ["prepare"]
+
+
+@mutate
+def remove_the_baseline_download(d):
+    d["jobs"]["hil"]["steps"] = [s for s in hil_steps(d) if s.get("name") != BASELINE_STEP]
+
+
+@mutate
+def baseline_download_into_another_path(d):
+    next(s for s in hil_steps(d) if s.get("name") == BASELINE_STEP)["with"]["path"] = "hil-fw"
+
+
+@mutate
+def baseline_downloaded_twice(d):
+    step = copy.deepcopy(next(s for s in hil_steps(d) if s.get("name") == BASELINE_STEP))
+    step["name"] = "Download release baseline again"
+    hil_steps(d).insert(5, step)
+
+
+@mutate
+def run_step_without_the_baseline_dir(d):
+    del next(s for s in hil_steps(d) if s.get("name") == "Run hardware check")["env"]["HIL_BASELINE_DIR"]
 
 
 MUTATIONS = [
@@ -845,7 +909,8 @@ MUTATIONS = [
     prepare_gains_write_permissions, prepare_token_in_the_checkout, prepare_token_at_job_level,
     prepare_token_is_a_pat, prepare_without_timeout, prepare_timeout_above_ten,
     prepare_upload_tolerates_missing_files, remove_the_prepare_job,
-    hil_downloads_the_baseline_without_needing_prepare,
+    hil_does_not_need_prepare, hil_needs_only_prepare, remove_the_baseline_download,
+    baseline_download_into_another_path, baseline_downloaded_twice, run_step_without_the_baseline_dir,
 ]
 
 
@@ -855,11 +920,12 @@ def test_every_mutation_of_the_workflow_is_caught(mutation):
     assert violations(mutated), "policy test did not catch %s" % mutation.__name__
 
 
-def test_the_hil_job_may_download_the_baseline_once_it_needs_prepare():
-    """The 03-14 shape: needs [build, prepare] plus the download; the fail-closed rule then holds."""
-    data = hil_downloads_the_baseline_without_needing_prepare(copy.deepcopy(load_workflow()))
-    data["jobs"]["hil"]["needs"] = ["build", "prepare"]
-    assert prepare_violations(data) == []
+def test_the_hil_job_downloads_the_baseline_only_because_it_needs_prepare():
+    """The 03-14 shape passes the prepare rules; dropping prepare from needs trips the fail-closed rule
+    (Pitfall 18) in the prepare rules themselves, not only in the shape rule."""
+    assert prepare_violations(load_workflow()) == []
+    assert baseline_violations(load_workflow()) == []
+    assert any("does not need prepare" in v for v in prepare_violations(hil_does_not_need_prepare(copy.deepcopy(load_workflow()))))
 
 
 def test_each_prepare_mutation_is_caught_by_the_prepare_rules():

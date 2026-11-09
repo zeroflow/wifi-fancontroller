@@ -166,21 +166,22 @@ def test_run_step_ceiling_exceeds_the_session_deadline_plus_one_overshooting_tes
 
 def test_phase_3_budgets_are_the_documented_numbers():
     """03-04, maintainer decision cap-90: session 1500 s, run step 38 min, policy cap 90. 03-08 adds the
-    14 minute Preflight step; a later plan adds a baseline download (03-14). Each changes the step list
-    and the job deadline (always step sum + 1) in the same commit, never the cap."""
+    14 minute Preflight step; 03-14 adds the 3 minute baseline download right after the firmware download.
+    Each changes the step list and the job deadline (always step sum + 1) in the same commit, never the cap."""
     options = ini()
     assert (options["timeout"], options["session_timeout"]) == (620, 1500)
     assert step_minutes("Run hardware check") == 38
     assert step_minutes("Preflight") == 14
     names = [s["name"] for s in hil_job()["steps"]]
     assert names.index("Sync environment") + 1 == names.index("Preflight") == names.index("Run hardware check") - 1
+    assert names.index("Download firmware and manifest") + 1 == names.index("Download release baseline")
     steps = [s["timeout-minutes"] for s in hil_job()["steps"]]
-    assert steps == [3, 5, 3, 4, 14, 38, 15, 3] and sum(steps) == 85
-    assert hil_job()["timeout-minutes"] == sum(steps) + 1 == 86 <= 90
+    assert steps == [3, 5, 3, 3, 4, 14, 38, 15, 3] and sum(steps) == 88
+    assert hil_job()["timeout-minutes"] == sum(steps) + 1 == 89 <= 90
 
 
 def test_the_job_deadline_is_one_minute_above_the_step_budgets():
-    """The job deadline can never fall inside Teardown: the step sum 85 < 86, and 86 is under the 90 minute policy cap."""
+    """The job deadline can never fall inside Teardown: the step sum 88 < 89, and 89 is under the 90 minute policy cap."""
     assert sum(s["timeout-minutes"] for s in hil_job()["steps"]) == hil_job()["timeout-minutes"] - 1
 
 
