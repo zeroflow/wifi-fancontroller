@@ -193,7 +193,7 @@ def test_a_failed_test_shows_its_first_message_line_under_failures(full):
 
 def test_timing_rows_follow_the_fixed_order_whatever_the_file_order(full):
     text = summary.render(full, FULL_MANIFEST)
-    order = [text.index("| %s |" % name) for name in ("flash", "boot", "ota_qc-auto", "ota_canary", "ota_commit")]
+    order = [text.index("| %s |" % name) for name in ("ota_qc-auto", "ota_canary", "ota_commit", "flash", "boot")]
     assert order == sorted(order)
     assert "| flash | 76.6 s |" in text and "| ota_commit | 28.9 s |" in text
 

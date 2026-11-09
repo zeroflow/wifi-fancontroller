@@ -171,3 +171,32 @@ def write_report(reports_dir, rev, golden_path, actual, removed, added, error=No
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / REPORT).write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return data
+
+
+def from_run(report_path, out_path, rev=None):
+    """Write the device list of a run's reports/golden-dut-a.json as a golden file; returns the entries.
+
+    The same bytes as a direct capture of that list. rev None takes the report's revision. A missing, foreign or
+    empty report, or one of another revision, is a RigError and nothing is written: an empty list never becomes
+    the truth.
+    """
+    try:
+        data = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise RigError("golden: run report %s is missing or unreadable (%s)" % (report_path, type(exc).__name__)) from None
+    if not isinstance(data, dict) or data.get("schema") != SCHEMA:
+        raise RigError("golden: run report %s is not schema %d" % (report_path, SCHEMA))
+    actual = data.get("actual")
+    if not isinstance(actual, list) or not actual:
+        raise RigError("golden: run report %s has no device entity list" % report_path)
+    if any(not isinstance(e, dict) or not isinstance(e.get("type"), str) or not isinstance(e.get("name"), str) for e in actual):
+        raise RigError("golden: run report %s has an entry without a type and a name" % report_path)
+    report_rev = data.get("rev")
+    if rev is not None and report_rev is not None and str(report_rev) != str(rev):
+        raise RigError("golden: run report %s is of Rev %s, not Rev %s" % (report_path, report_rev, rev))
+    rev = rev if rev is not None else report_rev
+    if rev is None:
+        raise RigError("golden: run report %s names no revision; pass --rev" % report_path)
+    entries = [(e["type"], e["name"]) for e in actual]
+    dump(entries, out_path, rev)
+    return entries

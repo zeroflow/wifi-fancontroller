@@ -283,6 +283,8 @@ STALE_REPORTS = (
     "teardown-flash-dut-a.json",
     baseline.REPORT,
     baseline.FLASH_REPORT,
+    "upgrade-dut-a.json",
+    golden.REPORT,
 )
 # What `hil preflight` writes before the run; `hil run` keeps these (RESEARCH Pattern 7).
 PREFLIGHT_REPORTS = (
@@ -645,7 +647,11 @@ def capture_source_problem(project_version, rev, commit):
 
 
 def cmd_golden(args):
-    """golden capture | check (D-38). Only `capture` writes a file, and only where --out says."""
+    """golden capture | check | from-run (D-38). Only `capture` and `from-run` write a file, and only where --out says."""
+    if args.golden_command == "from-run":  # a file of reports, no rig: works on a downloaded hil-logs artifact
+        entries = golden.from_run(args.report, args.out, args.rev)
+        print("golden: wrote %s (%d entities) from %s" % (args.out, len(entries), args.report))
+        return 0
     rig = load_rig()
     cfg = rig.duts["A"]
     if args.golden_command == "capture":
@@ -716,6 +722,10 @@ def build_parser():
     gcheck = gold_sub.add_parser("check", help="compare the entity list of DUT A with the golden file; exit 1 on a difference")
     gcheck.add_argument("--dut", choices=["A"], required=True)
     gcheck.add_argument("--file", help="golden file (default: hil/golden/entities-<rev>.json)")
+    gfrom = gold_sub.add_parser("from-run", help="write the entity list of a run's reports/golden-dut-a.json to a golden file")
+    gfrom.add_argument("--report", required=True)
+    gfrom.add_argument("--out", required=True)
+    gfrom.add_argument("--rev", help="revision (default: the report's)")
     return parser
 
 

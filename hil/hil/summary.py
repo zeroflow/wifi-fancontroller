@@ -14,12 +14,35 @@ from pathlib import Path
 
 from . import config, redact
 
-BASELINE_LINE = "Baseline: commit image over serial (no release baseline in this run)"
 VERDICTS = ("PASS", "FAIL", "RIG ERROR", "INTERRUPTED")
 NOT_RECORDED = "not recorded"
 TIMINGS = "timings.json"
-# Fixed row order of the Timings table (CI-05); an OTA's boot time follows its transfer.
-TIMING_ORDER = ("flash", "boot", "ota_qc-auto", "ota_qc-auto_boot", "ota_canary", "ota_canary_boot", "ota_commit", "ota_commit_boot")
+# Fixed row order of the Timings table (CI-05), in run order (D-36): the release baseline, the upgrade OTA and its
+# mark, the serial restore, the OTA chain, the broken OTA, the recovery flash. An OTA's boot time follows its transfer.
+TIMING_ORDER = (
+    "baseline_flash",
+    "ota_baseline_commit",
+    "ota_baseline_commit_boot",
+    "soak_mark",
+    "restore_flash",
+    "restore_boot",
+    "ota_qc-auto",
+    "ota_qc-auto_boot",
+    "ota_canary",
+    "ota_canary_boot",
+    "ota_commit",
+    "ota_commit_boot",
+    "ota_broken",
+    "flash",
+    "boot",
+)
+BASELINE_REPORT = "baseline-dut-a.json"
+UPGRADE_REPORT = "upgrade-dut-a.json"
+GOLDEN_REPORT = "golden-dut-a.json"
+BASELINE_NOT_RUN = "Baseline: not run in this run"
+UPGRADE_NOT_RUN = "Upgrade: not run in this run"
+ENTITIES_NOT_CHECKED = "not checked in this run"
+GATE_SOURCES = {"api": "API", "uart0": "UART0"}
 RIG_ERROR_LABELS = {"SafeModeError": "SAFE MODE", "ResetBudgetExhausted": "RESET BUDGET"}
 MESSAGE_CHARS = 300
 
@@ -87,14 +110,83 @@ def _head(reports, manifest):
     commit = (verdict or {}).get("commit") if isinstance(verdict, dict) else None
     commit = commit or (manifest or {}).get("commit") or ""
     version = (manifest or {}).get("esphome_version") or NOT_RECORDED
-    lines.append(
-        "Commit `%s` | ESPHome %s | %s" % (str(commit)[:12] if commit else "unknown", version, BASELINE_LINE)
-    )
+    lines.append("Commit `%s` | ESPHome %s" % (str(commit)[:12] if commit else "unknown", version))
+    lines += [""] + _baseline_lines(reports)
+    lines += ["", _upgrade_line(reports)]
     reason = verdict.get("reason") if isinstance(verdict, dict) else None
     if reason:
         lines.append("")
         lines.append("Reason: %s" % reason)
     return lines
+
+
+def _seconds_text(value):
+    return "%.1f" % value if isinstance(value, (int, float)) and not isinstance(value, bool) else "?"
+
+
+def _plural(count, word):
+    return "%d %s%s" % (count, word, "" if count == 1 else "s")
+
+
+def _baseline_lines(reports):
+    """SC1, REG-01, D-37: the release the run started from (reports/baseline-dut-a.json, 03-10), plus the drift warning.
+
+    `Baseline: release <tag> (<asset>, sha256 <12 hex>, <n> digests agree) + NVS replay captured with <nvs tag>`,
+    followed by `WARNING: <drift warning>` when the dump's tag is not the baseline's; without a report (or one
+    without a tag) `Baseline: not run in this run`.
+    """
+    data = _read_json(reports / BASELINE_REPORT)
+    if not isinstance(data, dict) or not data.get("tag"):
+        return [BASELINE_NOT_RUN]
+    digests = data.get("digests_compared")
+    count = len(digests) if isinstance(digests, list) else 0
+    nvs = (
+        "NVS replay captured with %s" % (data.get("nvs_release_tag") or "unknown tag")
+        if data.get("nvs_replayed") is True
+        else "no NVS replay"
+    )
+    line = "Baseline: release %s (%s, sha256 %s, %s agree) + %s" % (
+        data["tag"],
+        data.get("asset") or "unknown asset",
+        str(data.get("sha256") or "?")[:12],
+        _plural(count, "digest"),
+        nvs,
+    )
+    lines = [_cell(line)]
+    if data.get("drift_warning"):
+        lines += ["", "WARNING: %s" % _cell(data["drift_warning"])]
+    return lines
+
+
+def _upgrade_line(reports):
+    """SC1, REG-02: the release-to-commit OTA (reports/upgrade-dut-a.json, 03-11) with its timing, or not run.
+
+    The soak part names the UART0 banners (0 for this leg), whether the API session dropped and the D-14 gate on
+    the log it read (API or UART0).
+    """
+    data = _read_json(reports / UPGRADE_REPORT)
+    if not isinstance(data, dict) or not data.get("tag"):
+        return UPGRADE_NOT_RUN
+    line = "Upgrade: %s -> %s by OTA, transfer %s s, boot %s s, marked valid after %s s, soak %s s" % (
+        data["tag"],
+        data.get("build_id") or "unknown build",
+        _seconds_text(data.get("transfer_s")),
+        _seconds_text(data.get("boot_s")),
+        _seconds_text(data.get("mark_s")),
+        _seconds_text(data.get("soak_s")),
+    )
+    banners = data.get("banners")
+    if isinstance(banners, int) and not isinstance(banners, bool):
+        errors = data.get("errors") if isinstance(data.get("errors"), list) else []
+        source = GATE_SOURCES.get(data.get("gate_source"), "")
+        log = ("%s boot log" % source) if source else "boot log"
+        line += ": %s, %s, %s %s" % (
+            _plural(banners, "UART0 banner"),
+            "API session dropped" if data.get("api_session_dropped") is True else "no API drop",
+            log,
+            _plural(len(errors), "error") if errors else "clean",
+        )
+    return _cell(line)
 
 
 PREFLIGHT_NOT_RUN = "Preflight: not run for this commit"
@@ -248,6 +340,34 @@ def _flash_and_ota(reports):
     return lines
 
 
+def _entity_list(reports):
+    """### Entity list (REG-03, D-38) from reports/golden-dut-a.json: the match, or every removed and added entry."""
+    data = _read_json(reports / GOLDEN_REPORT)
+    if not isinstance(data, dict) or not isinstance(data.get("actual"), list):
+        return [ENTITIES_NOT_CHECKED]
+    if data.get("error"):
+        return ["golden list not usable: %s" % _cell(_first_line(data["error"]))]
+    actual = data["actual"]
+    if not actual:
+        return ["DUT A listed no entities"]
+
+    def entries(key):
+        found = data.get(key) if isinstance(data.get(key), list) else []
+        return ["%s: %s" % (e.get("type", "?"), e.get("name", "?")) for e in found if isinstance(e, dict)]
+
+    removed, added = entries("removed"), entries("added")
+    if not removed and not added:
+        return ["matches golden (%d entities)" % len(actual)]
+    lines = ["- removed: %s" % _cell(e) for e in removed] + ["- added: %s" % _cell(e) for e in added]
+    golden_file = data.get("golden_file") or "hil/golden/entities-<rev>.json"
+    lines += [
+        "",
+        "If the change is intended, regenerate with `python -m hil golden from-run --report reports/%s --out %s` "
+        "and commit it with the firmware change (D-38)." % (GOLDEN_REPORT, _cell(golden_file)),
+    ]
+    return lines
+
+
 def _skipped(reports):
     tests = _read_json(reports / "tests.json")
     if not isinstance(tests, dict) or not isinstance(tests.get("skipped"), list):
@@ -298,8 +418,9 @@ def _final_image_line(reports):
 def render(reports_dir, manifest):
     """The job summary as Markdown. Pure: reads files, writes nothing, never raises for a missing report.
 
-    Order: verdict, commit/ESPHome/baseline line, Preflight, Supervisor watchdog, DUT A table (JUnit order) and
-    failures, Canary, Images, Timings, Flash and OTA, Skipped, Rig conditions, Reset budget, Final image.
+    Order: verdict, commit/ESPHome line, Baseline line (and its drift warning), Upgrade line, Preflight,
+    Supervisor watchdog, DUT A table (JUnit order) and failures, Canary, Images, Timings, Flash and OTA, Entity
+    list, Skipped, Rig conditions, Reset budget, Final image.
     """
     reports = Path(reports_dir)
     lines = _head(reports, manifest)
@@ -309,6 +430,7 @@ def render(reports_dir, manifest):
     lines += ["", _canary_line(reports)]
     lines += ["", "### Images", ""] + _images(manifest)
     lines += ["", "### Timings", ""] + _timings(reports) + [""] + _flash_and_ota(reports)
+    lines += ["", "### Entity list", ""] + _entity_list(reports)
     lines += ["", "### Skipped", ""] + _skipped(reports)
     lines += ["", "### Rig conditions", ""] + _rig_conditions(reports)
     lines += ["", "### Allowlisted boot-log lines", ""] + _allowlisted(reports)
