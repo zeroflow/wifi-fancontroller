@@ -18,7 +18,9 @@ VERDICTS = ("PASS", "FAIL", "RIG ERROR", "INTERRUPTED")
 NOT_RECORDED = "not recorded"
 TIMINGS = "timings.json"
 # Fixed row order of the Timings table (CI-05), in run order (D-36): the release baseline, the upgrade OTA and its
-# mark, the serial restore, the OTA chain, the broken OTA, the recovery flash. An OTA's boot time follows its transfer.
+# mark, the serial restore, the OTA chain, the rollback tests (03-13: the armed OTA, the forced reset's time after
+# it and the boot it brought back, the OTA back to commit and its mark), the broken OTA, the recovery flash. An
+# OTA's boot time follows its transfer.
 TIMING_ORDER = (
     "baseline_flash",
     "ota_baseline_commit",
@@ -30,8 +32,13 @@ TIMING_ORDER = (
     "ota_qc-auto_boot",
     "ota_canary",
     "ota_canary_boot",
-    "ota_commit",
-    "ota_commit_boot",
+    "ota_rollback_fresh",
+    "ota_rollback_fresh_boot",
+    "rollback_reset",
+    "rollback_boot",
+    "ota_rollback_marked",
+    "ota_rollback_marked_boot",
+    "rollback_mark",
     "ota_broken",
     "flash",
     "boot",
@@ -374,11 +381,14 @@ def _rollback_states(reports):
     if isinstance(tests, dict):
         fresh, marked = tests.get("fresh"), tests.get("marked")
         if isinstance(fresh, dict):
-            lines += [
-                "",
-                "Rollback before the mark: %s (state %s, build after %s)"
-                % (_cell(fresh.get("outcome") or "?"), _cell(fresh.get("state") or "no line"), _cell(fresh.get("build_after") or "?")),
-            ]
+            text = "Rollback before the mark: %s (state %s, build after %s)" % (
+                _cell(fresh.get("outcome") or "?"), _cell(fresh.get("state") or "no line"), _cell(fresh.get("build_after") or "?"),
+            )
+            if isinstance(fresh.get("reset_after_s"), (int, float)):
+                text += ", forced EN reset %s after the OTA, OTA rollback detected line %s" % (
+                    _uptime_text(fresh["reset_after_s"]), "seen" if fresh.get("rollback_line_seen") else "not seen",
+                )
+            lines += ["", text]
         if isinstance(marked, dict):
             lines += [
                 "",

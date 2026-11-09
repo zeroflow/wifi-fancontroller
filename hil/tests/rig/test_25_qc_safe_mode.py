@@ -9,6 +9,9 @@ The test passes only when the harness raises SafeModeError for it (a RigError: v
 when it happens by itself). It then leaves safe mode with one budgeted EN reset and confirms the
 qc-auto build ID again. The safe_mode settings (num_attempts, boot_is_good_after, reboot_timeout)
 are the shipped ones in every HIL image.
+
+WR-02 (03-13): the press waits for the qc-auto image's mark first (Dut.wait_confirmed), so it can never
+land inside the rollback window of test_20's OTA; in a normal run that window closed long before.
 """
 
 import pytest
@@ -21,6 +24,7 @@ pytestmark = pytest.mark.image("qc-auto")
 
 
 def test_safe_mode_boot_is_reported_as_safe_mode(dut_a, dut_link, rig_config, fw_manifest):
+    dut_a.wait_confirmed()
     dut_a.tap.mark("safe_mode_press")
     dut_link.press(entities.QC_SAFE_MODE)
     with pytest.raises(SafeModeError) as caught:

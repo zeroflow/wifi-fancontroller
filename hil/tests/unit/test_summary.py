@@ -129,8 +129,8 @@ def full(reports):
     put(reports, "verdict.json", {"verdict": "FAIL", "commit": COMMIT, "build_id": "3.2+hil.0123456789ab"})
     put(reports, "raw/junit.xml", JUNIT_FULL)
     put(reports, "timings.json", {
-        "ota_commit": 28.9, "boot": 5.5, "flash": 76.6, "ota_canary": 29.7, "ota_qc-auto": 29.9,
-        "ota_qc-auto_boot": 4.6, "ota_canary_boot": 4.5, "ota_commit_boot": 4.6,
+        "ota_rollback_fresh": 28.9, "boot": 5.5, "flash": 76.6, "ota_canary": 29.7, "ota_qc-auto": 29.9,
+        "ota_qc-auto_boot": 4.6, "ota_canary_boot": 4.5, "ota_rollback_fresh_boot": 4.6,
     })
     put(reports, "flash-dut-a.json", {"attempts": 1, "durations_s": [76.6], "ok": True, "retry_reason": None, "verified": True})
     put(reports, "ota-dut-a.json", [
@@ -194,9 +194,9 @@ def test_a_failed_test_shows_its_first_message_line_under_failures(full):
 
 def test_timing_rows_follow_the_fixed_order_whatever_the_file_order(full):
     text = summary.render(full, FULL_MANIFEST)
-    order = [text.index("| %s |" % name) for name in ("ota_qc-auto", "ota_canary", "ota_commit", "flash", "boot")]
+    order = [text.index("| %s |" % name) for name in ("ota_qc-auto", "ota_canary", "ota_rollback_fresh", "flash", "boot")]
     assert order == sorted(order)
-    assert "| flash | 76.6 s |" in text and "| ota_commit | 28.9 s |" in text
+    assert "| flash | 76.6 s |" in text and "| ota_rollback_fresh | 28.9 s |" in text
 
 
 def test_a_timing_that_was_never_recorded_has_no_row(full):
@@ -634,7 +634,9 @@ def test_the_head_lines_are_masked_like_the_rest(reports):
 def test_timing_order_starts_with_the_upgrade_leg_and_ends_with_the_last_serial_flash():
     assert summary.TIMING_ORDER == (
         "baseline_flash", "ota_baseline_commit", "ota_baseline_commit_boot", "soak_mark", "restore_flash", "restore_boot",
-        "ota_qc-auto", "ota_qc-auto_boot", "ota_canary", "ota_canary_boot", "ota_commit", "ota_commit_boot", "ota_broken",
+        "ota_qc-auto", "ota_qc-auto_boot", "ota_canary", "ota_canary_boot",
+        "ota_rollback_fresh", "ota_rollback_fresh_boot", "rollback_reset", "rollback_boot",
+        "ota_rollback_marked", "ota_rollback_marked_boot", "rollback_mark", "ota_broken",
         "flash", "boot",
     )
 
@@ -759,6 +761,18 @@ def test_the_rollback_tests_add_one_line_each(full):
     section = rollback_section(summary.render(full, FULL_MANIFEST))
     assert "Rollback before the mark: skipped (state support unknown, build after 3.2+qc.0123456789ab)" in section
     assert "Reset after the mark: build after 3.2+qc.0123456789ab, marked valid after 60.8 s" in section
+
+
+def test_the_rollback_before_line_shows_the_forced_reset_time_and_the_rollback_line(full):
+    put(full, "rollback-dut-a.json", {"fresh": {
+        "state": "supported", "outcome": "rolled_back", "build_after": "3.2+canary.0123456789ab",
+        "reset_after_s": 7.2, "rollback_line_seen": True,
+    }})
+    section = rollback_section(summary.render(full, FULL_MANIFEST))
+    assert (
+        "Rollback before the mark: rolled_back (state supported, build after 3.2+canary.0123456789ab), "
+        "forced EN reset 7.2 s after the OTA, OTA rollback detected line seen"
+    ) in section
 
 
 def test_the_rollback_section_follows_the_timings_and_precedes_the_entity_list(full):

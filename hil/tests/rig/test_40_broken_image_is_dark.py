@@ -1,6 +1,6 @@
 """REC-02, D-41, D-42: a broken image delivered by OTA is alive but dark, and stays that way for 65 s.
 
-DUT A is on the commit image (test_35). The broken image (no wifi, no api, no ota; rev3.2.broken.yaml) is
+DUT A is on the commit image (test_37). The broken image (no wifi, no api, no ota; rev3.2.broken.yaml) is
 sent to it by encrypted OTA, the way a customer gets an update (D-41). Three facts are checked and reported
 together, because the dark window always runs to its end:
 

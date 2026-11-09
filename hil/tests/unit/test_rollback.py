@@ -302,3 +302,14 @@ def test_the_safe_mode_press_waits_for_the_mark_first():
 
     source = (Path(__file__).resolve().parents[1] / "rig" / "test_25_qc_safe_mode.py").read_text(encoding="utf-8")
     assert 0 <= source.index("dut_a.wait_confirmed()") < source.index('dut_a.tap.mark("safe_mode_press")')
+
+
+def test_the_rollback_tests_record_their_timings():
+    """The forced reset's time after the OTA, the boot after it and the mark of test_37 go into the Timings table."""
+    from pathlib import Path
+
+    rig = Path(__file__).resolve().parents[1] / "rig"
+    before = (rig / "test_36_rollback_before_mark.py").read_text(encoding="utf-8")
+    after = (rig / "test_37_rollback_after_mark.py").read_text(encoding="utf-8")
+    assert 'record_timing("rollback_reset"' in before and 'record_timing("rollback_boot"' in before
+    assert 'record_timing("rollback_mark"' in after

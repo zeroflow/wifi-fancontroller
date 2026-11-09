@@ -39,8 +39,8 @@ class ResetBudget:
         self._boots = []  # (seconds since the budget was created, cause), every boot recorded
         self._streak = []  # (clock time, cause) of the boots in the current streak
 
-    def record(self, cause, orderly=False):
-        """A boot the harness caused or saw.
+    def record(self, cause, orderly=False, forced=False):
+        """A boot the harness caused or saw; `forced` marks the one EN reset that skipped the rollback guard (test_36).
 
         An orderly boot (OTA reboot, the safe-mode button) clears the firmware's counter, so the
         streak starts again with this boot. A boot more than decay_s after the previous one means
@@ -52,7 +52,7 @@ class ResetBudget:
         if orderly or not self._streak or now - self._streak[-1][0] >= self.decay_s:
             self._streak = []
         self._streak.append((now, cause))
-        self._boots.append((now - self._t0, cause))
+        self._boots.append((now - self._t0, cause, bool(forced)))
 
     def streak(self):
         """Boots in a row, each less than decay_s after the previous one; 0 once the last boot stayed up."""
@@ -79,5 +79,5 @@ class ResetBudget:
             "decay_s": self.decay_s,
             "used": len(self._boots),
             "streak": self.streak(),
-            "boots": [{"cause": cause, "t": round(t, 1)} for t, cause in self._boots],
+            "boots": [dict({"cause": cause, "t": round(t, 1)}, **({"forced": True} if forced else {})) for t, cause, forced in self._boots],
         }

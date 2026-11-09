@@ -217,17 +217,25 @@ class Dut:
         self.unconfirmed_until = 0.0
         return max(0.0, at - self.ota_end_at) if self.ota_end_at is not None else 0.0
 
-    def reset(self):
+    def reset(self, force=False):
         """Press Reset and return the mark that precedes the press (the start of the boot to wait for).
 
         Leaving the bootloader after a flash or a read is always allowed and only recorded. An EN
         reset of a running image is budgeted (ResetBudgetExhausted before the press) and, while the
         running OTA image is unconfirmed, waits for its 'Boot seems successful' or is refused.
+
+        `force` skips that rollback-window guard and only it: the press is still budgeted and recorded
+        (`forced` in the budget report), and the window stays open for the next normal reset. Only
+        test_36 uses it, for the deliberate EN reset before the mark (REG-05, D-39; grep-guarded).
         """
+        forced = False
         if self._in_bootloader:
             cause = "flash_reset"
         else:
-            self.wait_confirmed()
+            if force is True:
+                forced = True
+            else:
+                self.wait_confirmed()
             self.budget.before_reset()
             cause = "en_reset"
         mark = self._next_mark("reset")
@@ -239,7 +247,7 @@ class Dut:
         if cause == "flash_reset" and self._time_boot:
             self._flash_reset_at = time.monotonic()
         self._in_bootloader = False
-        self.budget.record(cause)
+        self.budget.record(cause, forced=forced)
         return mark
 
     def _record_boot(self):
