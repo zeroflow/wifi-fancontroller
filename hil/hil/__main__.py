@@ -477,14 +477,31 @@ def _preflight_rig_error(commit, cause):
     return EXIT["RIG ERROR"]
 
 
+TEARDOWN_STAGE_CAUSES = {"configuration": "rig configuration not loaded", "connect": "supervisor unreachable"}
+
+
+def teardown_rig_error(reports, cause):
+    """WR-06: a teardown that stopped early ends RIG ERROR in verdict.json, annotation and rig-errors.json; a FAIL stays.
+
+    Best effort, never raises: the exit code and final-image.json do not depend on it.
+    """
+    try:
+        teardown.rewrite_verdict(reports, teardown.read_verdict(reports), cause=cause)
+    except Exception as exc:  # noqa: BLE001 - say what failed, by class name only
+        print("RIG ERROR: verdict.json not rewritten (%s)" % type(exc).__name__)
+
+
 def cmd_teardown():
     reports = config.reports_dir()
     state = teardown.new_state()
     supervisor = None
     rig = None
+    stage = "configuration"
     try:
         rig = load_rig()
+        stage = "connect"
         supervisor, dut = _rig_dut(rig)
+        stage = "teardown"
         return teardown.run_teardown(
             rig,
             os.environ.get("HIL_FW_DIR", ""),
@@ -497,11 +514,13 @@ def cmd_teardown():
     except RigError as exc:
         print("RIG ERROR: %s" % exc)
         state["steps"].append("teardown stopped: %s" % exc)
+        teardown_rig_error(reports, TEARDOWN_STAGE_CAUSES.get(stage, "stopped (%s)" % type(exc).__name__))
         teardown.write_final(reports, state)
         return 3
     except Exception as exc:  # noqa: BLE001 - a late non-RigError must still leave final-image.json behind
         print("RIG ERROR: teardown stopped unexpectedly (%s)" % type(exc).__name__)
         state["steps"].append("teardown stopped: %s" % type(exc).__name__)
+        teardown_rig_error(reports, "stopped unexpectedly (%s)" % type(exc).__name__)
         teardown.write_final(reports, state)
         return 3
     finally:

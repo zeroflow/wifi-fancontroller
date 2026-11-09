@@ -26,7 +26,7 @@ import os
 import time
 from pathlib import Path
 
-from . import RigError, config, contract, known_good, last_green, manifest
+from . import RigError, config, contract, known_good, last_green, manifest, summary
 from .supervisor import watchdog_delta
 
 # Moved to known_good.py (WR-03); kept importable here for cmd_known_good and older callers.
@@ -62,23 +62,42 @@ def is_green(verdict, job_status):
     return bool(verdict) and verdict.get("verdict") == "PASS" and job_status in ("", "success")
 
 
+def annotate_rig_error(cause):
+    """The one `::error title=RIG ERROR::` line a teardown rewrite prints under GitHub Actions (D-45).
+
+    Fixed cause texts and exception class names only. Outside Actions the `RIG ERROR:` line the
+    caller already said is the whole message.
+    """
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("::error title=RIG ERROR::teardown: %s" % summary._first_line(cause))
+
+
 def rewrite_verdict(reports_dir, verdict, new="RIG ERROR", cause=""):
     """Rewrite verdict.json to `new`, except over a recorded FAIL (D-46).
 
     A FAIL is the firmware's outcome and a later rig condition never relabels it: verdict.json
     stays FAIL, the cause is appended to rig-errors.json (kind Teardown) and said in the log.
+    Every other verdict, a missing one included, becomes RIG ERROR with the reason
+    `teardown: <cause>` (an earlier RIG ERROR keeps its own reason: the first cause wins), the
+    cause is appended to rig-errors.json and one RIG ERROR annotation names it (D-45).
     """
     reports_dir = Path(reports_dir)
     if (verdict or {}).get("verdict") == "FAIL":
         record_teardown_condition(reports_dir, cause)
         return
     data = dict(verdict or {"schema": 1})
+    first_cause = data.get("verdict") == "RIG ERROR" and data.get("reason")
     data["verdict"] = new
+    if not first_cause:
+        data["reason"] = "teardown: %s" % cause
+    reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "verdict.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    append_teardown_entry(reports_dir, "teardown: %s" % cause)
+    annotate_rig_error(cause)
 
 
-def record_teardown_condition(reports_dir, cause):
-    """Append {"nodeid": null, "kind": "Teardown", "message": cause} to rig-errors.json (created as a list when missing)."""
+def append_teardown_entry(reports_dir, message):
+    """Append {"nodeid": null, "kind": "Teardown", "message": message} to rig-errors.json (created as a list when missing)."""
     path = Path(reports_dir) / "rig-errors.json"
     try:
         records = json.loads(path.read_text(encoding="utf-8"))
@@ -86,8 +105,13 @@ def record_teardown_condition(reports_dir, cause):
         records = []
     if not isinstance(records, list):
         records = []
-    records.append({"nodeid": None, "kind": "Teardown", "message": cause})
+    records.append({"nodeid": None, "kind": "Teardown", "message": message})
     path.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def record_teardown_condition(reports_dir, cause):
+    """A rig condition after a recorded FAIL: the Teardown entry plus a WARNING line (verdict.json stays FAIL)."""
+    append_teardown_entry(reports_dir, cause)
     say("WARNING: rig condition after a FAIL run: %s" % cause)
 
 
@@ -253,14 +277,10 @@ def _run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_
         supervisor.release_all()
     except RigError as exc:
         say("RIG ERROR: %s" % exc)
-        state["steps"].append("lines not released")
-        write_final(reports_dir, state)
-        return 3
+        return lines_not_released(reports_dir, state)
     except Exception as exc:  # noqa: BLE001 - any API fault still ends in the final-image bookkeeping
         say("RIG ERROR: switch release failed (%s)" % type(exc).__name__)
-        state["steps"].append("lines not released")
-        write_final(reports_dir, state)
-        return 3
+        return lines_not_released(reports_dir, state)
     say("DUT A lines released")
     state["steps"].append("lines released")
 
@@ -278,6 +298,14 @@ def _run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_
     write_final(reports_dir, state)
     say("DUT A final image: %s (%s)" % (state["image"], state["version"] or "unknown version"))
     return exit_code
+
+
+def lines_not_released(reports_dir, state):
+    """WR-06: the run may be PASS and lines may still be held; the verdict, the heading and the annotation say RIG ERROR."""
+    state["steps"].append("lines not released")
+    rewrite_verdict(reports_dir, read_verdict(reports_dir), cause="lines not released")
+    write_final(reports_dir, state)
+    return 3
 
 
 def keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
