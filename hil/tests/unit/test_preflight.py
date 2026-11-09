@@ -619,3 +619,138 @@ def test_hil_preflight_prints_the_heal_with_its_first_failure(cli_env, monkeypat
     out = capsys.readouterr().out
     assert "Preflight: heal: v1.6.0 (2026.11.0) written and confirmed (first: boot check failed: y)" in out
     assert "WARNING: healed" in out
+
+
+# ---------------------------------------------------------------- 03-15: unexpected exceptions end RIG ERROR (IN-06)
+
+ANNOTATION = "::error title=RIG ERROR::"
+
+
+class OSErrorSupervisor(FakeSupervisor):
+    """release_all fails with an exception that is not a RigError (a dropped API link)."""
+
+    def release_all(self):
+        raise OSError("secret-looking link text")
+
+
+def test_a_non_rig_error_in_a_step_is_a_failed_preflight_check_not_an_exception(env):
+    sv = OSErrorSupervisor(env.clock)
+    out = go(env, sv)
+    assert out.ok is False
+    assert out.cause == "preflight stopped unexpectedly (OSError)"
+    assert out.record["checks"][-1] == {"name": "preflight", "ok": False, "detail": out.cause}
+    assert out.written == out.record
+    assert sv.closed and all(tap.stopped for tap in out.made.taps)
+    assert "secret-looking" not in json.dumps(out.written)
+
+
+class Boom(Exception):
+    pass
+
+
+def raising(exc, close=True):
+    def run(*_a, supervisor=None, **_k):
+        if close and supervisor is not None:
+            supervisor.close()
+        raise exc
+
+    return run
+
+
+def test_cmd_preflight_with_an_unexpected_exception_in_the_run_exits_3_with_annotation_and_verdict(
+    cli_env, monkeypatch, capsys
+):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(preflight, "run_preflight", raising(ValueError("secret-looking")))
+    assert cli.main(["preflight"]) == 3
+    out = capsys.readouterr().out
+    cause = "preflight stopped unexpectedly (ValueError)"
+    assert [line for line in out.splitlines() if line.startswith(ANNOTATION)] == [ANNOTATION + "preflight: " + cause]
+    assert (verdict(cli_env)["verdict"], verdict(cli_env)["reason"]) == ("RIG ERROR", cause)
+    assert "secret-looking" not in out
+
+
+def test_cmd_preflight_with_an_unexpected_exception_from_the_rig_configuration_exits_3(cli_env, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "load_rig", raising(ValueError("secret-looking"), close=False))
+    assert cli.main(["preflight"]) == 3
+    assert verdict(cli_env)["reason"] == "preflight stopped unexpectedly (ValueError)"
+    assert "secret-looking" not in capsys.readouterr().out
+
+
+def test_cmd_preflight_binds_the_commit_before_anything_can_fail(cli_env, monkeypatch, capsys):
+    """The expected commit lookup is inside the guarded block: no UnboundLocalError, a RIG ERROR verdict."""
+
+    def boom():
+        raise ValueError("secret-looking")
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(cli.config, "expected_commit", boom)
+    assert cli.main(["preflight"]) == 3
+    out = capsys.readouterr().out
+    assert ANNOTATION + "preflight: preflight stopped unexpectedly (ValueError)" in out.splitlines()
+    assert verdict(cli_env)["verdict"] == "RIG ERROR"
+    assert "secret-looking" not in out
+
+
+def test_cmd_preflight_writes_the_verdict_again_when_the_provisional_write_was_the_failure(cli_env, monkeypatch):
+    real = cli.write_verdict
+    calls = []
+
+    def flaky(*args, **kwargs):
+        calls.append(kwargs.get("reason"))
+        if len(calls) == 1:
+            raise OSError("disk full")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(cli, "write_verdict", flaky)
+    assert cli.main(["preflight"]) == 3
+    assert verdict(cli_env)["reason"] == "preflight stopped unexpectedly (OSError)"
+
+
+def test_cmd_preflight_stale_report_deletion_that_fails_exits_3(cli_env, monkeypatch):
+    cli_env.reports.mkdir(parents=True)
+    (cli_env.reports / "preflight.json").mkdir()  # unlink() on a directory raises
+    assert cli.main(["preflight"]) == 3
+    assert verdict(cli_env)["verdict"] == "RIG ERROR"
+    assert verdict(cli_env)["reason"].startswith("preflight stopped unexpectedly (")
+
+
+@pytest.mark.parametrize(
+    "command,attr,reason,annotation",
+    [
+        ("preflight", "cmd_preflight", "preflight stopped unexpectedly (Boom)",
+         "preflight: preflight stopped unexpectedly (Boom)"),
+        ("teardown", "cmd_teardown", "teardown: stopped unexpectedly (Boom)", "teardown: stopped unexpectedly (Boom)"),
+    ],
+)
+def test_main_never_exits_1_or_raises_on_an_unexpected_exception_from_preflight_or_teardown(
+    cli_env, monkeypatch, capsys, command, attr, reason, annotation
+):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    cli_env.reports.mkdir(parents=True)
+    (cli_env.reports / "verdict.json").write_text(json.dumps({"schema": 1, "verdict": "PASS"}), encoding="utf-8")
+    monkeypatch.setattr(cli, attr, raising(Boom("secret-looking"), close=False))
+    assert cli.main([command]) == 3
+    out = capsys.readouterr().out
+    assert "RIG ERROR: %s stopped unexpectedly (Boom)" % command in out
+    assert (verdict(cli_env)["verdict"], verdict(cli_env)["reason"]) == ("RIG ERROR", reason)
+    assert [line for line in out.splitlines() if line.startswith(ANNOTATION)] == [ANNOTATION + annotation]
+    assert "secret-looking" not in out
+
+
+def test_main_keeps_a_recorded_fail_when_teardown_stops_unexpectedly(cli_env, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    cli_env.reports.mkdir(parents=True)
+    (cli_env.reports / "verdict.json").write_text(json.dumps({"schema": 1, "verdict": "FAIL"}), encoding="utf-8")
+    monkeypatch.setattr(cli, "cmd_teardown", raising(Boom("secret-looking"), close=False))
+    assert cli.main(["teardown"]) == 3
+    assert verdict(cli_env)["verdict"] == "FAIL"
+    errors = json.loads((cli_env.reports / "rig-errors.json").read_text(encoding="utf-8"))
+    assert [e["kind"] for e in errors] == ["Teardown"]
+    assert ANNOTATION not in capsys.readouterr().out
+
+
+def test_other_commands_keep_their_behaviour_on_an_unexpected_exception(cli_env, monkeypatch):
+    monkeypatch.setattr(cli, "cmd_status", raising(Boom("x"), close=False))
+    with pytest.raises(Boom):
+        cli.main(["status", "--dut", "A"])
