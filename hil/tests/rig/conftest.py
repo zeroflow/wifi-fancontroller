@@ -281,8 +281,12 @@ def _answering_build_id(dut_a, noise_psk, problem):
 
 
 def _clean_problems(dut_a, dut_link, build_id):
-    """CLEAN on the running image: the DutLink session is the image's own, then the settle signals."""
-    dut_link.wait_connected(API_WAIT_S, project_version=build_id)
+    """CLEAN on the running image: the DutLink session is the image's own, then the settle signals.
+
+    The session must also be newer than the latest Reset press (serial flash or EN reset): the DUT never
+    closes a session on a hard reset, so an older one is a dead link that only looks connected (03-11).
+    """
+    dut_link.wait_connected(API_WAIT_S, project_version=build_id, after=dut_a.last_reset_at)
     return dut_a.settle(dut_link)
 
 

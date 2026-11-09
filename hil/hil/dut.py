@@ -111,6 +111,7 @@ class Dut:
         self._flash_reset_at = None  # monotonic() of the press that leaves the bootloader after a timed flash
         self.ota_count = 0  # OTA uploads attempted this run (ota and ota_dark); test_41 asserts it did not move
         self.last_reset_mark = None  # the mark of the latest Reset press (reset())
+        self.last_reset_at = None  # time.monotonic() right after that press: API sessions from before it are stale
         self.last_bootloader_mark = None  # the mark of the latest Bootloader press (enter_bootloader())
         self.last_ota = None  # label, transfer_s and boot_s of the latest successful ota()
 
@@ -201,6 +202,7 @@ class Dut:
         self._mark(mark)
         self._mark("reset_pressed")
         self._supervisor.press(contract.BUTTON[self.id]["reset"])
+        self.last_reset_at = time.monotonic()
         if cause == "flash_reset" and self._time_boot:
             self._flash_reset_at = time.monotonic()
         self._in_bootloader = False

@@ -598,11 +598,13 @@ def test_wait_connected_after_a_later_reset_ends_the_stale_session_and_waits_for
 
 
 def test_wait_connected_with_a_session_newer_than_the_reset_keeps_it(link):
-    reset_at = time.monotonic()
     link.wait_connected(5)
-    first = current()
+    reset_at = time.monotonic()
+    drop_on_loop(link, current())  # the reboot after the press: the link connects again on its own
+    wait_until(lambda: link.sessions() == 2 and link.connected())
+    fresh = current()
     link.wait_connected(5, after=reset_at)
-    assert current() is first and not first.disconnected and link.sessions() == 1
+    assert current() is fresh and not fresh.disconnected and link.sessions() == 2
 
 
 def test_wait_connected_without_a_new_session_after_the_reset_is_a_rig_error(link):

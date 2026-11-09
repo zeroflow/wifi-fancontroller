@@ -96,6 +96,7 @@ class DutLink:
         self._lost = None  # the current session's "connection lost" event (set on the link's loop only)
         self._lines = deque(maxlen=LOG_LINES)  # (time.monotonic() at arrival, ANSI-stripped message)
         self._sessions = 0  # sessions established so far (a connect that failed is none)
+        self._session_at = None  # time.monotonic() at which the current session was established
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, name="hil-dutlink-loop", daemon=True)
         self._thread.start()
@@ -169,6 +170,7 @@ class DutLink:
             self._names = {key: name for name, (_cls, key) in self._entities.items()}
             self._connected = True
             self._sessions += 1
+            self._session_at = time.monotonic()
             self._cond.notify_all()
 
     def _set_disconnected(self):
@@ -288,17 +290,31 @@ class DutLink:
             return changed
         return self._run(self._switch_key(noise_psk), COMMAND_S)
 
-    def wait_connected(self, deadline_s, project_version=None):
+    async def _end_session(self):
+        """On the link's loop: end the current session; _maintain connects again."""
+        if self._lost is not None:
+            self._lost.set()
+
+    def wait_connected(self, deadline_s, project_version=None, after=None):
         """Block until a session is up and return its DeviceInfo.
 
         After an OTA the old image can keep its session for a moment, so a caller that wants the
-        new image names the `project_version` (build ID) it expects.
+        new image names the `project_version` (build ID) it expects. A serial flash or an EN reset
+        never closes the session (the DUT just stops), so it can look connected long after the board
+        rebooted, with the same build ID: `after` (the monotonic time of the latest Reset press) makes a
+        session established before it stale. A stale session is ended at once and the next one awaited.
         """
         end = time.monotonic() + deadline_s
+        if after is not None:
+            with self._cond:
+                stale = self._connected and (self._session_at is None or self._session_at < after)
+            if stale and self._thread is not None and not self._closed:
+                self._run(self._end_session(), COMMAND_S)
         with self._cond:
             while True:
                 info = self._info
-                if self._connected and (project_version is None or info.project_version == project_version):
+                fresh = after is None or (self._session_at is not None and self._session_at >= after)
+                if self._connected and fresh and (project_version is None or info.project_version == project_version):
                     return info
                 left = end - time.monotonic()
                 if left <= 0:
