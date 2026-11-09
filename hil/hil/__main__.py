@@ -419,19 +419,22 @@ def cmd_preflight():
 
     verdict.json is RIG ERROR from the first line on: a preflight that is killed leaves "preflight
     did not complete", one that passes leaves "preflight passed; the run has not started", and only
-    `hil run` can write anything else.
+    `hil run` can write anything else. An unexpected exception anywhere (IN-06) is a RIG ERROR that
+    names its class, never the FAIL exit code.
     """
-    commit = config.expected_commit()
-    reports = config.reports_dir()
-    reports.mkdir(parents=True, exist_ok=True)
-    for name in PREFLIGHT_REPORTS:
-        stale = reports / name
-        if stale.exists():
-            stale.unlink()
-    write_verdict("RIG ERROR", commit, None, reason=PREFLIGHT_PROVISIONAL, announce=False)
-    previous = signal.signal(signal.SIGTERM, _terminate)
+    commit = None
     rig = None
+    previous = None
     try:
+        commit = config.expected_commit()
+        reports = config.reports_dir()
+        reports.mkdir(parents=True, exist_ok=True)
+        for name in PREFLIGHT_REPORTS:
+            stale = reports / name
+            if stale.exists():
+                stale.unlink()
+        write_verdict("RIG ERROR", commit, None, reason=PREFLIGHT_PROVISIONAL, announce=False)
+        previous = signal.signal(signal.SIGTERM, _terminate)
         try:
             rig = load_rig()
         except RigError as exc:
@@ -464,9 +467,14 @@ def cmd_preflight():
         write_verdict("RIG ERROR", commit, None, reason=PREFLIGHT_PASSED, announce=False)
         teardown.say("Preflight: passed")
         return 0
+    except RigError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - IN-06: class name only, never the message
+        return _preflight_rig_error(commit, "preflight stopped unexpectedly (%s)" % type(exc).__name__)
     finally:
         redact_reports(rig)
-        signal.signal(signal.SIGTERM, previous)
+        if previous is not None:
+            signal.signal(signal.SIGTERM, previous)
 
 
 def _preflight_rig_error(commit, cause):
@@ -771,6 +779,29 @@ def main(argv=None):
     except RigError as exc:
         print("RIG ERROR: %s" % exc)
         return 3
+    except Exception as exc:  # noqa: BLE001 - IN-06: these two steps never leave with the FAIL exit code
+        if args.command not in ("preflight", "teardown"):
+            raise
+        return unexpected_stop(args.command, exc)
+
+
+def unexpected_stop(command, exc):
+    """main()'s fallback for preflight and teardown: RIG ERROR verdict (a FAIL stays), annotation, exit 3.
+
+    Class name only, never the exception's message. Best effort: it never raises.
+    """
+    name = type(exc).__name__
+    reports = config.reports_dir()
+    try:
+        if command == "teardown":
+            print("RIG ERROR: teardown stopped unexpectedly (%s)" % name)
+            teardown_rig_error(reports, "stopped unexpectedly (%s)" % name)
+        else:
+            commit = (teardown.read_verdict(reports) or {}).get("commit")
+            _preflight_rig_error(commit, "preflight stopped unexpectedly (%s)" % name)
+    except Exception as again:  # noqa: BLE001 - nothing more can be done; say what failed
+        print("RIG ERROR: %s stopped unexpectedly (%s); verdict.json not written (%s)" % (command, name, type(again).__name__))
+    return 3
 
 
 if __name__ == "__main__":

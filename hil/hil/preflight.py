@@ -277,7 +277,7 @@ class Preflight:
 
 
 def run_preflight(rig, reports_dir, *, supervisor, make_tap, make_dut, clock=time.monotonic, sleep=time.sleep):
-    """(ok, cause, record). Never raises for a rig condition; writes reports/preflight.json on every path."""
+    """(ok, cause, record). Never raises (an unexpected exception is a cause naming its class); writes reports/preflight.json on every path."""
     pre = Preflight(rig, reports_dir, supervisor, make_tap, make_dut, clock, sleep)
     cause = None
     try:
@@ -287,6 +287,9 @@ def run_preflight(rig, reports_dir, *, supervisor, make_tap, make_dut, clock=tim
     except RigError as exc:
         # A rig fault outside the named steps (a sensor entity gone between list and read).
         cause = "preflight stopped: %s" % exc
+        pre.check("preflight", False, cause)
+    except Exception as exc:  # noqa: BLE001 - IN-06: an unexpected fault is a failed check naming its class, never a raise
+        cause = "preflight stopped unexpectedly (%s)" % type(exc).__name__
         pre.check("preflight", False, cause)
     finally:
         pre.close()
