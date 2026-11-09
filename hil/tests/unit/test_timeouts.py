@@ -14,7 +14,7 @@ from types import SimpleNamespace
 import pytest
 import yaml
 
-from hil import RigError, budget, contract, dut, dutlink, flasher, ota, preflight, qc, recovery, serial_tap, supervisor, teardown
+from hil import RigError, budget, contract, dut, dutlink, flasher, ota, preflight, qc, recovery, rollback, serial_tap, supervisor, teardown
 
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 
@@ -382,7 +382,15 @@ BASE_S = {
         dut.SAFE_MODE_DETECT_S + dut.CONFIRM_WAIT_S + supervisor.PRESS_S + dut.API_WAIT_S + ALLOWANCE_S
     ),
     "test_canary_swap_is_detected": ota_s() + fan_steps_s() + ALLOWANCE_S,
-    "test_ota_back_to_commit_image": ota_s() + ALLOWANCE_S,
+    # REG-05, D-39: the armed canary -> commit OTA, the wait for its rollback-state line, the forced EN reset and
+    # the boot of the image it falls back to.
+    "test_en_reset_before_the_mark_rolls_back": (
+        ota_s() + rollback.ROLLBACK_LINE_S + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + ALLOWANCE_S
+    ),
+    # The OTA back to commit, the wait for its mark, a normal (guarded) EN reset and the boot of the same image.
+    "test_en_reset_after_the_mark_keeps_the_image": (
+        ota_s() + dut.CONFIRM_WAIT_S + supervisor.PRESS_S + dut.API_WAIT_S + dut.API_CONNECT_S + ALLOWANCE_S
+    ),
     "test_broken_image_is_alive_but_dark": broken_dark_s() + ALLOWANCE_S,
     "test_uart_flash_recovers_the_dark_dut": uart_recovery_s() + ALLOWANCE_S,
 }
@@ -476,7 +484,8 @@ def test_every_row_of_a_test_with_an_image_marker_carries_the_state_check_allowa
         "test_usr_button_reaches_dut": 130,
         "test_safe_mode_boot_is_reported_as_safe_mode": 345,
         "test_canary_swap_is_detected": 605,
-        "test_ota_back_to_commit_image": 410,
+        "test_en_reset_before_the_mark_rolls_back": 535,
+        "test_en_reset_after_the_mark_keeps_the_image": 590,
         "test_broken_image_is_alive_but_dark": 486,
         "test_uart_flash_recovers_the_dark_dut": 505,
     }

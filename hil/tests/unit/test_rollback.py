@@ -231,3 +231,74 @@ def test_without_an_api_answer_before_the_ota_the_old_uptime_is_none(rig):
     device.ota(qc, KEY)
     (entry,) = device.ota_windows()
     assert entry["old_uptime_s"] is None and entry["end_at"] == rig.clock.now
+
+
+# Task 3: the rollback tests' facts and messages (engineer-arming, 2026-11-09) ----------------
+
+
+def test_state_line_returns_the_whole_observed_line_without_ansi():
+    assert rollback.state_line(BANNER + SUPPORTED) == "Bootloader rollback: supported"
+    assert rollback.state_line(BANNER) is None
+
+
+def test_the_fresh_outcome_is_told_by_the_build_id():
+    assert rollback.fresh_outcome("3.2+canary.x", previous="3.2+canary.x", new="3.2+hil.x") == "rolled_back"
+    assert rollback.fresh_outcome("3.2+hil.x", previous="3.2+canary.x", new="3.2+hil.x") == "kept"
+    assert rollback.fresh_outcome("3.2+qc.x", previous="3.2+canary.x", new="3.2+hil.x") == "failed"
+    assert rollback.fresh_outcome(None, previous="3.2+canary.x", new="3.2+hil.x") == "failed"
+
+
+def test_the_arming_margin_is_the_old_images_mark_minus_its_age():
+    facts = rollback.arming_facts(55.2, marked_before=False)
+    assert facts == {"old_age_s": 55.2, "margin_s": 4.8, "marked_before": False, "warn": False}
+    assert rollback.arming_facts(57.5, marked_before=False)["warn"] is True  # less than 3 s left
+    assert rollback.arming_facts(20.0, marked_before=True)["warn"] is True  # marked already: no margin at all
+
+
+def test_the_arming_warning_names_test_30_the_age_and_the_margin():
+    assert rollback.arming_warning(rollback.arming_facts(55.2, marked_before=False)) is None
+    text = rollback.arming_warning(rollback.arming_facts(57.5, marked_before=False))
+    assert "57.5 s" in text and "2.5 s" in text and "test_30" in text and "D-39" in text
+    text = rollback.arming_warning(rollback.arming_facts(20.0, marked_before=True))
+    assert "already marked valid" in text and "test_30" in text
+
+
+def test_the_not_armed_message_names_the_observed_line_and_the_old_images_uptime():
+    facts = rollback.arming_facts(56.0, marked_before=False)
+    text = rollback.not_armed_message("Bootloader rollback: support unknown", facts)
+    assert text.startswith("rollback not armed")
+    assert "'Bootloader rollback: support unknown'" in text and "56.0 s" in text and "REG-05" in text
+    text = rollback.not_armed_message(None, rollback.arming_facts(61.0, marked_before=True))
+    assert "no 'Bootloader rollback:' line within %d s" % rollback.ROLLBACK_LINE_S in text
+    assert "already marked valid" in text
+
+
+def test_write_test_merges_the_sections_of_rollback_dut_a(tmp_path, monkeypatch):
+    monkeypatch.setenv("HIL_REPORTS_DIR", str(tmp_path / "reports"))
+    rollback.write_test("fresh", {"outcome": "rolled_back"})
+    rollback.write_test("marked", {"mark_s": 60.8})
+    data = json.loads((tmp_path / "reports" / rollback.TEST_REPORT).read_text(encoding="utf-8"))
+    assert data == {"fresh": {"outcome": "rolled_back"}, "marked": {"mark_s": 60.8}}
+
+
+def test_only_test_36_forces_a_reset():
+    """D-39: the rollback-window guard is skipped for exactly one caller, the rollback-before-the-mark test."""
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    needle = "force" + "=True"
+    found = sorted(
+        str(path.relative_to(root))
+        for folder in ("hil", "tests")
+        for path in (root / folder).rglob("*.py")
+        if needle in path.read_text(encoding="utf-8")
+    )
+    assert found == ["tests/rig/test_36_rollback_before_mark.py"]
+
+
+def test_the_safe_mode_press_waits_for_the_mark_first():
+    """WR-02: test_25 confirms the qc-auto image before it presses the safe-mode button."""
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "rig" / "test_25_qc_safe_mode.py").read_text(encoding="utf-8")
+    assert 0 <= source.index("dut_a.wait_confirmed()") < source.index('dut_a.tap.mark("safe_mode_press")')

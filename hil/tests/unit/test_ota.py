@@ -794,3 +794,32 @@ def test_reset_records_the_time_of_its_press_for_the_stale_session_check(rig):
     before = time.monotonic()
     device.reset()
     assert before <= device.last_reset_at <= time.monotonic()
+
+
+# Forced reset (03-13, D-39): test_36 only ----------------------------------------------
+
+FORCE = {"force": True}  # spelled as a dict: the literal keyword belongs to test_36 alone
+
+
+def test_a_forced_reset_inside_the_window_presses_at_once_and_is_budgeted_and_marked(rig):
+    device, _, supervisor, tap = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY)
+    window = device.unconfirmed_until
+    mark = device.reset(**FORCE)
+    assert supervisor.pressed == [contract.BUTTON["A"]["reset"]] and mark in tap.marks
+    assert tap.waited == []  # no wait for 'Boot seems successful'
+    assert device.budget.report()["boots"][-1] == {"cause": "en_reset", "t": pytest.approx(0.0, abs=5), "forced": True}
+    assert device.unconfirmed_until == window  # the guard stays for the next normal reset
+    with pytest.raises(RigError, match="EN reset refused"):
+        device.reset()
+    assert supervisor.pressed == [contract.BUTTON["A"]["reset"]]
+
+
+def test_a_forced_reset_still_honours_the_budget(rig):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID])
+    device.ota(rig.image, noise_psk=KEY)
+    for _ in range(dut_module.ResetBudget().limit - 1):
+        device.budget.record("en_reset")
+    with pytest.raises(dut_module.RigError, match="reset budget exhausted"):
+        device.reset(**FORCE)
+    assert supervisor.pressed == []

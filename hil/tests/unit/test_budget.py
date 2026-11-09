@@ -137,3 +137,49 @@ def test_the_message_names_the_causes_of_the_streak_in_order_of_first_appearance
     b.record("en_reset")
     with pytest.raises(ResetBudgetExhausted, match=LABEL_B + r" reset budget exhausted: 3/3 .*\(flash_reset x1, en_reset x2\)"):
         b.before_reset()
+
+
+def test_a_forced_boot_is_marked_in_the_report_and_counts_like_any_other(clock):
+    b = make(clock)
+    b.record("ota_reboot", orderly=True)
+    clock.advance(7)
+    b.record("en_reset", forced=True)
+    assert b.report()["boots"] == [{"cause": "ota_reboot", "t": 0.0}, {"cause": "en_reset", "t": 7.0, "forced": True}]
+    assert b.streak() == 2
+
+
+# The planned Phase 3 run (03-13, engineer-arming) at nominal spacing, seconds since the session start (runs S1/S2
+# of 03-13 for the existing legs; the rollback legs added at their measured lengths: transfer about 28 s, boot 5 s,
+# the forced reset about 7 s after the OTA, the mark 61 s).
+PLANNED_RUN = [
+    (74.0, "flash_reset", False),  # test_10: release baseline flash
+    (112.5, "ota_reboot", True),  # test_11: release -> commit
+    (262.0, "flash_reset", False),  # test_12: serial restore
+    (320.5, "ota_reboot", True),  # test_20: commit -> qc-auto
+    (403.1, "safe_mode_reboot", True),  # test_25: the safe-mode button
+    (405.0, "en_reset", False),  # test_25: leaving safe mode
+    (439.1, "ota_reboot", True),  # test_30: qc-auto -> canary
+    (523.5, "ota_reboot", True),  # test_36: canary -> commit (rollback_fresh)
+    (530.5, "en_reset", False),  # test_36: the forced reset before the mark
+    (575.0, "ota_reboot", True),  # test_37: canary -> commit (rollback_marked)
+    (640.0, "en_reset", False),  # test_37: the guarded reset after the mark
+    (660.0, "ota_reboot", True),  # test_40: commit -> broken
+    (810.0, "flash_reset", False),  # test_41: UART recovery
+]
+
+
+def test_the_planned_phase_3_run_never_has_more_than_three_unclean_boots_in_a_row(clock):
+    """RESEARCH Pitfall 19, STATE blocker: RESET_DECAY_S stays 70 s. Every press of the planned run passes
+    before_reset, and the streak never goes above 3 against the limit of 8."""
+    b = make(clock)
+    start = clock.now
+    highest = 0
+    for t, cause, orderly in PLANNED_RUN:
+        clock.now = start + t
+        if cause in ("en_reset", "flash_reset"):
+            b.before_reset()  # raises ResetBudgetExhausted if the plan ever reached the limit
+        b.record(cause, orderly=orderly)
+        highest = max(highest, b.streak())
+    assert highest <= 3 < budget.RESET_BUDGET_LIMIT == 8
+    assert budget.RESET_DECAY_S == 70
+    assert b.report()["used"] == len(PLANNED_RUN)
