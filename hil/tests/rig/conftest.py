@@ -339,7 +339,10 @@ def dut_state(request, log_boundaries, crash_mark, watchdog_guard):
             pytest.fail("%s did not return to a clean %s state: runs %s, expected %s" % (label, after, seen, build_id))
         problems = _clean_problems(dut_a, link, build_id)
         if problems:
-            mark = dut_a.reset()  # the one EN reset a test may spend; budgeted, and never inside the rollback window
+            # Never inside the rollback window: after the release-to-commit upgrade the mark is only in the API
+            # log (UART0 is dark under the release bootloader), so the guard gets the link here (03-11).
+            dut_a.wait_confirmed(link=link)
+            mark = dut_a.reset()  # the one EN reset a test may spend; budgeted
             dut_a.wait_running(key, mark)
             problems = _clean_problems(dut_a, link, build_id)
         if problems:

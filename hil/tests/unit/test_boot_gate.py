@@ -1,6 +1,6 @@
 """The D-14 boot-log gate (bootlog.check_boot_window), driven with fakes: a gate that cannot see a boot
-is a rig error. The smoke test that called it is gone (D-36); the gate runs on the upgraded boot (test_11)
-and the recovery boot (test_41)."""
+is a rig error. The smoke test that called it is gone (D-36); the gate runs on UART0 after the serial restore
+(test_12) and on the recovery boot (test_41), and over the API log on the upgraded boot (test_11, test_upgrade.py)."""
 
 import json
 

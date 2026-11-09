@@ -25,9 +25,16 @@ The key follows the image (HARN-08 for release images): use_key(None) while DUT 
 baseline, which answers without encryption, and use_key(<HIL key>) for the commit-derived images. A
 changed key ends the current session, so the next one connects with the new key and the release's
 runtime log reaches the API log too.
+
+The link also keeps the log in memory, stamped with time.monotonic() at arrival (LOG_LINES at most), and
+counts the sessions it established. That is the upgrade proof while the release's bootloader leaves UART0
+dark (03-11, serial-restore-after-upgrade): wait_log finds `Boot seems successful` of the new image,
+log_since feeds the D-14 gate (bootlog.check_api_log), and an unchanged sessions() with the link still up
+shows that the session never dropped during the soak.
 """
 
 import asyncio
+import re
 import threading
 import time
 from collections import deque
@@ -52,6 +59,7 @@ API_CONNECT_S = 10
 RECONNECT_S = 1
 COMMAND_S = 5
 HISTORY = 32  # state messages kept per entity; waits ask for a handful
+LOG_LINES = 20000  # API log lines kept in memory (a soak at DEBUG level is a few hundred)
 
 _KNOWN = (FanInfo, SensorInfo, BinarySensorInfo, TextSensorInfo, ButtonInfo)
 
@@ -86,6 +94,8 @@ class DutLink:
         self._closed = False
         self._task = None
         self._lost = None  # the current session's "connection lost" event (set on the link's loop only)
+        self._lines = deque(maxlen=LOG_LINES)  # (time.monotonic() at arrival, ANSI-stripped message)
+        self._sessions = 0  # sessions established so far (a connect that failed is none)
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, name="hil-dutlink-loop", daemon=True)
         self._thread.start()
@@ -141,7 +151,11 @@ class DutLink:
         """subscribe_logs callback: one stamped, ANSI-stripped line per message."""
         message = response.message
         text = message.decode("utf-8", "replace") if isinstance(message, (bytes, bytearray)) else str(message)
-        self._write_log(ANSI.sub("", text).rstrip("\r\n").replace("\r", " ").replace("\n", " "))
+        line = ANSI.sub("", text).rstrip("\r\n").replace("\r", " ").replace("\n", " ")
+        with self._cond:
+            self._lines.append((time.monotonic(), line))
+            self._cond.notify_all()
+        self._write_log(line)
 
     def boundary(self, text):
         """Write a `[HIL] ===== text =====` test boundary line into the API log (HARN-08)."""
@@ -154,6 +168,7 @@ class DutLink:
             self._entities = {e.name: (type(e), e.key) for e in infos if isinstance(e, _KNOWN)}
             self._names = {key: name for name, (_cls, key) in self._entities.items()}
             self._connected = True
+            self._sessions += 1
             self._cond.notify_all()
 
     def _set_disconnected(self):
@@ -293,6 +308,34 @@ class DutLink:
             seen = info.project_version if (self._connected and info is not None) else "no session"
         message = "DUT API session not ready within %ss (last: %s)" % (deadline_s, seen)
         raise (self._link_down_error(message) if down else RigError(message))
+
+    def sessions(self):
+        """Sessions established so far; a drop and a reconnect add one, a failed connect adds none."""
+        with self._cond:
+            return self._sessions
+
+    def log_since(self, since):
+        """The API log messages received at or after the monotonic time `since`, in arrival order."""
+        with self._cond:
+            return [line for at, line in self._lines if at >= since]
+
+    def wait_log(self, regex, since, deadline_s):
+        """time.monotonic() at which the first message matching `regex` at or after `since` arrived.
+
+        A signal wait: it wakes on every message. RigError at the deadline, naming the pattern.
+        """
+        pattern = re.compile(regex)
+        end = time.monotonic() + max(0.0, deadline_s)
+        with self._cond:
+            while True:
+                for at, line in self._lines:
+                    if at >= since and pattern.search(line):
+                        return at
+                left = end - time.monotonic()
+                if left <= 0:
+                    break
+                self._cond.wait(left)
+        raise RigError("DUT API log: no match for /%s/ within %ss" % (regex, deadline_s))
 
     def device_info(self):
         """DeviceInfo of the last connect, or None before the first one."""

@@ -103,6 +103,11 @@ def has_boot_banner(text, chip):
     return re.search(_banner_regex(NORMAL_BOOT, "boot", chip), strip_ansi(text)) is not None
 
 
+def count_boot_banners(text, chip):
+    """How many ROM normal-boot banners of this chip `text` holds (download banners and cut lines do not count)."""
+    return len(re.findall(_banner_regex(NORMAL_BOOT, "boot", chip), strip_ansi(text)))
+
+
 def download_banner_regex(chip):
     """Regex (for SerialTap.wait_for) of the ROM download-mode code of this chip."""
     return _banner_regex(DOWNLOAD_BOOT, "download-mode", chip)
@@ -117,7 +122,27 @@ def safe_mode_lines(text):
     """Lines that say the DUT is in ESPHome safe mode, ANSI stripped, verbatim."""
     return [line.strip() for line in lines(text) if SAFE_MODE_RE.search(line)]
 
+
 ALLOWLISTED_REPORT = "allowlisted-errors.json"
+
+
+def _report_allowed(allowed, label):
+    """Print, warn and append every allowlisted line as "<label>: <line>" to reports/allowlisted-errors.json."""
+    for line in allowed:
+        message = "ALLOWLISTED boot-log line (D-14 amendment, expires with the ESPHome 2026.10.1 pin): %s" % line
+        print("WARNING: " + message)
+        warnings.warn(message, stacklevel=3)
+    reports = config.reports_dir()
+    reports.mkdir(parents=True, exist_ok=True)
+    path = reports / ALLOWLISTED_REPORT
+    try:
+        lines = json.loads(path.read_text(encoding="utf-8"))["lines"]
+        if not isinstance(lines, list):
+            lines = []
+    except (OSError, ValueError, KeyError, TypeError):
+        lines = []
+    lines.extend("%s: %s" % (label, line) for line in allowed)
+    path.write_text(json.dumps({"lines": lines}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def check_boot_window(tap, since, until, chip, label):
@@ -135,19 +160,21 @@ def check_boot_window(tap, since, until, chip, label):
     if not has_boot_banner(window, chip):
         raise RigError("no ROM boot banner captured after reset; boot log gate would be vacuous (%s)" % label)
     errors, allowed = classify_errors(window)
-    for line in allowed:
-        message = "ALLOWLISTED boot-log line (D-14 amendment, expires with the ESPHome 2026.10.1 pin): %s" % line
-        print("WARNING: " + message)
-        warnings.warn(message, stacklevel=2)
-    reports = config.reports_dir()
-    reports.mkdir(parents=True, exist_ok=True)
-    path = reports / ALLOWLISTED_REPORT
-    try:
-        lines = json.loads(path.read_text(encoding="utf-8"))["lines"]
-        if not isinstance(lines, list):
-            lines = []
-    except (OSError, ValueError, KeyError, TypeError):
-        lines = []
-    lines.extend("%s: %s" % (label, line) for line in allowed)
-    path.write_text(json.dumps({"lines": lines}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _report_allowed(allowed, label)
+    return errors, allowed
+
+
+def check_api_log(log_lines, label):
+    """The same D-14 gate over DutLink API log lines (03-11, the upgrade under the release bootloader).
+
+    While the release's bootloader is in flash UART0 shows no app line, so the upgraded boot is gated on
+    its API log (DutLink.log_since). The lines must hold the image's `Boot seems successful`: without it
+    the log is not that boot's and the gate would pass vacuously (RigError). Allowlisted lines are reported
+    exactly as check_boot_window reports them. Returns (errors, allowed).
+    """
+    text = "\n".join(log_lines)
+    if not BOOT_OK_RE.search(strip_ansi(text)):
+        raise RigError("API log holds no 'Boot seems successful'; boot log gate would be vacuous (%s)" % label)
+    errors, allowed = classify_errors(text)
+    _report_allowed(allowed, label)
     return errors, allowed

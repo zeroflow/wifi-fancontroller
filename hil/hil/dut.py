@@ -30,6 +30,8 @@ OTA_BOOT_S = 90  # upload finished -> the new build ID answers on the API
 OTA_CONFIRM_WINDOW_S = 75  # safe_mode boot_is_good_after (60 s) plus margin; see Dut.reset
 BOOTLOADER_BANNER_S = 3  # Bootloader pressed -> the ROM download-mode banner is on UART0
 CONFIRM_WAIT_S = 75  # most an EN reset waits for 'Boot seems successful' of an unconfirmed OTA image
+SOAK_S = 70  # test_11 observes the upgraded image until this long after the OTA end (boot_is_good_after 60 s + margin)
+LINK_WAIT_S = 30  # the DutLink session of an image whose probe already answered: a few reconnect polls
 SETTLE_S = 10  # one shared deadline for the whole of Dut.settle
 SAFE_MODE_DETECT_S = 45  # most a safe-mode press may take until SAFE MODE IS ACTIVE shows on UART0
 PORT_PROBE_S = 2  # TCP connect deadline of the OTA / API port probes after an API timeout
@@ -98,6 +100,10 @@ class Dut:
         # and an EN reset before boot_is_good_after silently boots the previous image.
         self.unconfirmed_until = 0.0
         self._ota_mark = None  # the ota_end_<label> mark of the OTA that opened the window
+        # Where that window's 'Boot seems successful' is read: "uart" (UART0 since _ota_mark) or "api" (the
+        # DutLink API log, for the release-to-commit upgrade only: UART0 is dark under the release bootloader).
+        self._confirm_via = None
+        self.ota_end_at = None  # time.monotonic() of the latest OTA's end (the done report, else the end mark)
         self.budget = ResetBudget(label="DUT %s" % dut_id)
         self._marks = 0  # unique mark names: bootloader_<n>, reset_<n>
         self._in_bootloader = False
@@ -140,19 +146,42 @@ class Dut:
                 "DUT %s did not enter download mode (no %s within %d s)" % (self.id, code, BOOTLOADER_BANNER_S)
             ) from None
 
-    def _wait_confirmed(self):
-        """Inside the rollback window: wait for 'Boot seems successful' or refuse. Never presses."""
+    def wait_confirmed(self, deadline_s=CONFIRM_WAIT_S, link=None):
+        """Inside the rollback window: wait for 'Boot seems successful' or refuse. Never presses.
+
+        Returns the seconds from the OTA end to the mark and closes the window; 0.0 at once when no window
+        is open. A signal wait within min(window left, deadline_s). The mark is read where the OTA said:
+        on UART0 since the OTA end mark, or, after the release-to-commit upgrade (Dut.ota with
+        uart_banner off), in the API log of `link` (a DutLink) since ota_end_at, because UART0 is dark
+        under the release bootloader. Without that link the upgrade cannot be confirmed and the refusal
+        stands: reset() passes none, so an EN reset after the upgrade needs this call with the link first.
+        """
         left = self.unconfirmed_until - time.monotonic()
         if left <= 0:
-            return
-        refusal = RigError("EN reset refused: the OTA image was not confirmed (no 'Boot seems successful')")
-        if self.tap is None or self.tap.closed or self._ota_mark is None:
-            raise refusal
-        try:
-            self.tap.wait_for(bootlog.BOOT_OK_RE.pattern, since=self._ota_mark, deadline_s=min(left, CONFIRM_WAIT_S))
-        except RigError:
-            raise refusal from None
+            return 0.0
+        wait_s = min(left, deadline_s)
+        if self._confirm_via == "api":
+            refusal = RigError(
+                "EN reset refused: the upgraded image is confirmed over the API log only "
+                "(no 'Boot seems successful' in the API log since the OTA end)"
+            )
+            if link is None or self.ota_end_at is None:
+                raise refusal
+            try:
+                at = link.wait_log(bootlog.BOOT_OK_RE.pattern, self.ota_end_at, wait_s)
+            except RigError:
+                raise refusal from None
+        else:
+            refusal = RigError("EN reset refused: the OTA image was not confirmed (no 'Boot seems successful')")
+            if self.tap is None or self.tap.closed or self._ota_mark is None:
+                raise refusal
+            try:
+                self.tap.wait_for(bootlog.BOOT_OK_RE.pattern, since=self._ota_mark, deadline_s=wait_s)
+            except RigError:
+                raise refusal from None
+            at = time.monotonic()  # the tap polls every 0.1 s, so this is the line's arrival within that
         self.unconfirmed_until = 0.0
+        return max(0.0, at - self.ota_end_at) if self.ota_end_at is not None else 0.0
 
     def reset(self):
         """Press Reset and return the mark that precedes the press (the start of the boot to wait for).
@@ -164,7 +193,7 @@ class Dut:
         if self._in_bootloader:
             cause = "flash_reset"
         else:
-            self._wait_confirmed()
+            self.wait_confirmed()
             self.budget.before_reset()
             cause = "en_reset"
         mark = self._next_mark("reset")
@@ -414,7 +443,7 @@ class Dut:
         path = reports / ("ota-dut-%s.json" % self.id.lower())
         path.write_text(json.dumps(self._ota_log, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    def _record_ota(self, image, label, transfer_s, boot_s, ok, reason, dark=False):
+    def _record_ota(self, image, label, transfer_s, boot_s, ok, reason, dark=False, reboot_proof="uart0 banner"):
         entry = {
             "role": image.role,
             "label": label,
@@ -423,6 +452,7 @@ class Dut:
             "boot_s": None if boot_s is None else round(boot_s, 1),
             "ok": ok,
             "reason": reason,
+            "reboot_proof": reboot_proof,
         }
         if dark:
             entry["dark"] = True  # delivered without an API to confirm it (ota_dark)
@@ -457,6 +487,7 @@ class Dut:
 
         def done():
             reported_done.append(True)
+            self.ota_end_at = time.monotonic()
             self._mark(end_mark)
 
         self.ota_count += 1
@@ -469,11 +500,12 @@ class Dut:
             self._record_ota(image, label, result.duration_s, None, False, result.reason, dark)
             raise FirmwareFailure("OTA to %s failed (%s); last output:\n%s" % (role, result.reason, result.output_tail))
         if not reported_done:
+            self.ota_end_at = time.monotonic()
             self._mark(end_mark)
         self.budget.record("ota_reboot", orderly=True)  # the DUT reboots at once after the upload, orderly
         return result, end_mark if reported_done else "ota_start_%s" % label
 
-    def ota(self, image, noise_psk, allow_plaintext=False, label=None):
+    def ota(self, image, noise_psk, allow_plaintext=False, label=None, uart_banner=True):
         """OTA to `image` (encrypted unless allowed otherwise), confirmed by a ROM boot banner and the new build ID.
 
         A failed upload or a wrong image afterwards is a device-side outcome: FirmwareFailure
@@ -484,11 +516,22 @@ class Dut:
         `label` (default: the role) names the marks, the timings ota_<label> and ota_<label>_boot and
         the report entry. A true `allow_plaintext` is for the release-to-commit upgrade only (test_11,
         T-03-24): the release offers no OTA encryption; the key is still offered.
+
+        `uart_banner` off is for that same upgrade only (03-11 maintainer decision serial-restore-after-
+        upgrade): under the release's bootloader UART0 shows no app line and the upgrade reboot's ROM banner
+        goes to USB, so the reboot is proven by the build ID changing from the release's version (the state
+        check before test_11 confirmed it) to the commit's, and wait_confirmed reads the mark from the API log.
+        It is refused without the plaintext upgrade, so no other OTA can drop the banner check.
         """
         role = image.role
         label = role if label is None else label
+        banner = uart_banner is not False
+        if not banner and allow_plaintext is not True:
+            raise RigError("the UART0 reboot check may be skipped only for the release-to-commit upgrade (plaintext OTA)")
+        proof = "uart0 banner" if banner else "build id"
         result, window_start = self._upload(image, noise_psk, label, allow_plaintext=allow_plaintext)
         self._ota_mark = "ota_end_%s" % label
+        self._confirm_via = "uart" if banner else "api"
 
         started = time.monotonic()
         end = started + OTA_BOOT_S
@@ -503,7 +546,7 @@ class Dut:
             if reported == image.build_id:
                 break
             if time.monotonic() >= end:
-                self._record_ota(image, label, result.duration_s, None, False, "wrong build id")
+                self._record_ota(image, label, result.duration_s, None, False, "wrong build id", reboot_proof=proof)
                 raise FirmwareFailure(
                     "after OTA to %s DUT %s reports %s, expected %s" % (role, self.id, reported, image.build_id)
                 )
@@ -513,15 +556,15 @@ class Dut:
         self._mark("api_ready")
 
         if self.tap is None or self.tap.closed:
-            self._record_ota(image, label, result.duration_s, boot_s, False, "serial tap lost")
+            self._record_ota(image, label, result.duration_s, boot_s, False, "serial tap lost", reboot_proof=proof)
             raise RigError("serial tap lost the bridge after OTA to %s; the reboot cannot be confirmed" % role)
-        if not bootlog.has_boot_banner(self.tap.text(window_start), self.cfg.chip):
+        if banner and not bootlog.has_boot_banner(self.tap.text(window_start), self.cfg.chip):
             self._record_ota(image, label, result.duration_s, boot_s, False, "no reboot seen")
             raise FirmwareFailure("no reboot seen after OTA to %s" % role)
-        self._record_ota(image, label, result.duration_s, boot_s, True, "")
+        self._record_ota(image, label, result.duration_s, boot_s, True, "", reboot_proof=proof)
         summary.record_timing("ota_%s" % label, result.duration_s)
         summary.record_timing("ota_%s_boot" % label, boot_s)
-        self.last_ota = {"label": label, "transfer_s": result.duration_s, "boot_s": boot_s}
+        self.last_ota = {"label": label, "transfer_s": result.duration_s, "boot_s": boot_s, "window_start": window_start}
         named = role if label == role else "%s (%s)" % (role, label)
         print("ota %s: ok transfer=%.1fs boot=%.1fs build_id=%s" % (named, result.duration_s, boot_s, image.build_id))
 
@@ -541,6 +584,7 @@ class Dut:
         result, window_start = self._upload(image, noise_psk, role, dark=True)
         self.unconfirmed_until = 0.0
         self._ota_mark = None
+        self._confirm_via = None
         started = time.monotonic()
         if self.tap is None or self.tap.closed:
             self._record_ota(image, role, result.duration_s, None, False, "serial tap lost", dark=True)

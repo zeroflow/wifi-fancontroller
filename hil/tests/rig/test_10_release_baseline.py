@@ -4,7 +4,8 @@ The verified baseline (hil-baseline, fetched by the hosted prepare job and re-ha
 written over serial together with the NVS backup, and DUT A must answer without encryption on the
 release's own version. The release is not the firmware under test: a DUT that does not come back on it
 is a RIG ERROR (baseline.flash). test_11 then upgrades it to the commit image by OTA, the way a customer
-board is upgraded. The D-14 boot-log gate runs on that upgraded boot (test_11) and on the recovery boot
+board is upgraded. The D-14 boot-log gate runs on that upgraded boot over the API log (test_11: UART0 is
+dark under the release bootloader), on UART0 after the serial restore (test_12) and on the recovery boot
 (test_41): the release image prints only the ROM log on UART0, so it has nothing to gate here.
 """
 
