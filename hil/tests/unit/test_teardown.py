@@ -725,7 +725,7 @@ def test_a_pass_verdict_with_an_unconfirmed_commit_image_still_becomes_rig_error
     out = go(rig, ["wrong-build"], job_status="success")
     assert out.code == 3
     assert written_verdict(rig) == "RIG ERROR"
-    assert not (rig.tmp / "reports" / "rig-errors.json").exists()
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]  # 03-15: every rewrite records its cause
 
 
 # ------------------------------------------------- watchdog counters across the run (03-08, D-47, D-48)
@@ -826,3 +826,215 @@ def test_a_fake_supervisor_without_sensors_still_tears_down(rig):
     assert out.code == 0
     data = json.loads((rig.tmp / "reports" / "watchdog.json").read_text())
     assert data["end"] == {"A": None, "B": None}
+
+
+# ---- 03-15: every teardown exit-3 path ends RIG ERROR with its heading and annotation (WR-06, D-45, D-46) ----
+
+ANNOTATION = "::error title=RIG ERROR::"
+
+
+class ReleaseRigError(FakeSupervisor):
+    """release_all fails with the curated RigError a switch command raises."""
+
+    def release_all(self):
+        raise RigError("switch command failed")
+
+
+def teardown_with(rig, supervisor, job_status="success"):
+    flasher = Flasher("192.0.2.10", 6638, "esp32s2", esptool_cmd=[sys.executable, str(rig.script)])
+    dut = ScriptedDut("A", rig.dutcfg, supervisor, flasher, answers=[BUILD_ID])
+    return teardown.run_teardown(
+        rig.cfg, str(rig.fw), job_status, rig.tmp / "reports", supervisor=supervisor, dut=dut, dut_key="hil-key"
+    )
+
+
+def verdict_json(rig):
+    return json.loads((rig.tmp / "reports" / "verdict.json").read_text())
+
+
+def annotations(text):
+    return [line for line in text.splitlines() if line.startswith(ANNOTATION)]
+
+
+def heading(rig):
+    from hil import summary
+
+    return summary.write(rig.tmp / "reports", None, []).splitlines()[0]
+
+
+@pytest.mark.parametrize("supervisor_class", [ReleaseRigError, BrokenSupervisor])
+def test_a_pass_run_whose_lines_cannot_be_released_ends_rig_error_with_heading_and_annotation(rig, capsys, supervisor_class):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    code = teardown_with(rig, supervisor_class([]))
+    text = capsys.readouterr().out
+    assert code == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: lines not released")
+    assert rig_errors(rig) == [{"nodeid": None, "kind": "Teardown", "message": "teardown: lines not released"}]
+    assert esptool_calls(rig) == []
+    assert annotations(text) == [ANNOTATION + "teardown: lines not released"]
+    assert "link down" not in text
+    assert heading(rig) == "## HIL run: RIG ERROR"
+
+
+def test_a_fail_run_whose_lines_cannot_be_released_stays_fail(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "FAIL")
+    code = teardown_with(rig, BrokenSupervisor([]), job_status="failure")
+    assert code == 3
+    assert verdict_json(rig)["verdict"] == "FAIL"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+    assert annotations(capsys.readouterr().out) == []
+    assert heading(rig) == "## HIL run: FAIL"
+
+
+def test_an_earlier_rig_error_keeps_its_reason_and_gains_the_teardown_entry_and_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    reports = rig.tmp / "reports"
+    reports.mkdir()
+    (reports / "verdict.json").write_text(json.dumps({"schema": 1, "verdict": "RIG ERROR", "reason": "preflight: X"}))
+    code = teardown_with(rig, BrokenSupervisor([]), job_status="failure")
+    assert code == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "preflight: X")
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: lines not released"]
+
+
+def test_a_missing_verdict_json_becomes_rig_error_when_the_lines_cannot_be_released(rig):
+    code = teardown_with(rig, BrokenSupervisor([]), job_status="")
+    assert code == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: lines not released")
+
+
+def test_no_annotation_is_printed_outside_github_actions(rig, capsys):
+    verdict(rig, "PASS")
+    assert teardown_with(rig, BrokenSupervisor([])) == 3
+    assert ANNOTATION not in capsys.readouterr().out
+    assert written_verdict(rig) == "RIG ERROR"
+
+
+def test_an_unconfirmed_green_run_prints_one_annotation_and_records_a_teardown_entry(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    out = go(rig, [None], job_status="success")
+    assert out.code == 3
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: commit image not confirmed after a green run"]
+    assert verdict_json(rig)["reason"] == "teardown: commit image not confirmed after a green run"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+
+
+def test_a_known_good_fallback_prints_one_annotation_and_keeps_its_exit_code_and_image(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    out = go(rig, [None, BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert (out.final["image"], out.final["confirmed"]) == ("commit", True)
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: known-good image did not come back"]
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+
+
+def test_an_unverifiable_known_good_image_prints_one_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    rig.dutcfg.known_good_sha256 = "0" * 64
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: known-good image does not verify"]
+
+
+def test_a_confirmed_green_run_prints_no_rig_error_annotation_and_keeps_pass(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 0
+    assert annotations(capsys.readouterr().out) == []
+    assert written_verdict(rig) == "PASS"
+
+
+def test_a_fail_run_with_a_failed_known_good_attempt_prints_no_rig_error_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "FAIL")
+    out = go(rig, [None, None], job_status="failure")
+    assert out.code == 3
+    assert written_verdict(rig) == "FAIL"
+    assert annotations(capsys.readouterr().out) == []
+
+
+# cmd_teardown: the stage causes (WR-06)
+
+
+class Boom(Exception):
+    pass
+
+
+@pytest.fixture
+def cmd(rig, monkeypatch):
+    """cmd_teardown in-process: a PASS verdict.json, Actions on, summary writing real but unmasked."""
+    from hil import __main__ as entry
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("HIL_JOB_STATUS", "success")
+    verdict(rig, "PASS")
+    monkeypatch.setattr(entry.config, "mask_literals", lambda _rig: [])
+    monkeypatch.setattr(entry, "redact_reports", lambda _rig: None)
+    fake_rig = SimpleNamespace(duts={}, supervisor_host="h", supervisor_key="k", dut_api_key="d")
+    monkeypatch.setattr(entry, "load_rig", lambda: fake_rig)
+    monkeypatch.setattr(entry, "_rig_dut", lambda _rig: (SimpleNamespace(close=lambda: None), None))
+    return entry
+
+
+def summary_head(rig):
+    return (rig.tmp / "reports" / "raw" / "summary.md").read_text().splitlines()[0]
+
+
+def raise_(exc):
+    def raiser(*_args, **_kwargs):
+        raise exc
+
+    return raiser
+
+
+def test_cmd_teardown_that_cannot_reach_the_supervisor_ends_rig_error(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd, "_rig_dut", raise_(RigError("supervisor connection failed (ConnectionRefusedError)")))
+    assert cmd.cmd_teardown() == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: supervisor unreachable")
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: supervisor unreachable"]
+    assert summary_head(rig) == "## HIL run: RIG ERROR"
+    assert final(rig)["steps"]
+
+
+def test_cmd_teardown_without_a_rig_configuration_ends_rig_error_without_a_summary(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd, "load_rig", raise_(RigError("HIL_RIG_CONFIG is not set")))
+    assert cmd.cmd_teardown() == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: rig configuration not loaded")
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: rig configuration not loaded"]
+    assert not (rig.tmp / "reports" / "raw" / "summary.md").exists()
+
+
+def test_cmd_teardown_with_a_rig_error_out_of_run_teardown_names_the_class(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd.teardown, "run_teardown", raise_(RigError("flash failed")))
+    assert cmd.cmd_teardown() == 3
+    assert verdict_json(rig)["reason"] == "teardown: stopped (RigError)"
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: stopped (RigError)"]
+    assert summary_head(rig) == "## HIL run: RIG ERROR"
+
+
+def test_cmd_teardown_with_an_unexpected_exception_prints_the_class_never_the_text(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd.teardown, "run_teardown", raise_(Boom("secret-looking text must not be printed")))
+    assert cmd.cmd_teardown() == 3
+    text = capsys.readouterr().out
+    assert verdict_json(rig)["reason"] == "teardown: stopped unexpectedly (Boom)"
+    assert annotations(text) == [ANNOTATION + "teardown: stopped unexpectedly (Boom)"]
+    assert "secret-looking" not in text
+    assert "secret-looking" not in (rig.tmp / "reports" / "verdict.json").read_text()
+    assert summary_head(rig) == "## HIL run: RIG ERROR"
+
+
+def test_cmd_teardown_keeps_a_recorded_fail_when_it_cannot_reach_the_supervisor(rig, cmd, monkeypatch, capsys):
+    verdict(rig, "FAIL")
+    monkeypatch.setattr(cmd, "_rig_dut", raise_(RigError("supervisor connection failed (TimeoutError)")))
+    assert cmd.cmd_teardown() == 3
+    assert verdict_json(rig)["verdict"] == "FAIL"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+    assert annotations(capsys.readouterr().out) == []
+    assert summary_head(rig) == "## HIL run: FAIL"
