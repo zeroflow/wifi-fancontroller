@@ -236,3 +236,52 @@ def test_dut_b_does_not_need_an_nvs_release_tag(tmp_path):
     cfg, _env, _net = load(tmp_path)
     assert "nvs_release_tag" not in rig_toml().split("[dut.b]")[1]
     assert cfg.duts["B"].nvs_release_tag == ""
+
+
+# ---- 03-14 masking gap: masks before any other output, no host or MAC in a repr ----
+
+CHILD = """
+import sys
+from hil import config
+cfg = config.load(network_file=sys.argv[1])
+config.emit_masks(cfg, network_file=sys.argv[1])
+# aioesphomeapi logs a connection error with the DUT's address to stderr, unbuffered
+sys.stderr.write("192.0.2.20: Connection error occurred\\n")
+sys.stderr.flush()
+"""
+
+
+def test_the_masks_reach_a_pipe_before_a_later_stderr_line_naming_a_host(tmp_path):
+    """p1 (03-14): the ::add-mask:: lines sat in the block-buffered stdout of the Preflight step while
+    aioesphomeapi's stderr warning with DUT A's address reached the runner first, unmasked. Both streams
+    go to one pipe here, as on the runner: every mask line must come before the stderr line."""
+    import os
+    import subprocess
+    import sys
+
+    cfg_path = tmp_path / "rig.toml"
+    cfg_path.write_text(rig_toml(), encoding="utf-8")
+    net = network(tmp_path)
+    env = {k: v for k, v in os.environ.items() if k in ("PATH", "HOME", "SYSTEMROOT")}
+    env.update(HIL_RIG_CONFIG=str(cfg_path), HIL_SUPERVISOR_KEY=SUPERVISOR_KEY, GITHUB_ACTIONS="true")
+    root = os.path.dirname(os.path.dirname(os.path.abspath(config.__file__)))
+    env["PYTHONPATH"] = root
+    out = subprocess.run(
+        [sys.executable, "-c", CHILD, str(net)], cwd=root, env=env, stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT, text=True, timeout=60, check=True,
+    ).stdout.splitlines()
+    leak = out.index("192.0.2.20: Connection error occurred")
+    masks = [i for i, line in enumerate(out) if line.startswith("::add-mask::")]
+    assert masks and "::add-mask::192.0.2.20" in out
+    assert max(masks) < leak, "a mask line came after the stderr line that names the host"
+
+
+def test_no_host_mac_or_subnet_in_the_repr_of_the_rig_config(tmp_path):
+    """A pytest traceback shows the rig_config fixture's repr truncated ('192.0.2...'), which no
+    full-value mask matches: hosts and MACs stay out of every repr, the attributes stay readable."""
+    cfg, _env, _net = load(tmp_path)
+    text = repr(cfg) + str(cfg) + "".join(repr(d) for d in cfg.duts.values())
+    for literal in ("192.0.2.10", "192.0.2.20", "192.0.2.30", "192.0.2", "02:00:00:00:00:0a", "02:00:00:00:00:0b"):
+        assert literal not in text, literal
+    assert cfg.supervisor_host == "192.0.2.10" and cfg.duts["A"].host == "192.0.2.20"
+    assert "rev='3.2'" in repr(cfg.duts["A"])
