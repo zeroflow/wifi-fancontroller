@@ -106,7 +106,7 @@ jobs:
   # `uses:` tag makes GitHub reject the whole file as invalid.
   build-firmware:
     name: Build Firmware
-    uses: esphome/workflows/.github/workflows/build.yml@2026.10.3
+    uses: esphome/workflows/.github/workflows/build.yml@2026.11.0
     needs:
       - check-version
     with:
