@@ -289,7 +289,9 @@ def test_a_version_tail_is_never_masked_as_an_address_even_with_an_ellipsis(text
 
 
 def test_a_four_group_number_has_an_address_shape_and_is_masked():
-    """The one deliberate conflict: 2026.10.1.5 is shaped like an address and a leak is worse than a masked build
-    number, so a four-group dotted number is masked. A three-group version is not (test above)."""
-    assert redact.redact("build 2026.10.1.5 ok", []) == "build *** ok"
+    """The one deliberate conflict: 1.6.0.1 is shaped like an address and a leak is worse than a masked build
+    number, so four groups of 1-3 digits are masked. A three-group version is not (test above), and a first
+    group of four digits (2026.10.1.5) is not an octet, so an ESPHome version with a fourth group stays."""
+    assert redact.redact("build 1.6.0.1 ok", []) == "build *** ok"
     assert redact.redact("v1.2.3.4", []) == "v***"
+    assert redact.redact("esphome 2026.10.1.5", []) == "esphome 2026.10.1.5"

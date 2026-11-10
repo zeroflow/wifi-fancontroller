@@ -318,6 +318,18 @@ def mask_literals(cfg, env=None, network_file=None):
     return literals
 
 
+def safe_mask_literals(cfg, env=None, network_file=None):
+    """mask_literals for the places that print on an error path (annotations, cut message lines).
+
+    Never raises: a config that did not load (None, a half-built object) or a literal that is too short
+    gives [] and the caller masks by pattern only (IPv4, MAC, socket URL). The run's real failure is the
+    one that must be reported, not this helper's."""
+    try:
+        return mask_literals(cfg, env=env, network_file=network_file)
+    except Exception:  # noqa: BLE001 - a masking helper must not hide the fault it is annotating
+        return []
+
+
 def emit_masks(cfg, env=None, network_file=None):
     """Under GitHub Actions print ::add-mask:: for every literal, before any other output.
 

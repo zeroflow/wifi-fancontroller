@@ -201,7 +201,7 @@ def _upgrade_line(reports):
 PREFLIGHT_NOT_RUN = "Preflight: not run for this commit"
 
 
-def _preflight(reports):
+def _preflight(reports, literals=()):
     """### Preflight from reports/preflight.json (HARN-05, HARN-10): every check, the heal, every warning.
 
     Shown only when preflight.json names the same commit as verdict.json (T-03-19): a preflight of an
@@ -221,7 +221,7 @@ def _preflight(reports):
             result = "ok (%s)" % detail if detail else "ok"
         else:
             result = detail or "failed"
-        lines.append("| %s | %s |" % (_cell(check.get("name", "?")), _cell(_first_line(result))))
+        lines.append("| %s | %s |" % (_cell(check.get("name", "?")), _cell(_first_line(result, literals))))
     heal = record.get("heal")
     if not isinstance(heal, dict):
         lines += ["", "Heal: no heal"]
@@ -229,7 +229,7 @@ def _preflight(reports):
         version = " (%s)" % heal["version"] if heal.get("version") else ""
         lines += ["", "Heal: healed with %s%s" % (heal.get("source") or "unknown source", version)]
     else:
-        lines += ["", "Heal: %s" % _first_line(heal.get("detail") or "not completed")]
+        lines += ["", "Heal: %s" % _first_line(heal.get("detail") or "not completed", literals)]
     warnings = [str(w) for w in record.get("warnings") or []]
     lines += [""] + (["- WARNING %s" % _cell(w) for w in warnings] or ["Warnings: none"])
     return lines
@@ -272,17 +272,19 @@ def _dut_heading(manifest):
     return "### DUT A (Rev %s, %s)" % (first.get("rev", "?"), first.get("chip", "?"))
 
 
-def _first_line(text):
-    """The first line of text, shapes masked (ANSI, socket URL, IPv4, cut IPv4, MAC), then cut to MESSAGE_CHARS.
+def _first_line(text, literals=()):
+    """The first line of text, the rig literals and the shapes masked (ANSI, socket URL, IPv4, cut IPv4, MAC), then cut to MESSAGE_CHARS.
 
     Masking comes before the cut: a cut inside an address left its first octets in the line (03-14,
-    run p1). The rig literals are applied later by write()."""
+    run p1), and a cut inside a literal would leave its head. `literals` are the rig's mask literals
+    (config.mask_literals); without them (None, or a config that did not load) only the shapes are masked.
+    Every caller that prints a line outside the masked summary file (the annotations) passes them."""
     line = str(text).strip().splitlines()[0] if str(text).strip() else ""
-    line = redact.redact(line, [])
+    line = redact.redact(line, literals or [])
     return line if len(line) <= MESSAGE_CHARS else line[: MESSAGE_CHARS - 3] + "..."
 
 
-def _dut_table(reports):
+def _dut_table(reports, literals=()):
     cases = _junit_cases(reports / "raw" / "junit.xml")
     if cases is None:
         return ["junit.xml: %s" % NOT_RECORDED]
@@ -292,7 +294,7 @@ def _dut_table(reports):
     bad = [(key, message) for key, result, _s, message in cases if result in ("failed", "error")]
     if bad:
         lines += ["", "### Failures", ""]
-        lines += ["- %s: %s" % (key, _first_line(message) or "no message") for key, message in bad]
+        lines += ["- %s: %s" % (key, _first_line(message, literals) or "no message") for key, message in bad]
     return lines
 
 
@@ -403,13 +405,13 @@ def _rollback_states(reports):
     return lines
 
 
-def _entity_list(reports):
+def _entity_list(reports, literals=()):
     """### Entity list (REG-03, D-38) from reports/golden-dut-a.json: the match, or every removed and added entry."""
     data = _read_json(reports / GOLDEN_REPORT)
     if not isinstance(data, dict) or not isinstance(data.get("actual"), list):
         return [ENTITIES_NOT_CHECKED]
     if data.get("error"):
-        return ["golden list not usable: %s" % _cell(_first_line(data["error"]))]
+        return ["golden list not usable: %s" % _cell(_first_line(data["error"], literals))]
     actual = data["actual"]
     if not actual:
         return ["DUT A listed no entities"]
@@ -431,17 +433,17 @@ def _entity_list(reports):
     return lines
 
 
-def _skipped(reports):
+def _skipped(reports, literals=()):
     tests = _read_json(reports / "tests.json")
     if not isinstance(tests, dict) or not isinstance(tests.get("skipped"), list):
         return ["Skipped: %s" % NOT_RECORDED]
     skipped = [s for s in tests["skipped"] if isinstance(s, dict)]
     if not skipped:
         return ["none"]
-    return ["- %s: %s" % (s.get("nodeid", "?"), _first_line(s.get("reason", "")) or "no reason recorded") for s in skipped]
+    return ["- %s: %s" % (s.get("nodeid", "?"), _first_line(s.get("reason", ""), literals) or "no reason recorded") for s in skipped]
 
 
-def _rig_conditions(reports):
+def _rig_conditions(reports, literals=()):
     errors = _read_json(reports / "rig-errors.json")
     if not isinstance(errors, list):
         return ["Rig conditions: %s" % NOT_RECORDED]
@@ -451,7 +453,7 @@ def _rig_conditions(reports):
             continue
         label = RIG_ERROR_LABELS.get(entry.get("kind"), "RIG ERROR")
         where = " (%s)" % entry["nodeid"] if entry.get("nodeid") else ""
-        rows.append("- %s: %s%s" % (label, _first_line(entry.get("message", "")), where))
+        rows.append("- %s: %s%s" % (label, _first_line(entry.get("message", ""), literals), where))
     return rows or ["none"]
 
 
@@ -478,25 +480,27 @@ def _final_image_line(reports):
     return "**Final image:** %s (%s), %s" % (final.get("image", "unknown"), final.get("version") or "unknown version", state)
 
 
-def render(reports_dir, manifest):
+def render(reports_dir, manifest, literals=()):
     """The job summary as Markdown. Pure: reads files, writes nothing, never raises for a missing report.
 
     Order: verdict, commit/ESPHome line, Baseline line (and its drift warning), Upgrade line, Preflight,
     Supervisor watchdog, DUT A table (JUnit order) and failures, Canary, Images, Timings, Flash and OTA, OTA
     rollback states, Entity list, Skipped, Rig conditions, Reset budget, Final image.
+
+    `literals` are the rig's mask literals; every message line is masked with them before its cut.
     """
     reports = Path(reports_dir)
     lines = _head(reports, manifest)
-    lines += ["", "### Preflight", ""] + _preflight(reports)
+    lines += ["", "### Preflight", ""] + _preflight(reports, literals)
     lines += ["", _watchdog_line(reports)]
-    lines += ["", _dut_heading(manifest), ""] + _dut_table(reports)
+    lines += ["", _dut_heading(manifest), ""] + _dut_table(reports, literals)
     lines += ["", _canary_line(reports)]
     lines += ["", "### Images", ""] + _images(manifest)
     lines += ["", "### Timings", ""] + _timings(reports) + [""] + _flash_and_ota(reports)
     lines += ["", "### OTA rollback states", ""] + _rollback_states(reports)
-    lines += ["", "### Entity list", ""] + _entity_list(reports)
-    lines += ["", "### Skipped", ""] + _skipped(reports)
-    lines += ["", "### Rig conditions", ""] + _rig_conditions(reports)
+    lines += ["", "### Entity list", ""] + _entity_list(reports, literals)
+    lines += ["", "### Skipped", ""] + _skipped(reports, literals)
+    lines += ["", "### Rig conditions", ""] + _rig_conditions(reports, literals)
     lines += ["", "### Allowlisted boot-log lines", ""] + _allowlisted(reports)
     lines += ["", _budget_line(reports), "", _final_image_line(reports)]
     return "\n".join(lines) + "\n"
@@ -510,7 +514,7 @@ def write(reports_dir, manifest, literals):
     """
     if literals is None:
         raise ValueError("summary.write needs the rig's mask literals")
-    text = redact.redact(render(reports_dir, manifest), literals)
+    text = redact.redact(render(reports_dir, manifest, literals), literals)
     raw = Path(reports_dir) / "raw"
     raw.mkdir(parents=True, exist_ok=True)
     (raw / "summary.md").write_text(text, encoding="utf-8")

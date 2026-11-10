@@ -3,7 +3,8 @@
 Only reports/redacted/ is ever uploaded. redact_tree() builds it from reports/raw/
 plus the JSON reports in the reports root, replacing every rig literal (hosts,
 MACs in every form, keys, SSID, PSK), then anything shaped like an IPv4 address,
-an IPv4 run cut by truncation (IPV4_CUT, 03-17), a MAC or a socket:// URL, and
+an IPv4 run cut by truncation (IPV4_CUT, 03-17), a MAC or a socket:// URL (also when glued to a letter
+or an underscore), and
 stripping ANSI escapes. Literals go first, longest first, so a literal that contains
 a shorter one is masked as a whole.
 """
@@ -15,13 +16,20 @@ from pathlib import Path
 
 MASK = "***"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
-IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+# Only a digit may keep a run from being an address: a letter or an underscore next to it ("host_192.0.2.40",
+# "x192.0.2.40y") does not, and \b read exactly those as no boundary (03-17 follow-up, WR-03). The trailing
+# lookahead is (?!\d), not (?![\d.]): an address before a full stop ("see 192.0.2.40.") is still an address.
+# Shape conflict, settled in favour of masking: any four dot-separated groups of 1-3 digits is an address
+# ("1.6.0.1" too); a first group of four digits ("2026.10.1.5") is not one, and neither is "2026.10.1".
+IPV4 = re.compile(r"(?<!\d)(?:\d{1,3}\.){3}\d{1,3}(?!\d)")
 # An address cut by a repr or a message limit ("192.0.2...", "192.0.", "192.0.2.2..."): two to four
 # dot-separated groups, the last possibly empty, directly followed by an ellipsis. No full-value mask
-# and not IPV4 matches it (03-14, run p1). The lookbehind keeps the tail of a version ("2026.10.1")
-# from being read as a run; the ellipsis stays in the text.
-IPV4_CUT = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){1,3}\.?(?=\.\.\.|\u2026)")
-MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
+# and not IPV4 matches it (03-14, run p1). The lookbehind rejects a digit or a dot, so the tail of a
+# version ("2026.10.1...", "esphome 2026.10.1...") is not read as a run, while a letter or an underscore
+# before the run does not protect it ("host_192.0.2...", "abc198.51.100..."). The ellipsis stays in the text.
+IPV4_CUT = re.compile(r"(?<![\d.])\d{1,3}(?:\.\d{1,3}){1,3}\.?(?=\.\.\.|\u2026)")
+# No \b: "id02:00:00:00:00:0a" and "mac_02:..." are MACs too.
+MAC = re.compile(r"(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}")
 SOCKET_URL = re.compile(r"socket://\S+")
 
 

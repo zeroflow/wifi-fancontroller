@@ -62,17 +62,18 @@ def is_green(verdict, job_status):
     return bool(verdict) and verdict.get("verdict") == "PASS" and job_status in ("", "success")
 
 
-def annotate_rig_error(cause):
+def annotate_rig_error(cause, literals=()):
     """The one `::error title=RIG ERROR::` line a teardown rewrite prints under GitHub Actions (D-45).
 
     Fixed cause texts and exception class names only. Outside Actions the `RIG ERROR:` line the
-    caller already said is the whole message.
+    caller already said is the whole message. `literals` are the rig's mask literals (a config that
+    did not load gives none and only the address shapes are masked).
     """
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        print("::error title=RIG ERROR::teardown: %s" % summary._first_line(cause))
+        print("::error title=RIG ERROR::teardown: %s" % summary._first_line(cause, literals))
 
 
-def rewrite_verdict(reports_dir, verdict, new="RIG ERROR", cause=""):
+def rewrite_verdict(reports_dir, verdict, new="RIG ERROR", cause="", literals=()):
     """Rewrite verdict.json to `new`, except over a recorded FAIL (D-46).
 
     A FAIL is the firmware's outcome and a later rig condition never relabels it: verdict.json
@@ -93,7 +94,7 @@ def rewrite_verdict(reports_dir, verdict, new="RIG ERROR", cause=""):
     reports_dir.mkdir(parents=True, exist_ok=True)
     (reports_dir / "verdict.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     append_teardown_entry(reports_dir, "teardown: %s" % cause)
-    annotate_rig_error(cause)
+    annotate_rig_error(cause, literals)
 
 
 def append_teardown_entry(reports_dir, message):
@@ -277,10 +278,10 @@ def _run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_
         supervisor.release_all()
     except RigError as exc:
         say("RIG ERROR: %s" % exc)
-        return lines_not_released(reports_dir, state)
+        return lines_not_released(reports_dir, state, cfg)
     except Exception as exc:  # noqa: BLE001 - any API fault still ends in the final-image bookkeeping
         say("RIG ERROR: switch release failed (%s)" % type(exc).__name__)
-        return lines_not_released(reports_dir, state)
+        return lines_not_released(reports_dir, state, cfg)
     say("DUT A lines released")
     state["steps"].append("lines released")
 
@@ -300,10 +301,12 @@ def _run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_
     return exit_code
 
 
-def lines_not_released(reports_dir, state):
+def lines_not_released(reports_dir, state, cfg=None):
     """WR-06: the run may be PASS and lines may still be held; the verdict, the heading and the annotation say RIG ERROR."""
     state["steps"].append("lines not released")
-    rewrite_verdict(reports_dir, read_verdict(reports_dir), cause="lines not released")
+    rewrite_verdict(
+        reports_dir, read_verdict(reports_dir), cause="lines not released", literals=config.safe_mask_literals(cfg)
+    )
     write_final(reports_dir, state)
     return 3
 
@@ -326,7 +329,9 @@ def keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
         if other is not None:
             say("RIG ERROR: DUT A runs the %s image (%s), not a final image" % (other.role, other.build_id))
         say("RIG ERROR: the commit image on DUT A could not be confirmed after a green run")
-        rewrite_verdict(reports_dir, verdict, cause="commit image not confirmed after a green run")
+        rewrite_verdict(
+            reports_dir, verdict, cause="commit image not confirmed after a green run", literals=config.safe_mask_literals(cfg)
+        )
         return 3
     return 0
 
@@ -419,6 +424,6 @@ def fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state, 
         say("RIG ERROR: DUT A did not come back on the known-good image; flashing the commit image (D-09)")
     else:
         say("RIG ERROR: %s; flashing the commit image (D-09)" % cause)
-    rewrite_verdict(reports_dir, verdict, cause=cause)
+    rewrite_verdict(reports_dir, verdict, cause=cause, literals=config.safe_mask_literals(cfg))
     flash_commit_image(dut, fw_dir, cfg.duts["A"], dut_key, state)
     return 3

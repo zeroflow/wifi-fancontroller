@@ -39,7 +39,9 @@ class Collector:
     exit code alone: exit 0 also means "everything was skipped" or "the canary never ran".
     """
 
-    def __init__(self):
+    def __init__(self, literals=()):
+        # The rig's mask literals: every first line this collector keeps is masked with them before its cut (WR-03).
+        self.literals = list(literals or [])
         self.rig_errors = []
         self.rig_error_records = []  # {"nodeid", "kind", "message"} for reports/rig-errors.json
         self.skipped = []  # {"nodeid", "reason"} in the order pytest reported them
@@ -55,19 +57,20 @@ class Collector:
         value = call.excinfo.value if call.excinfo is not None else None
         when = getattr(call, "when", None)
         if isinstance(value, RigError):
-            self.rig_errors.append(str(value))
+            # The printed RIG ERROR line: masked, not cut (rig-errors.json keeps the whole message for the redaction).
+            self.rig_errors.append(redact.redact(str(value), self.literals))
             self.rig_error_records.append(rig_error_record(item.nodeid, value))
-            self.events.append(("rig", item.nodeid, when, first_line(value)))
+            self.events.append(("rig", item.nodeid, when, first_line(value, self.literals)))
         elif value is None or isinstance(value, NOT_A_FAILURE):
             pass
         elif isinstance(value, FAILURE_TYPES):
-            self.events.append(("fail", item.nodeid, when, first_line(value)))
+            self.events.append(("fail", item.nodeid, when, first_line(value, self.literals)))
         else:
             # Tooling-is-rig-error (maintainer choice d3, 2026-11-10): an exception that is neither an
             # assertion nor a RigError is a harness or library fault and is named by its class.
-            self.rig_errors.append("%s: %s" % (type(value).__name__, first_line(value)))
+            self.rig_errors.append("%s: %s" % (type(value).__name__, first_line(value, self.literals)))
             self.rig_error_records.append(rig_error_record(item.nodeid, value))
-            self.events.append(("rig", item.nodeid, when, first_line(value)))
+            self.events.append(("rig", item.nodeid, when, first_line(value, self.literals)))
         if item.get_closest_marker("canary") is not None:
             self._canary.add(item.nodeid)
 
@@ -138,9 +141,16 @@ FAILURE_TYPES = (AssertionError, pytest.fail.Exception)
 NOT_A_FAILURE = (pytest.skip.Exception, KeyboardInterrupt, pytest.exit.Exception)
 
 
-def first_line(value):
-    """The first non-empty line of an exception's text, as summary._first_line cuts it (MESSAGE_CHARS)."""
-    return summary._first_line(value)
+def rig_literals(rig):
+    """The rig's mask literals for the lines printed outside the masked summary (annotations); [] when the
+    config did not load, then only the patterns mask (03-17 follow-up, WR-03)."""
+    return config.safe_mask_literals(rig) if rig is not None else []
+
+
+def first_line(value, literals=()):
+    """The first non-empty line of an exception's text, as summary._first_line cuts it (MESSAGE_CHARS),
+    masked with the rig literals and the address shapes before the cut."""
+    return summary._first_line(value, literals)
 
 
 def rig_error_record(nodeid, exc):
@@ -212,12 +222,12 @@ def verdict_annotation(verdict, lines, collector, build_id, env=None):
         return ["::notice title=HIL PASS::DUT A passed on %s" % build_id]
     if verdict == "FAIL":
         failure = next((e for e in collector.events if e[0] == "fail"), None)
-        text = "%s: %s" % (failure[1], first_line(failure[3])) if failure else "a test failed"
-        return ["::error title=HIL FAIL::%s" % first_line(text)]
+        text = "%s: %s" % (failure[1], first_line(failure[3], collector.literals)) if failure else "a test failed"
+        return ["::error title=HIL FAIL::%s" % first_line(text, collector.literals)]
     if verdict == "INTERRUPTED":
         return ["::error title=HIL INTERRUPTED::run interrupted"]
     cause = lines[0].removeprefix("RIG ERROR: ") if lines else "rig error"
-    return ["::error title=RIG ERROR::%s" % first_line(cause)]
+    return ["::error title=RIG ERROR::%s" % first_line(cause, collector.literals)]
 
 
 def warning_lines(collector, env=None):
@@ -368,13 +378,13 @@ def _run(holder):
         build_id = verified.build_id
     except RigError as exc:
         print("RIG ERROR: %s" % exc)
-        for line in verdict_annotation("RIG ERROR", ["RIG ERROR: %s" % exc], Collector(), build_id):
+        for line in verdict_annotation("RIG ERROR", ["RIG ERROR: %s" % exc], Collector(rig_literals(holder.get("rig"))), build_id):
             print(line)
         write_rig_errors([rig_error_record(None, exc)])
         return write_verdict("RIG ERROR", commit, build_id)
 
     signal.signal(signal.SIGTERM, _terminate)
-    collector = Collector()
+    collector = Collector(rig_literals(rig))
     try:
         code = pytest.main(
             # Timeouts come from pyproject.toml (timeout, timeout_method = signal, session_timeout).
@@ -483,24 +493,24 @@ def cmd_preflight():
         for warning in record["warnings"]:
             teardown.say("WARNING: %s" % warning)
         if not ok:
-            return _preflight_rig_error(commit, cause)
+            return _preflight_rig_error(commit, cause, rig)
         write_verdict("RIG ERROR", commit, None, reason=PREFLIGHT_PASSED, announce=False)
         teardown.say("Preflight: passed")
         return 0
     except RigError:
         raise
     except Exception as exc:  # noqa: BLE001 - IN-06: class name only, never the message
-        return _preflight_rig_error(commit, "preflight stopped unexpectedly (%s)" % type(exc).__name__)
+        return _preflight_rig_error(commit, "preflight stopped unexpectedly (%s)" % type(exc).__name__, rig)
     finally:
         redact_reports(rig)
         if previous is not None:
             signal.signal(signal.SIGTERM, previous)
 
 
-def _preflight_rig_error(commit, cause):
+def _preflight_rig_error(commit, cause, rig=None):
     teardown.say("RIG ERROR: %s" % cause)
     if os.environ.get("GITHUB_ACTIONS") == "true":
-        print("::error title=RIG ERROR::preflight: %s" % first_line(cause))
+        print("::error title=RIG ERROR::preflight: %s" % first_line(cause, rig_literals(rig)))
     write_verdict("RIG ERROR", commit, None, reason=cause, announce=False)
     return EXIT["RIG ERROR"]
 
@@ -508,13 +518,13 @@ def _preflight_rig_error(commit, cause):
 TEARDOWN_STAGE_CAUSES = {"configuration": "rig configuration not loaded", "connect": "supervisor unreachable"}
 
 
-def teardown_rig_error(reports, cause):
+def teardown_rig_error(reports, cause, rig=None):
     """WR-06: a teardown that stopped early ends RIG ERROR in verdict.json, annotation and rig-errors.json; a FAIL stays.
 
     Best effort, never raises: the exit code and final-image.json do not depend on it.
     """
     try:
-        teardown.rewrite_verdict(reports, teardown.read_verdict(reports), cause=cause)
+        teardown.rewrite_verdict(reports, teardown.read_verdict(reports), cause=cause, literals=rig_literals(rig))
     except Exception as exc:  # noqa: BLE001 - say what failed, by class name only
         print("RIG ERROR: verdict.json not rewritten (%s)" % type(exc).__name__)
 
@@ -542,13 +552,13 @@ def cmd_teardown():
     except RigError as exc:
         print("RIG ERROR: %s" % exc)
         state["steps"].append("teardown stopped: %s" % exc)
-        teardown_rig_error(reports, TEARDOWN_STAGE_CAUSES.get(stage, "stopped (%s)" % type(exc).__name__))
+        teardown_rig_error(reports, TEARDOWN_STAGE_CAUSES.get(stage, "stopped (%s)" % type(exc).__name__), rig)
         teardown.write_final(reports, state)
         return 3
     except Exception as exc:  # noqa: BLE001 - a late non-RigError must still leave final-image.json behind
         print("RIG ERROR: teardown stopped unexpectedly (%s)" % type(exc).__name__)
         state["steps"].append("teardown stopped: %s" % type(exc).__name__)
-        teardown_rig_error(reports, "stopped unexpectedly (%s)" % type(exc).__name__)
+        teardown_rig_error(reports, "stopped unexpectedly (%s)" % type(exc).__name__, rig)
         teardown.write_final(reports, state)
         return 3
     finally:
