@@ -694,12 +694,23 @@ NO_UART_BANNER = {"uart_banner": False}  # spelled as a dict: the literal keywor
 
 
 class FakeLink:
-    def __init__(self, at=None):
+    def __init__(self, at=None, up=False, count=0, then=None):
         self.at = at  # monotonic time of the 'Boot seems successful' line, or None: never comes
         self.waited = []
+        self._up = up  # DutLink.connected() / sessions() at the start of the wait ...
+        self._count = count
+        self._then = then or {}  # ... and what they are once wait_log has run: {"up": bool, "count": int}
+
+    def connected(self):
+        return self._up
+
+    def sessions(self):
+        return self._count
 
     def wait_log(self, regex, since, deadline_s):
         self.waited.append((regex, since, deadline_s))
+        self._up = self._then.get("up", self._up)
+        self._count = self._then.get("count", self._count)
         if self.at is None:
             raise RigError("DUT API log: no match for /%s/ within %ss" % (regex, deadline_s))
         return self.at
@@ -764,6 +775,58 @@ def test_no_boot_ok_in_the_api_log_refuses_and_keeps_the_window(rig):
     with pytest.raises(RigError, match="no 'Boot seems successful' in the API log"):
         device.wait_confirmed(link=FakeLink(at=None))
     assert device.unconfirmed_until > 0 and supervisor.pressed == []
+
+
+DROPPED = "dropped its API session before 'Boot seems successful'"
+
+
+def upgraded(rig):
+    device, _, supervisor, _ = rig.build(ok_result(), [NEW_ID], tap=FakeTap(window=""))
+    device.ota(rig.image, noise_psk=KEY, **ASK_PLAINTEXT, **NO_UART_BANNER)
+    return device, supervisor
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        FakeLink(up=True, count=3, then={"count": 4}),
+        FakeLink(up=True, count=3, then={"up": False}),
+        FakeLink(up=True, count=3, then={"up": False, "count": 4}),
+    ],
+    ids=["session count changed", "link down", "dropped and reconnect failed"],
+)
+def test_an_upgraded_image_that_drops_its_session_before_its_mark_is_a_firmware_failure(rig, link):
+    device, supervisor = upgraded(rig)
+    with pytest.raises(FirmwareFailure, match=DROPPED) as raised:
+        device.wait_confirmed(link=link)
+    assert "it rebooted before its mark" in str(raised.value) and device.id in str(raised.value)
+    assert device.unconfirmed_until > 0 and supervisor.pressed == []
+
+
+@pytest.mark.parametrize(
+    "link",
+    [
+        FakeLink(up=True, count=3),
+        FakeLink(up=False, count=0),
+        FakeLink(up=False, count=0, then={"up": True, "count": 1}),
+        None,
+    ],
+    ids=["up throughout", "no session at the start", "session only after the start", "no link"],
+)
+def test_a_refusal_without_session_drop_evidence_stays_a_rig_error(rig, link):
+    device, supervisor = upgraded(rig)
+    with pytest.raises(RigError) as raised:
+        device.wait_confirmed(link=link)
+    assert not isinstance(raised.value, FirmwareFailure)
+    assert "the upgraded image is confirmed over the API log only" in str(raised.value)
+    assert device.unconfirmed_until > 0 and supervisor.pressed == []
+
+
+def test_a_found_mark_returns_even_when_the_session_count_changed(rig):
+    device, _ = upgraded(rig)
+    link = FakeLink(at=device.ota_end_at + 5.0, up=True, count=3, then={"count": 4})
+    assert device.wait_confirmed(link=link) == pytest.approx(5.0)
+    assert device.unconfirmed_until == 0.0
 
 
 def test_the_next_uart_confirmed_ota_reads_uart0_again(rig):

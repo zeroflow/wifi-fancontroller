@@ -6,7 +6,16 @@ import time
 from types import SimpleNamespace
 
 import pytest
-from aioesphomeapi import APIConnectionError, ButtonInfo, LogLevel, SensorInfo, SensorState, SwitchInfo, SwitchState
+from aioesphomeapi import (
+    APIConnectionError,
+    BinarySensorInfo,
+    ButtonInfo,
+    LogLevel,
+    SensorInfo,
+    SensorState,
+    SwitchInfo,
+    SwitchState,
+)
 
 from hil import RigError, contract
 from hil import supervisor as supervisor_module
@@ -439,7 +448,7 @@ class LogClient:
         self.subscribed = None
         LogClient.instances.append(self)
 
-    async def connect(self, login=True):
+    async def connect(self, on_stop=None, login=True):
         return None
 
     async def list_entities_services(self):
@@ -468,3 +477,127 @@ def test_connect_subscribes_to_the_supervisor_log_at_warning_level(monkeypatch):
         assert sv.releases_since(0) == [EN_B]
     finally:
         sv.close()
+
+
+# ------------------------------------- a lost API session is a RigError, never stale state (WR-04, D-47)
+
+LOST = "supervisor API session lost"
+SERIAL_A = contract.SERIAL_CONNECTED["A"]
+
+
+class LinkClient(LogClient):
+    """A client that keeps the on_stop callback given to connect and takes button and switch commands."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.on_stop = None
+        self.buttons = []
+        self.commands = []
+        self.press_error = None
+
+    async def connect(self, on_stop=None, login=True):
+        self.on_stop = on_stop
+
+    def button_command(self, key):
+        if self.press_error is not None:
+            raise self.press_error
+        self.buttons.append(key)
+
+    def switch_command(self, key, state):
+        self.commands.append((key, state))
+
+    async def disconnect(self):
+        if self.on_stop is not None:
+            await self.on_stop(True)  # aioesphomeapi calls on_stop with expected_disconnect=True after our own disconnect
+
+
+@pytest.fixture
+def linked(wd, monkeypatch):
+    """The wd facade connected through LinkClient (entities and states from wd stay); returns (facade, client)."""
+    wd._entities[SERIAL_A] = (BinarySensorInfo, 400)
+    wd._names[400] = SERIAL_A
+    wd._states[SERIAL_A] = True
+    monkeypatch.setattr(supervisor_module, "APIClient", LinkClient)
+    LogClient.instances.clear()
+    wd.connect()
+    return wd, LogClient.instances[-1]
+
+
+def lose(facade, client, expected=False):
+    facade.run(client.on_stop(expected), 2)
+
+
+def test_connect_passes_an_on_stop_coroutine_to_the_client(linked):
+    _facade, client = linked
+    assert client.on_stop is not None
+
+
+def test_while_the_session_lives_the_accessors_work_as_before(linked):
+    facade, client = linked
+    facade.press(RESET_A)
+    facade.set_switch(EN_A, False)
+    assert client.buttons and client.commands
+    assert facade.switch_is_on(EN_A) is False
+    assert facade.watchdog_counts() == {"A": 0, "B": 0}
+    assert facade.sensor_value(RELEASES_B) == 0.0
+    assert facade.serial_connected("A") is True
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda f: f.press(RESET_A),
+        lambda f: f.set_switch(EN_A, False),
+        lambda f: f.sensor_value(RELEASES_B),
+        lambda f: f.watchdog_counts(),
+        lambda f: f.switch_is_on(EN_A),
+        lambda f: f.serial_connected("A"),
+    ],
+    ids=["press", "set_switch", "sensor_value", "watchdog_counts", "switch_is_on", "serial_connected"],
+)
+def test_after_the_session_is_lost_every_accessor_raises_instead_of_returning_cached_state(linked, call):
+    facade, client = linked
+    lose(facade, client)
+    with pytest.raises(RigError, match=LOST):
+        call(facade)
+
+
+def test_a_press_after_the_loss_sends_no_command_and_records_no_drive(linked):
+    facade, client = linked
+    lose(facade, client)
+    with pytest.raises(RigError, match=LOST):
+        facade.press(RESET_A)
+    assert client.buttons == [] and facade.driven_since(0) == []
+
+
+def test_the_watchdog_guard_fails_closed_after_a_supervisor_restart(linked):
+    facade, client = linked
+    t0 = time.monotonic()
+    start = facade.watchdog_counts()
+    lose(facade, client)
+    with pytest.raises(RigError, match=LOST):
+        watchdog_guard_outcome(facade, t0, start, NODE, sleep=no_sleep, wait_s=0.1)
+
+
+def test_a_press_whose_command_fails_is_a_rig_error_naming_the_button_and_the_class(linked):
+    facade, client = linked
+    client.press_error = APIConnectionError("link down")
+    with pytest.raises(RigError) as raised:
+        facade.press(RESET_A)
+    assert str(raised.value) == "button '%s' press failed (APIConnectionError)" % RESET_A
+    assert facade.driven_since(0) == [EN_A, BOOT_A]  # recorded before the command: it may have driven
+
+
+def test_closing_the_facade_never_marks_the_link_lost(linked):
+    facade, _client = linked
+    facade.close()  # disconnect() calls on_stop(True) on the loop thread
+    assert facade.switch_is_on(EN_A) is False  # still the plain cached read, no RigError
+
+
+def test_before_any_connect_the_accessors_behave_as_today(wd):
+    assert wd.switch_is_on(EN_A) is False
+    assert wd.sensor_value(RELEASES_B) == 0.0
+    with pytest.raises(RigError, match="missing on supervisor"):
+        wd.serial_connected("A")
+    with pytest.raises(RigError, match="missing on supervisor"):
+        wd.press("No such button")
