@@ -3,28 +3,41 @@
 Order: release every supervisor switch, decide green or not, then
   green      -> the commit image stays; confirm it over the API with the HIL key and its
                 build ID; a green run on refs/heads/main then updates the last-green store
-  not green  -> the known-good image (D-15): the last green main image when the store
-                checks out completely, else v1.6.0 factory plus NVS replay; one attempt
-                only: if DUT A does not answer within its deadline the verdict becomes
-                RIG ERROR and the commit image is flashed instead (D-09)
+  not green  -> the known-good image (D-15), chosen by known_good.select like the preflight
+                heal: the last green main image when the store checks out completely, else
+                v1.6.0 factory plus NVS replay; one attempt only: if DUT A does not answer
+                within its deadline, or the known-good image does not verify (WR-03), the
+                verdict becomes RIG ERROR and the commit image is flashed instead (D-09)
 Only regions are written; nothing in this module erases flash. Safe to run twice.
+
+Last, on every path, the supervisor's two Watchdog Releases counters are read and compared with
+preflight.json's watchdog_start of this commit (D-47): reports/watchdog.json, and every rise is a
+WARNING line plus `::warning title=HIL watchdog::` under GitHub Actions. A read failure is
+recorded as no value, never as a new exit code.
 
 Exit codes: 0 confirmed and the run's verdict stands, 3 verdict.json rewritten to RIG ERROR
 (a green run whose commit image is not confirmed, or a failed known-good attempt) or the
-lines could not be released.
+lines could not be released. A recorded FAIL is never rewritten (D-46): the cause goes to
+rig-errors.json as kind Teardown and the step still exits 3.
 """
 
-import hashlib
 import json
 import os
 import time
 from pathlib import Path
 
-from . import RigError, config, last_green, manifest
+from . import RigError, config, contract, known_good, last_green, manifest, summary
+from .supervisor import watchdog_delta
+
+# Moved to known_good.py (WR-03); kept importable here for cmd_known_good and older callers.
+from .known_good import known_good_psk, known_good_regions, sha256_file, verify_known_good  # noqa: F401
 
 FINAL_IMAGE = "final-image.json"
 TEARDOWN_FLASH_REPORT = "teardown-flash-dut-a.json"
-BRIDGE_FREE_S = 15
+WATCHDOG_REPORT = "watchdog.json"
+PREFLIGHT_REPORT = "preflight.json"
+# D-48: the supervisor's keepalive evicts a vanished bridge client in about 25 s (RESEARCH Pitfall 16).
+BRIDGE_FREE_S = 40
 
 
 def say(line):
@@ -49,47 +62,58 @@ def is_green(verdict, job_status):
     return bool(verdict) and verdict.get("verdict") == "PASS" and job_status in ("", "success")
 
 
-def rewrite_verdict(reports_dir, verdict, new="RIG ERROR"):
+def annotate_rig_error(cause, literals=()):
+    """The one `::error title=RIG ERROR::` line a teardown rewrite prints under GitHub Actions (D-45).
+
+    Fixed cause texts and exception class names only. Outside Actions the `RIG ERROR:` line the
+    caller already said is the whole message. `literals` are the rig's mask literals (a config that
+    did not load gives none and only the address shapes are masked).
+    """
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        print("::error title=RIG ERROR::teardown: %s" % summary._first_line(cause, literals))
+
+
+def rewrite_verdict(reports_dir, verdict, new="RIG ERROR", cause="", literals=()):
+    """Rewrite verdict.json to `new`, except over a recorded FAIL (D-46).
+
+    A FAIL is the firmware's outcome and a later rig condition never relabels it: verdict.json
+    stays FAIL, the cause is appended to rig-errors.json (kind Teardown) and said in the log.
+    Every other verdict, a missing one included, becomes RIG ERROR with the reason
+    `teardown: <cause>` (an earlier RIG ERROR keeps its own reason: the first cause wins), the
+    cause is appended to rig-errors.json and one RIG ERROR annotation names it (D-45).
+    """
+    reports_dir = Path(reports_dir)
+    if (verdict or {}).get("verdict") == "FAIL":
+        record_teardown_condition(reports_dir, cause)
+        return
     data = dict(verdict or {"schema": 1})
+    first_cause = data.get("verdict") == "RIG ERROR" and data.get("reason")
     data["verdict"] = new
-    (Path(reports_dir) / "verdict.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    if not first_cause:
+        data["reason"] = "teardown: %s" % cause
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    (reports_dir / "verdict.json").write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    append_teardown_entry(reports_dir, "teardown: %s" % cause)
+    annotate_rig_error(cause, literals)
 
 
-def sha256_file(path):
-    digest = hashlib.sha256()
-    with open(path, "rb") as handle:
-        for chunk in iter(lambda: handle.read(1 << 20), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
-
-
-def verify_known_good(dutcfg, with_nvs=True):
-    """The v1.6.0 image must match rig.toml's sha256, and the NVS backup must have its size (before any press)."""
+def append_teardown_entry(reports_dir, message):
+    """Append {"nodeid": null, "kind": "Teardown", "message": message} to rig-errors.json (created as a list when missing)."""
+    path = Path(reports_dir) / "rig-errors.json"
     try:
-        digest = sha256_file(dutcfg.known_good_image)
-    except OSError:
-        raise RigError("known_good_image cannot be read") from None
-    if digest != dutcfg.known_good_sha256:
-        raise RigError("known_good_image sha256 does not match known_good_sha256")
-    if with_nvs:
-        try:
-            size = Path(dutcfg.nvs_backup).stat().st_size
-        except OSError:
-            raise RigError("nvs_backup cannot be read") from None
-        if size != int(dutcfg.nvs_size, 16):
-            raise RigError("nvs_backup has %d bytes, nvs_size says %d" % (size, int(dutcfg.nvs_size, 16)))
+        records = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        records = []
+    if not isinstance(records, list):
+        records = []
+    records.append({"nodeid": None, "kind": "Teardown", "message": message})
+    path.write_text(json.dumps(records, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def known_good_regions(dutcfg, with_nvs=True):
-    regions = [(dutcfg.flash_offset, Path(dutcfg.known_good_image))]
-    if with_nvs:
-        regions.append((dutcfg.nvs_offset, Path(dutcfg.nvs_backup)))
-    return regions
-
-
-def known_good_psk(dutcfg, dut_key):
-    """The release image has no API encryption; a known-good image that has it uses the HIL key."""
-    return dut_key if dutcfg.known_good_api_encryption else None
+def record_teardown_condition(reports_dir, cause):
+    """A rig condition after a recorded FAIL: the Teardown entry plus a WARNING line (verdict.json stays FAIL)."""
+    append_teardown_entry(reports_dir, cause)
+    say("WARNING: rig condition after a FAIL run: %s" % cause)
 
 
 def write_final(reports_dir, state):
@@ -129,13 +153,30 @@ def confirm(dut, psk):
 
 
 def load_commit_manifest(fw_dir, dutcfg):
-    """The verified commit manifest, or None when there is no firmware directory or it does not verify."""
+    """The verified commit manifest, or None when there is no firmware directory or it does not verify.
+
+    Also None when the commit entry is not final (D-25): nothing but a final image may be kept on
+    DUT A or flashed back to it.
+    """
     if not fw_dir:
         return None
     try:
-        return manifest.load_verified(fw_dir, config.expected_commit(), dutcfg)
+        verified = manifest.load_verified(fw_dir, config.expected_commit(), dutcfg)
+        if verified.image("commit").final is not True:
+            return None
     except RigError:
         return None
+    return verified
+
+
+def non_final_image_reporting(verified, version):
+    """The manifest's non-final image (qc-auto, canary) whose build ID DUT A reports, or None."""
+    if verified is None or version is None:
+        return None
+    for image in verified.images.values():
+        if not image.final and image.build_id == version:
+            return image
+    return None
 
 
 def flash_commit_image(dut, fw_dir, dutcfg, dut_key, state):
@@ -164,7 +205,72 @@ def warn(text):
         print("WARNING: %s" % text)
 
 
+def _label(dut_id):
+    return "DUT %s" % dut_id
+
+
+def preflight_watchdog_start(reports_dir):
+    """preflight.json's watchdog_start when that preflight belongs to this commit, else None."""
+    try:
+        record = json.loads((Path(reports_dir) / PREFLIGHT_REPORT).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    commit = config.expected_commit()
+    if not isinstance(record, dict) or not commit or record.get("commit") != commit:
+        return None
+    start = record.get("watchdog_start")
+    return start if isinstance(start, dict) and start else None
+
+
+def read_watchdog_counts(supervisor):
+    """{dut: int or None}; a counter that cannot be read is None (never raises)."""
+    counts = {}
+    for dut_id, name in contract.WATCHDOG_RELEASES.items():
+        try:
+            value = supervisor.sensor_value(name)
+        except Exception:  # noqa: BLE001 - a missing sensor or a dead link is "not recorded", never a new exit
+            value = None
+        counts[dut_id] = None if value is None else int(value)
+    return counts
+
+
+def record_watchdog(supervisor, reports_dir):
+    """reports/watchdog.json {start, end, delta} and one WARNING per DUT whose counter changed (D-47)."""
+    start = preflight_watchdog_start(reports_dir)
+    end = read_watchdog_counts(supervisor)
+    delta = watchdog_delta(start, end)
+    data = {"start": start, "end": end, "delta": delta}
+    try:
+        Path(reports_dir).mkdir(parents=True, exist_ok=True)
+        (Path(reports_dir) / WATCHDOG_REPORT).write_text(json.dumps(data, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    except OSError:
+        pass
+    for dut_id, value in delta.items():
+        if value is None or value == 0:
+            continue
+        if value > 0:
+            text = "supervisor watchdog released %s lines %d time(s) during this run" % (_label(dut_id), value)
+        else:
+            text = "supervisor watchdog counter of %s fell from %d to %d: the supervisor restarted during this run" % (
+                _label(dut_id), start[dut_id], end[dut_id])
+        say("WARNING: %s" % text)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print("::warning title=HIL watchdog::%s" % text)
+    return data
+
+
 def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_key):
+    """The teardown (see the module docstring); the watchdog counters are recorded last, on every path."""
+    try:
+        return _run_teardown(cfg, fw_dir, job_status, reports_dir, supervisor=supervisor, dut=dut, dut_key=dut_key)
+    finally:
+        try:
+            record_watchdog(supervisor, Path(reports_dir))
+        except Exception as exc:  # noqa: BLE001 - the watchdog record must never change the teardown result
+            say("WARNING: supervisor watchdog not recorded (%s)" % type(exc).__name__)
+
+
+def _run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_key):
     reports_dir = Path(reports_dir)
     reports_dir.mkdir(parents=True, exist_ok=True)
     state = new_state()
@@ -172,14 +278,10 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
         supervisor.release_all()
     except RigError as exc:
         say("RIG ERROR: %s" % exc)
-        state["steps"].append("lines not released")
-        write_final(reports_dir, state)
-        return 3
+        return lines_not_released(reports_dir, state, cfg)
     except Exception as exc:  # noqa: BLE001 - any API fault still ends in the final-image bookkeeping
         say("RIG ERROR: switch release failed (%s)" % type(exc).__name__)
-        state["steps"].append("lines not released")
-        write_final(reports_dir, state)
-        return 3
+        return lines_not_released(reports_dir, state, cfg)
     say("DUT A lines released")
     state["steps"].append("lines released")
 
@@ -190,13 +292,23 @@ def run_teardown(cfg, fw_dir, job_status, reports_dir, *, supervisor, dut, dut_k
         if green:
             exit_code = keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state)
         else:
-            exit_code = known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state)
+            exit_code = restore_known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state)
     except Exception:  # noqa: BLE001 - keep the steps recorded so far, then let the caller report it
         write_final(reports_dir, state)
         raise
     write_final(reports_dir, state)
     say("DUT A final image: %s (%s)" % (state["image"], state["version"] or "unknown version"))
     return exit_code
+
+
+def lines_not_released(reports_dir, state, cfg=None):
+    """WR-06: the run may be PASS and lines may still be held; the verdict, the heading and the annotation say RIG ERROR."""
+    state["steps"].append("lines not released")
+    rewrite_verdict(
+        reports_dir, read_verdict(reports_dir), cause="lines not released", literals=config.safe_mask_literals(cfg)
+    )
+    write_final(reports_dir, state)
+    return 3
 
 
 def keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
@@ -213,8 +325,13 @@ def keep_commit_image(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
     state["steps"].append("commit image: %s" % ("confirmed" if matched else "not confirmed"))
     update_store(dutcfg, verified, matched, state)
     if not matched:
+        other = non_final_image_reporting(verified, version)
+        if other is not None:
+            say("RIG ERROR: DUT A runs the %s image (%s), not a final image" % (other.role, other.build_id))
         say("RIG ERROR: the commit image on DUT A could not be confirmed after a green run")
-        rewrite_verdict(reports_dir, verdict)
+        rewrite_verdict(
+            reports_dir, verdict, cause="commit image not confirmed after a green run", literals=config.safe_mask_literals(cfg)
+        )
         return 3
     return 0
 
@@ -241,33 +358,39 @@ def update_store(dutcfg, verified, matched, state):
         warn("last-green store was not updated after a green main run (%s)" % detail)
 
 
-def known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state):
-    """Not green: the last green main image when the store checks out, else v1.6.0 plus NVS. Returns the exit code."""
-    dutcfg = cfg.duts["A"]
+def restore_known_good(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state):
+    """Not green: the image known_good.select chooses (shared with the preflight heal). Returns the exit code.
+
+    WR-03: a known-good image that does not verify no longer stops teardown on whatever DUT A runs
+    (qc-auto, canary, broken); it is recorded and D-09's commit fallback runs.
+    """
     try:
-        stored, reason = last_green.load(dutcfg, last_green.network_sha256(config.NETWORK_FILE))
-    except RigError:
-        stored, reason = None, "store invalid: hil-network.yaml cannot be read"
-    if stored is not None:
-        return restore_last_green(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, stored)
-    return restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, reason)
+        chosen = known_good.select(cfg, dut_key)
+    except RigError as exc:
+        say("RIG ERROR: known-good image does not verify: %s" % exc)
+        state["steps"].append("known-good image does not verify: %s" % exc)
+        return fall_back_to_commit(
+            cfg, fw_dir, reports_dir, verdict, dut, dut_key, state, cause="known-good image does not verify"
+        )
+    if chosen.source == "last-green":
+        return restore_last_green(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, chosen)
+    return restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, chosen)
 
 
-def restore_last_green(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, stored):
-    dutcfg = cfg.duts["A"]
-    say("Known-good source: last-green (%s)" % stored.build_id)
+def restore_last_green(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, chosen):
+    say("Known-good source: last-green (%s)" % chosen.expected_build_id)
     state["known_good_source"] = "last-green"
-    state["last_green"] = {"action": "used", "detail": stored.build_id}
+    state["last_green"] = {"action": "used", "detail": chosen.expected_build_id}
     wait_bridge_free(supervisor)
     version = None
     try:
         # A commit image carries the HIL WiFi and key in firmware: no NVS region.
-        dut.flash_regions([(dutcfg.flash_offset, stored.path)], report_name=TEARDOWN_FLASH_REPORT)
+        dut.flash_regions(chosen.regions, report_name=TEARDOWN_FLASH_REPORT)
     except RigError:
         state["steps"].append("last-green flash failed")
     else:
-        version = confirm(dut, dut_key)
-    if version is not None and version == stored.build_id:
+        version = confirm(dut, chosen.psk)
+    if version is not None and version == chosen.expected_build_id:
         state.update(image="last-green", version=version, confirmed=True)
         state["steps"].append("last-green image: confirmed")
         return 0
@@ -275,20 +398,18 @@ def restore_last_green(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_k
     return fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state)
 
 
-def restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, reason):
-    dutcfg = cfg.duts["A"]
-    say("Known-good source: v1.6.0 (%s)" % reason)
+def restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, state, chosen):
+    say("Known-good source: v1.6.0 (%s)" % chosen.detail)
     state["known_good_source"] = "v1.6.0"
-    state["last_green"] = {"action": "rejected", "detail": reason}
-    verify_known_good(dutcfg)
+    state["last_green"] = {"action": "rejected", "detail": chosen.detail}
     wait_bridge_free(supervisor)
     version = None
     try:
-        dut.flash_regions(known_good_regions(dutcfg), report_name=TEARDOWN_FLASH_REPORT)
+        dut.flash_regions(chosen.regions, report_name=TEARDOWN_FLASH_REPORT)
     except RigError:
         state["steps"].append("known-good flash failed")
     else:
-        version = confirm(dut, known_good_psk(dutcfg, dut_key))
+        version = confirm(dut, chosen.psk)
     if version is not None:
         state.update(image="known-good", version=version, confirmed=True)
         state["steps"].append("known-good image: confirmed")
@@ -297,9 +418,12 @@ def restore_v160(cfg, fw_dir, reports_dir, verdict, supervisor, dut, dut_key, st
     return fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state)
 
 
-def fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state):
-    """D-09: the one known-good attempt failed. RIG ERROR, then the commit image over UART."""
-    say("RIG ERROR: DUT A did not come back on the known-good image; flashing the commit image (D-09)")
-    rewrite_verdict(reports_dir, verdict)
+def fall_back_to_commit(cfg, fw_dir, reports_dir, verdict, dut, dut_key, state, cause="known-good image did not come back"):
+    """D-09: the one known-good attempt failed, or its image does not verify. RIG ERROR, then the commit image."""
+    if cause == "known-good image did not come back":
+        say("RIG ERROR: DUT A did not come back on the known-good image; flashing the commit image (D-09)")
+    else:
+        say("RIG ERROR: %s; flashing the commit image (D-09)" % cause)
+    rewrite_verdict(reports_dir, verdict, cause=cause, literals=config.safe_mask_literals(cfg))
     flash_commit_image(dut, fw_dir, cfg.duts["A"], dut_key, state)
     return 3

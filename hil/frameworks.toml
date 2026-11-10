@@ -1,0 +1,22 @@
+# Shipped framework per board revision (D-34, QC-05). A public fact about shipped
+# firmware, not a rig secret.
+#
+# The keys are the exact `rev` strings used in the rig's rig.toml ("3.2", "4.0";
+# never "4.0-A"). hil/tools/build_image.py checks every HIL, qc-auto and canary
+# config against this table before anything compiles, and the hardware tests
+# compare it with the framework the DUT reports at runtime.
+#
+# Rev 1.0 (esp-idf) and Rev 2.0 through 3.3 (arduino) are permanent: switching the
+# framework of a shipped revision bricks boards in the field. Rev 4.0 is listed as
+# data only; no Phase 2 target builds it.
+
+schema = 1
+
+[revisions]
+"1.0" = "esp-idf"
+"2.0" = "arduino"
+"3.0" = "arduino"
+"3.1" = "arduino"
+"3.2" = "arduino"
+"3.3" = "arduino"
+"4.0" = "esp-idf"

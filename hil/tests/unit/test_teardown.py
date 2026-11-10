@@ -3,11 +3,9 @@
 import collections
 import hashlib
 import json
-import os
 import signal
 import subprocess
 import sys
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -22,6 +20,8 @@ from hil.flasher import Flasher
 LABEL = contract.SERIAL_CONNECTED["A"].removesuffix(" Serial Connected")
 COMMIT = "a" * 40
 BUILD_ID = "3.2+hil." + "a" * 12
+QC_ID = "3.2+qc." + "a" * 12
+CANARY_ID = "3.2+canary." + "a" * 12
 NVS_SIZE = 0x60000
 
 # Records every esptool argv; prints one hash line per written region.
@@ -72,6 +72,45 @@ class ScriptedDut(Dut):
         return SimpleNamespace(project_version=answer)
 
 
+def _entry(role, build_id, final, ota_file, ota_bytes, **extra):
+    entry = {
+        "role": role,
+        "rev": "3.2",
+        "chip": "esp32s2",
+        "offset": "0x0",
+        "framework": "arduino",
+        "build_id": build_id,
+        "final": final,
+        "esphome_name": "fancontroller-%s-r3-2" % role,
+        "ota_file": ota_file,
+        "ota_sha256": hashlib.sha256(ota_bytes).hexdigest(),
+    }
+    entry.update(extra)
+    return entry
+
+
+def write_firmware_dir(fw, commit_final=True):
+    """A schema-2 firmware directory: the commit image plus a qc-auto and a canary entry."""
+    files = {
+        "firmware.factory.bin": b"commit image",
+        "firmware.ota.bin": b"commit ota image",
+        "qc-auto-3.2.ota.bin": b"qc-auto ota image",
+        "canary-3.2.ota.bin": b"canary ota image",
+    }
+    for name, data in files.items():
+        (fw / name).write_bytes(data)
+    images = [
+        _entry("commit", BUILD_ID, commit_final, "firmware.ota.bin", files["firmware.ota.bin"],
+               file="firmware.factory.bin", sha256=hashlib.sha256(files["firmware.factory.bin"]).hexdigest()),
+        _entry("qc-auto", QC_ID, False, "qc-auto-3.2.ota.bin", files["qc-auto-3.2.ota.bin"], fan_hz=25000),
+        _entry("canary", CANARY_ID, False, "canary-3.2.ota.bin", files["canary-3.2.ota.bin"], fan_hz=25000),
+    ]
+    (fw / "manifest.json").write_text(
+        json.dumps({"schema": 2, "commit": COMMIT, "build_id": BUILD_ID, "esphome_version": "2026.10.1", "images": images}),
+        encoding="utf-8",
+    )
+
+
 @pytest.fixture
 def rig(tmp_path, monkeypatch):
     monkeypatch.setattr(dut_module, "BOOTLOADER_SETTLE_S", 0)
@@ -88,26 +127,7 @@ def rig(tmp_path, monkeypatch):
     nvs_file.write_bytes(b"\x01" * NVS_SIZE)
     fw = tmp_path / "fw"
     fw.mkdir()
-    (fw / "firmware.factory.bin").write_bytes(b"commit image")
-    (fw / "manifest.json").write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "commit": COMMIT,
-                "build_id": BUILD_ID,
-                "images": [
-                    {
-                        "role": "commit",
-                        "file": "firmware.factory.bin",
-                        "sha256": hashlib.sha256(b"commit image").hexdigest(),
-                        "chip": "esp32s2",
-                        "offset": "0x0",
-                    }
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
+    write_firmware_dir(fw)
     dutcfg = SimpleNamespace(
         id="A",
         rev="3.2",
@@ -121,6 +141,7 @@ def rig(tmp_path, monkeypatch):
         nvs_backup=str(nvs_file),
         nvs_offset="0x3A0000",
         nvs_size="0x60000",
+        nvs_release_tag="v1.6.0",
     )
     net = tmp_path / "hil-network.yaml"
     net.write_text('hil_dut_api_key: "dut-key-0123456789"\n', encoding="utf-8")
@@ -214,7 +235,7 @@ def test_release_all_precedes_the_first_press(rig):
 
 
 def test_known_good_confirm_timeout_flashes_the_commit_image_and_marks_rig_error(rig, capsys):
-    verdict(rig, "FAIL")
+    verdict(rig, "PASS")  # a red job status makes it not green; a recorded FAIL is covered below (D-46)
     out = go(rig, [None, BUILD_ID], job_status="failure")
     assert out.code == 3
     assert len(out.calls) == 2
@@ -239,24 +260,45 @@ def test_no_firmware_directory_after_a_timeout_ends_unknown(rig):
     assert len(out.calls) == 1
 
 
-def test_sha256_mismatch_raises_before_any_press(rig):
+def test_a_v160_image_that_does_not_verify_falls_back_to_the_commit_image(rig, capsys):
+    """WR-03: an unverifiable known-good image no longer stops teardown; D-09's commit fallback runs."""
     rig.dutcfg.known_good_sha256 = "0" * 64
-    events = []
-    sv = FakeSupervisor(events)
-    flasher = Flasher("192.0.2.10", 6638, "esp32s2", esptool_cmd=[sys.executable, str(rig.script)])
-    dut = ScriptedDut("A", rig.dutcfg, sv, flasher, answers=["3.2"])
-    with pytest.raises(RigError, match="sha256"):
-        teardown.run_teardown(rig.cfg, str(rig.fw), "failure", rig.tmp / "reports", supervisor=sv, dut=dut, dut_key="k")
-    assert [e for e in events if isinstance(e, tuple)] == []
-    assert esptool_calls(rig) == []
-    assert final(rig)["image"] == "unknown"
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert [regions(c) for c in out.calls] == [[("0x0", str(rig.fw / "firmware.factory.bin"))]]
+    assert any(step.startswith("known-good image does not verify") for step in out.final["steps"])
+    assert (out.final["image"], out.final["version"], out.final["confirmed"]) == ("commit", BUILD_ID, True)
+    assert "known-good image does not verify" in capsys.readouterr().out
+    assert json.loads((rig.tmp / "reports" / "verdict.json").read_text())["verdict"] == "RIG ERROR"
 
 
-def test_wrong_size_nvs_backup_raises_before_any_press(rig):
+def test_the_known_good_image_is_verified_before_any_known_good_press(rig):
+    rig.dutcfg.known_good_sha256 = "0" * 64
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert all(str(rig.kg) not in call for call in out.calls)
+
+
+def test_a_wrong_size_nvs_backup_falls_back_to_the_commit_image(rig):
     rig.nvs.write_bytes(b"\x01" * 10)
-    with pytest.raises(RigError, match="nvs_backup"):
-        go(rig, ["3.2"])
-    assert esptool_calls(rig) == []
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert [regions(c) for c in out.calls] == [[("0x0", str(rig.fw / "firmware.factory.bin"))]]
+    assert any("nvs_backup" in step for step in out.final["steps"])
+
+
+def test_teardown_chooses_through_the_shared_selector(rig, monkeypatch):
+    from hil import known_good
+
+    calls = []
+    real = known_good.select
+
+    def spy(*args, **kwargs):
+        calls.append(args)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(known_good, "select", spy)
+    go(rig, ["3.2"], job_status="failure")
+    assert len(calls) == 1
 
 
 def test_no_esptool_argv_contains_an_erase_subcommand(rig):
@@ -407,7 +449,7 @@ def test_missing_store_uses_v160_and_says_why(rig, capsys):
 
 def test_last_green_confirmation_timeout_goes_to_the_commit_image_never_to_v160(rig):
     store = seed_store(rig)
-    verdict(rig, "FAIL")
+    verdict(rig, "PASS")  # red job status; a recorded FAIL keeps FAIL (D-46)
     out = go(rig, [None, BUILD_ID], job_status="failure")
     assert out.code == 3
     assert [regions(c) for c in out.calls] == [
@@ -594,3 +636,431 @@ def test_a_confirmed_green_run_keeps_its_pass_verdict(rig):
     out = go(rig, [BUILD_ID], job_status="success")
     assert out.code == 0
     assert written_verdict(rig) == "PASS"
+
+
+# ---- D-25: a qc-auto or canary image is never a final image --------------------------------
+
+
+@pytest.mark.parametrize("role,build_id", [("qc-auto", QC_ID), ("canary", CANARY_ID)])
+def test_green_run_that_ends_on_a_non_final_image_is_a_rig_error(rig, capsys, role, build_id):
+    verdict(rig, "PASS")
+    rig.monkeypatch.setenv("GITHUB_REF", MAIN)
+    calls = count_promotes(rig)
+    out = go(rig, [build_id], job_status="success")
+    text = capsys.readouterr().out
+    assert out.code == 3
+    assert out.final["confirmed"] is False
+    assert written_verdict(rig) == "RIG ERROR"
+    assert "RIG ERROR: %s runs the %s image (%s), not a final image" % (LABEL, role, build_id) in text
+    assert calls == []
+    assert not Path(rig.dutcfg.last_green_dir).exists()
+
+
+def test_a_wrong_but_unlisted_build_id_does_not_claim_a_non_final_image(rig, capsys):
+    verdict(rig, "PASS")
+    out = go(rig, ["3.2+qc." + "f" * 12], job_status="success")
+    assert out.code == 3
+    assert "not a final image" not in capsys.readouterr().out
+
+
+def test_load_commit_manifest_returns_none_when_the_commit_entry_is_not_final(rig):
+    final_image = manifest_module.load_verified(rig.fw, COMMIT, rig.dutcfg).image("commit")
+    not_final = manifest_module.ManifestImage(**{**final_image.__dict__, "final": False})
+    bad = manifest_module.Manifest(commit=COMMIT, build_id=BUILD_ID, images={("commit", "3.2"): not_final})
+    rig.monkeypatch.setattr(manifest_module, "load_verified", lambda *a, **k: bad)
+    assert teardown.load_commit_manifest(str(rig.fw), rig.dutcfg) is None
+
+
+def test_a_non_final_commit_entry_takes_the_not_confirmed_path_after_a_green_run(rig):
+    verdict(rig, "PASS")
+    final_image = manifest_module.load_verified(rig.fw, COMMIT, rig.dutcfg).image("commit")
+    not_final = manifest_module.ManifestImage(**{**final_image.__dict__, "final": False})
+    bad = manifest_module.Manifest(commit=COMMIT, build_id=BUILD_ID, images={("commit", "3.2"): not_final})
+    rig.monkeypatch.setattr(manifest_module, "load_verified", lambda *a, **k: bad)
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 3
+    assert written_verdict(rig) == "RIG ERROR"
+
+
+def test_the_flash_commit_image_fallback_refuses_a_non_final_commit_entry(rig):
+    verdict(rig, "FAIL")
+    final_image = manifest_module.load_verified(rig.fw, COMMIT, rig.dutcfg).image("commit")
+    not_final = manifest_module.ManifestImage(**{**final_image.__dict__, "final": False})
+    bad = manifest_module.Manifest(commit=COMMIT, build_id=BUILD_ID, images={("commit", "3.2"): not_final})
+    rig.monkeypatch.setattr(manifest_module, "load_verified", lambda *a, **k: bad)
+    out = go(rig, [None, None], job_status="failure")
+    assert out.code == 3
+    flashed = [r for call in out.calls for r in regions(call)]
+    assert all(str(rig.fw / "firmware.factory.bin") != path for _offset, path in flashed)
+
+
+def rig_errors(rig):
+    return json.loads((rig.tmp / "reports" / "rig-errors.json").read_text())
+
+
+def test_a_fail_verdict_survives_a_failed_known_good_attempt_and_the_cause_is_recorded(rig, capsys):
+    verdict(rig, "FAIL")
+    reports = rig.tmp / "reports"
+    (reports / "rig-errors.json").write_text(json.dumps([{"nodeid": "t::a", "kind": "RigError", "message": "earlier"}]))
+    out = go(rig, [None, BUILD_ID], job_status="failure")
+    assert out.code == 3  # the Teardown step is still red
+    assert written_verdict(rig) == "FAIL"
+    assert rig_errors(rig) == [
+        {"nodeid": "t::a", "kind": "RigError", "message": "earlier"},
+        {"nodeid": None, "kind": "Teardown", "message": "known-good image did not come back"},
+    ]
+    assert "WARNING: rig condition after a FAIL run: known-good image did not come back" in capsys.readouterr().out
+
+
+def test_a_fail_verdict_without_a_rig_errors_file_gets_one_with_the_teardown_entry(rig):
+    verdict(rig, "FAIL")
+    out = go(rig, [None, None], job_status="failure")
+    assert out.code == 3
+    assert written_verdict(rig) == "FAIL"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+
+
+def test_a_pass_verdict_with_an_unconfirmed_commit_image_still_becomes_rig_error(rig):
+    verdict(rig, "PASS")
+    out = go(rig, ["wrong-build"], job_status="success")
+    assert out.code == 3
+    assert written_verdict(rig) == "RIG ERROR"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]  # 03-15: every rewrite records its cause
+
+
+# ------------------------------------------------- watchdog counters across the run (03-08, D-47, D-48)
+
+RELEASES = contract.WATCHDOG_RELEASES
+LABEL_B = contract.SERIAL_CONNECTED["B"].removesuffix(" Serial Connected")
+
+
+class CountingSupervisor(FakeSupervisor):
+    """FakeSupervisor with the two Watchdog Releases sensors (None: no value; an exception: read fails)."""
+
+    def __init__(self, events, counts):
+        super().__init__(events)
+        self.counts = counts
+
+    def sensor_value(self, name):
+        value = self.counts[name]
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+
+def preflight_record(rig, start, commit=COMMIT):
+    reports = rig.tmp / "reports"
+    reports.mkdir(exist_ok=True)
+    (reports / "preflight.json").write_text(json.dumps({"schema": 1, "commit": commit, "watchdog_start": start}), encoding="utf-8")
+
+
+def go_counting(rig, counts, answers=(BUILD_ID,), job_status="success"):
+    events = []
+    sv = CountingSupervisor(events, counts)
+    flasher = Flasher("192.0.2.10", 6638, "esp32s2", esptool_cmd=[sys.executable, str(rig.script)])
+    dut = ScriptedDut("A", rig.dutcfg, sv, flasher, answers=list(answers))
+    code = teardown.run_teardown(rig.cfg, str(rig.fw), job_status, rig.tmp / "reports", supervisor=sv, dut=dut, dut_key="hil-key")
+    return code, json.loads((rig.tmp / "reports" / "watchdog.json").read_text())
+
+
+def test_bridge_wait_covers_the_keepalive_eviction():
+    assert teardown.BRIDGE_FREE_S == 40
+
+
+def test_teardown_writes_the_counter_comparison_with_the_preflight_start(rig, capsys):
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 1.0})
+    assert code == 0
+    assert data == {"start": {"A": 6, "B": 0}, "end": {"A": 6, "B": 1}, "delta": {"A": 0, "B": 1}}
+    out = capsys.readouterr().out
+    assert "WARNING: supervisor watchdog released %s lines 1 time(s) during this run" % LABEL_B in out
+
+
+def test_a_rise_is_an_actions_warning_under_github_actions(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    go_counting(rig, {RELEASES["A"]: 8.0, RELEASES["B"]: 0.0})
+    out = capsys.readouterr().out
+    assert "::warning title=HIL watchdog::supervisor watchdog released %s lines 2 time(s) during this run" % LABEL in out
+    assert "title=HIL watchdog::supervisor watchdog released %s" % LABEL_B not in out
+
+
+def test_no_rise_says_nothing_about_the_watchdog(rig, capsys):
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    _code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 0.0})
+    assert data["delta"] == {"A": 0, "B": 0}
+    assert "watchdog" not in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("prepare", ["missing", "other commit"])
+def test_without_a_preflight_start_for_this_commit_the_delta_is_not_recorded(rig, prepare):
+    verdict(rig, "PASS")
+    if prepare == "other commit":
+        preflight_record(rig, {"A": 0, "B": 0}, commit="b" * 40)
+    code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 1.0})
+    assert code == 0
+    assert data == {"start": None, "end": {"A": 6, "B": 1}, "delta": {"A": None, "B": None}}
+
+
+def test_a_counter_read_failure_is_not_recorded_and_never_changes_the_exit_code(rig):
+    verdict(rig, "PASS")
+    preflight_record(rig, {"A": 6, "B": 0})
+    code, data = go_counting(rig, {RELEASES["A"]: RigError("entity missing"), RELEASES["B"]: None})
+    assert code == 0
+    assert data == {"start": {"A": 6, "B": 0}, "end": {"A": None, "B": None}, "delta": {"A": None, "B": None}}
+
+
+def test_the_counters_are_recorded_after_a_not_green_teardown_too(rig):
+    verdict(rig, "FAIL")
+    preflight_record(rig, {"A": 6, "B": 0})
+    _code, data = go_counting(rig, {RELEASES["A"]: 6.0, RELEASES["B"]: 0.0}, answers=["3.2"], job_status="failure")
+    assert data["delta"] == {"A": 0, "B": 0}
+
+
+def test_a_fake_supervisor_without_sensors_still_tears_down(rig):
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 0
+    data = json.loads((rig.tmp / "reports" / "watchdog.json").read_text())
+    assert data["end"] == {"A": None, "B": None}
+
+
+# ---- 03-15: every teardown exit-3 path ends RIG ERROR with its heading and annotation (WR-06, D-45, D-46) ----
+
+ANNOTATION = "::error title=RIG ERROR::"
+
+
+class ReleaseRigError(FakeSupervisor):
+    """release_all fails with the curated RigError a switch command raises."""
+
+    def release_all(self):
+        raise RigError("switch command failed")
+
+
+def teardown_with(rig, supervisor, job_status="success"):
+    flasher = Flasher("192.0.2.10", 6638, "esp32s2", esptool_cmd=[sys.executable, str(rig.script)])
+    dut = ScriptedDut("A", rig.dutcfg, supervisor, flasher, answers=[BUILD_ID])
+    return teardown.run_teardown(
+        rig.cfg, str(rig.fw), job_status, rig.tmp / "reports", supervisor=supervisor, dut=dut, dut_key="hil-key"
+    )
+
+
+def verdict_json(rig):
+    return json.loads((rig.tmp / "reports" / "verdict.json").read_text())
+
+
+def annotations(text):
+    return [line for line in text.splitlines() if line.startswith(ANNOTATION)]
+
+
+def heading(rig):
+    from hil import summary
+
+    return summary.write(rig.tmp / "reports", None, []).splitlines()[0]
+
+
+@pytest.mark.parametrize("supervisor_class", [ReleaseRigError, BrokenSupervisor])
+def test_a_pass_run_whose_lines_cannot_be_released_ends_rig_error_with_heading_and_annotation(rig, capsys, supervisor_class):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    code = teardown_with(rig, supervisor_class([]))
+    text = capsys.readouterr().out
+    assert code == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: lines not released")
+    assert rig_errors(rig) == [{"nodeid": None, "kind": "Teardown", "message": "teardown: lines not released"}]
+    assert esptool_calls(rig) == []
+    assert annotations(text) == [ANNOTATION + "teardown: lines not released"]
+    assert "link down" not in text
+    assert heading(rig) == "## HIL run: RIG ERROR"
+
+
+def test_a_fail_run_whose_lines_cannot_be_released_stays_fail(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "FAIL")
+    code = teardown_with(rig, BrokenSupervisor([]), job_status="failure")
+    assert code == 3
+    assert verdict_json(rig)["verdict"] == "FAIL"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+    assert annotations(capsys.readouterr().out) == []
+    assert heading(rig) == "## HIL run: FAIL"
+
+
+def test_an_earlier_rig_error_keeps_its_reason_and_gains_the_teardown_entry_and_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    reports = rig.tmp / "reports"
+    reports.mkdir()
+    (reports / "verdict.json").write_text(json.dumps({"schema": 1, "verdict": "RIG ERROR", "reason": "preflight: X"}))
+    code = teardown_with(rig, BrokenSupervisor([]), job_status="failure")
+    assert code == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "preflight: X")
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: lines not released"]
+
+
+def test_a_missing_verdict_json_becomes_rig_error_when_the_lines_cannot_be_released(rig):
+    code = teardown_with(rig, BrokenSupervisor([]), job_status="")
+    assert code == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: lines not released")
+
+
+def test_no_annotation_is_printed_outside_github_actions(rig, capsys):
+    verdict(rig, "PASS")
+    assert teardown_with(rig, BrokenSupervisor([])) == 3
+    assert ANNOTATION not in capsys.readouterr().out
+    assert written_verdict(rig) == "RIG ERROR"
+
+
+def test_an_unconfirmed_green_run_prints_one_annotation_and_records_a_teardown_entry(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    out = go(rig, [None], job_status="success")
+    assert out.code == 3
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: commit image not confirmed after a green run"]
+    assert verdict_json(rig)["reason"] == "teardown: commit image not confirmed after a green run"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+
+
+def test_a_known_good_fallback_prints_one_annotation_and_keeps_its_exit_code_and_image(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    out = go(rig, [None, BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert (out.final["image"], out.final["confirmed"]) == ("commit", True)
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: known-good image did not come back"]
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+
+
+def test_an_unverifiable_known_good_image_prints_one_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    rig.dutcfg.known_good_sha256 = "0" * 64
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="failure")
+    assert out.code == 3
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: known-good image does not verify"]
+
+
+def test_a_confirmed_green_run_prints_no_rig_error_annotation_and_keeps_pass(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    out = go(rig, [BUILD_ID], job_status="success")
+    assert out.code == 0
+    assert annotations(capsys.readouterr().out) == []
+    assert written_verdict(rig) == "PASS"
+
+
+def test_a_fail_run_with_a_failed_known_good_attempt_prints_no_rig_error_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "FAIL")
+    out = go(rig, [None, None], job_status="failure")
+    assert out.code == 3
+    assert written_verdict(rig) == "FAIL"
+    assert annotations(capsys.readouterr().out) == []
+
+
+# cmd_teardown: the stage causes (WR-06)
+
+
+class Boom(Exception):
+    pass
+
+
+@pytest.fixture
+def cmd(rig, monkeypatch):
+    """cmd_teardown in-process: a PASS verdict.json, Actions on, summary writing real but unmasked."""
+    from hil import __main__ as entry
+
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setenv("HIL_JOB_STATUS", "success")
+    verdict(rig, "PASS")
+    monkeypatch.setattr(entry.config, "mask_literals", lambda _rig: [])
+    monkeypatch.setattr(entry, "redact_reports", lambda _rig: None)
+    fake_rig = SimpleNamespace(duts={}, supervisor_host="h", supervisor_key="k", dut_api_key="d")
+    monkeypatch.setattr(entry, "load_rig", lambda: fake_rig)
+    monkeypatch.setattr(entry, "_rig_dut", lambda _rig: (SimpleNamespace(close=lambda: None), None))
+    return entry
+
+
+def summary_head(rig):
+    return (rig.tmp / "reports" / "raw" / "summary.md").read_text().splitlines()[0]
+
+
+def raise_(exc):
+    def raiser(*_args, **_kwargs):
+        raise exc
+
+    return raiser
+
+
+def test_cmd_teardown_that_cannot_reach_the_supervisor_ends_rig_error(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd, "_rig_dut", raise_(RigError("supervisor connection failed (ConnectionRefusedError)")))
+    assert cmd.cmd_teardown() == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: supervisor unreachable")
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: supervisor unreachable"]
+    assert summary_head(rig) == "## HIL run: RIG ERROR"
+    assert final(rig)["steps"]
+
+
+def test_cmd_teardown_without_a_rig_configuration_ends_rig_error_without_a_summary(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd, "load_rig", raise_(RigError("HIL_RIG_CONFIG is not set")))
+    assert cmd.cmd_teardown() == 3
+    assert (verdict_json(rig)["verdict"], verdict_json(rig)["reason"]) == ("RIG ERROR", "teardown: rig configuration not loaded")
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: rig configuration not loaded"]
+    assert not (rig.tmp / "reports" / "raw" / "summary.md").exists()
+
+
+def test_cmd_teardown_with_a_rig_error_out_of_run_teardown_names_the_class(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd.teardown, "run_teardown", raise_(RigError("flash failed")))
+    assert cmd.cmd_teardown() == 3
+    assert verdict_json(rig)["reason"] == "teardown: stopped (RigError)"
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: stopped (RigError)"]
+    assert summary_head(rig) == "## HIL run: RIG ERROR"
+
+
+def test_cmd_teardown_with_an_unexpected_exception_prints_the_class_never_the_text(rig, cmd, monkeypatch, capsys):
+    monkeypatch.setattr(cmd.teardown, "run_teardown", raise_(Boom("secret-looking text must not be printed")))
+    assert cmd.cmd_teardown() == 3
+    text = capsys.readouterr().out
+    assert verdict_json(rig)["reason"] == "teardown: stopped unexpectedly (Boom)"
+    assert annotations(text) == [ANNOTATION + "teardown: stopped unexpectedly (Boom)"]
+    assert "secret-looking" not in text
+    assert "secret-looking" not in (rig.tmp / "reports" / "verdict.json").read_text()
+    assert summary_head(rig) == "## HIL run: RIG ERROR"
+
+
+def test_cmd_teardown_keeps_a_recorded_fail_when_it_cannot_reach_the_supervisor(rig, cmd, monkeypatch, capsys):
+    verdict(rig, "FAIL")
+    monkeypatch.setattr(cmd, "_rig_dut", raise_(RigError("supervisor connection failed (TimeoutError)")))
+    assert cmd.cmd_teardown() == 3
+    assert verdict_json(rig)["verdict"] == "FAIL"
+    assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
+    assert annotations(capsys.readouterr().out) == []
+    assert summary_head(rig) == "## HIL run: FAIL"
+
+
+# ---- 03-17 follow-up (WR-03): the teardown annotation gets the rig literals ----
+
+
+def test_the_teardown_annotation_masks_the_literals_it_is_given(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    teardown.annotate_rig_error("no join to hil-lab-ssid", ["hil-lab-ssid"])
+    teardown.annotate_rig_error("host_192.0.2.40 down")
+    lines = annotations(capsys.readouterr().out)
+    assert lines == [ANNOTATION + "teardown: no join to ***", ANNOTATION + "teardown: host_*** down"]
+
+
+def test_rewrite_verdict_annotates_with_the_literals_and_keeps_the_cause_in_the_record_for_redaction(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    teardown.rewrite_verdict(rig.tmp / "reports", teardown.read_verdict(rig.tmp / "reports"), cause="x hil-lab-ssid", literals=["hil-lab-ssid"])
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: x ***"]
+
+
+def test_run_teardown_hands_the_config_literals_to_the_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    rig.monkeypatch.setattr(teardown.config, "safe_mask_literals", lambda cfg: ["lines not"])
+    verdict(rig, "PASS")
+    assert teardown_with(rig, ReleaseRigError([])) == 3
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: *** released"]

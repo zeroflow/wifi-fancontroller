@@ -8,6 +8,13 @@ supported-markers = [
     "sys_platform == 'linux'",
 ]
 
+[manifest]
+
+[[manifest.dependency-metadata]]
+name = "esphome"
+version = "2026.10.1"
+requires-dist = ["aioesphomeapi==46.12.0"]
+
 [[package]]
 name = "aioesphomeapi"
 version = "46.12.0"
@@ -300,6 +307,18 @@ serial = [
 ]
 
 [[package]]
+name = "esphome"
+version = "2026.10.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "aioesphomeapi", marker = "sys_platform == 'linux'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/77/b273177895dda046106b5db323d11a566ad50bc2e59cf836228a17a87694/esphome-2026.10.1.tar.gz", hash = "sha256:c970e3790c0d8d09c077fa620a7114e104da5722d59ac06a02b9ac465e4a6c96", size = 5384626, upload-time = "2026-10-27T18:34:03.777Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8f/48/ebba75526414d618c17720a44189be5b05b43d3c2511bdfcef3620eaf0ac/esphome-2026.10.1-py3-none-any.whl", hash = "sha256:8bb771478f9557f131d7de40046ac419695e8797043ced9d41675aef1094b6c6", size = 7395907, upload-time = "2026-10-27T18:34:00.786Z" },
+]
+
+[[package]]
 name = "esptool"
 version = "5.4.0"
 source = { registry = "https://pypi.org/simple" }
@@ -322,6 +341,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "aioesphomeapi", marker = "sys_platform == 'linux'" },
+    { name = "esphome", marker = "sys_platform == 'linux'" },
     { name = "esptool", marker = "sys_platform == 'linux'" },
     { name = "pytest", marker = "sys_platform == 'linux'" },
     { name = "pytest-timeout", marker = "sys_platform == 'linux'" },
@@ -330,6 +350,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aioesphomeapi", specifier = "==46.12.0" },
+    { name = "esphome", specifier = "==2026.10.1" },
     { name = "esptool", specifier = "==5.4.0" },
     { name = "pytest", specifier = "==9.2.0" },
     { name = "pytest-timeout", specifier = "==2.4.0" },

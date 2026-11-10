@@ -1,0 +1,25 @@
+# HIL canary image for Rev 3.2 (ESP32-S2, arduino framework).
+#
+# A DELIBERATE FAULT (D-31, QC-06): qc-auto with the LEDC pins of pwm_fan1 and
+# pwm_fan2 swapped. It boots clean and its API works, so only the fan mapping
+# test can catch it; the canary test passes only when that swap is detected.
+#
+# Never a final image and never last-green (D-25). hil/tools/build_image.py
+# --check-configs fails when the resolved pins are not swapped against qc-auto,
+# so the canary can never silently lose its fault. The framework is inherited
+# from qc-auto and is not touched here.
+
+packages:
+  qc: !include rev3.2.qc-auto.yaml
+
+esphome:
+  # At most 24 characters: the customer config adds a MAC suffix to the name.
+  name: fancontroller-can-r3-2
+  project:
+    version: "3.2+canary.${hil_commit}"
+
+output:
+  - id: !extend pwm_fan1
+    pin: GPIO13
+  - id: !extend pwm_fan2
+    pin: GPIO12

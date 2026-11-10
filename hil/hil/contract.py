@@ -21,6 +21,10 @@ SWITCH = {
     for d in "AB"
 }
 SERIAL_CONNECTED = {"A": "DUT A Serial Connected", "B": "DUT B Serial Connected"}
+# Sensors (RIG-06, D-47, D-49): TCP clients on each bridge (0..2) and lines the supervisor
+# released by itself since its last boot.
+SERIAL_CLIENTS = {"A": "DUT A Serial Clients", "B": "DUT B Serial Clients"}
+WATCHDOG_RELEASES = {"A": "DUT A Watchdog Releases", "B": "DUT B Watchdog Releases"}
 SUPERVISOR_RESTART = "Supervisor Restart"
 BRIDGE_BAUD = 115200
 BRIDGE_MAX_CLIENTS = 2
@@ -29,5 +33,7 @@ REQUIRED_ENTITIES = frozenset(
     {n for d in BUTTON.values() for n in d.values()}
     | {n for d in SWITCH.values() for n in d.values()}
     | set(SERIAL_CONNECTED.values())
+    | set(SERIAL_CLIENTS.values())
+    | set(WATCHDOG_RELEASES.values())
     | {SUPERVISOR_RESTART}
 )

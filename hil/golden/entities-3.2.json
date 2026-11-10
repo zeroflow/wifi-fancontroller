@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "rev": "3.2",
+  "entities": [
+    {
+      "type": "binary_sensor",
+      "name": "Button USR1"
+    },
+    {
+      "type": "binary_sensor",
+      "name": "Button USR2"
+    },
+    {
+      "type": "binary_sensor",
+      "name": "Button USR3"
+    },
+    {
+      "type": "fan",
+      "name": "Fan 1"
+    },
+    {
+      "type": "fan",
+      "name": "Fan 2"
+    },
+    {
+      "type": "fan",
+      "name": "Fan 3"
+    },
+    {
+      "type": "fan",
+      "name": "Fan 4"
+    },
+    {
+      "type": "light",
+      "name": "NeoPixel Light"
+    },
+    {
+      "type": "sensor",
+      "name": "Fan 1 Speed"
+    },
+    {
+      "type": "sensor",
+      "name": "Fan 2 Speed"
+    },
+    {
+      "type": "sensor",
+      "name": "Fan 3 Speed"
+    },
+    {
+      "type": "sensor",
+      "name": "Fan 4 Speed"
+    },
+    {
+      "type": "sensor",
+      "name": "Humidity"
+    },
+    {
+      "type": "sensor",
+      "name": "Temperature"
+    },
+    {
+      "type": "update",
+      "name": "Firmware Update"
+    }
+  ]
+}

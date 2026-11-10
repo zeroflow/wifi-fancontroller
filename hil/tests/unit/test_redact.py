@@ -124,7 +124,10 @@ known_good_api_encryption = false
 nvs_backup = "/nonexistent/nvs.bin"
 nvs_offset = "0x3A0000"
 nvs_size = "0x60000"
+nvs_release_tag = "v1.6.0"
 last_green_dir = "/nonexistent/last-green"
+framework = "arduino"
+capabilities = []
 """ % ("b" * 64)
 
 
@@ -193,3 +196,102 @@ def test_without_a_config_only_tool_written_reports_are_added_and_a_redacted_tre
     main_env.redact_reports(None)
     names = sorted(p.name for p in (reports / "redacted").rglob("*") if p.is_file())
     assert names == ["uart-dut-a.log", "verdict.json"]
+
+
+# ---- 03-17 (WR-03): an address cut by truncation is masked too ----
+
+
+@pytest.mark.parametrize("ellipsis", ["...", "…"])
+def test_an_ipv4_run_cut_by_truncation_is_masked(ellipsis):
+    out = redact.redact("host='198.51.100%s'" % ellipsis, ["198.51.100.7"])
+    assert "198.51" not in out and out.endswith("%s'" % ellipsis)
+    for cut in ("at 192.0.2%s" % ellipsis, "x 192.0%s" % ellipsis, "x 192.0.2.%s" % ellipsis, "y 192.0.2.2%s" % ellipsis):
+        out = redact.redact(cut, [])
+        assert "192.0" not in out and out.endswith(ellipsis), cut
+
+
+def test_full_addresses_macs_and_socket_urls_are_masked_as_before():
+    out = redact.redact("a 192.0.2.20 b 02:00:00:00:00:0a c socket://192.0.2.20:6638 d", [])
+    assert out == "a *** b *** c socket://*** d"
+
+
+def test_versions_and_sentences_are_left_alone():
+    for text in ("v1.6.0", "2026.10.1", "3.2+hil.b3655e0539a7", "built on 2026.10.1.", "release v1.6.0 ... done", "see 2026.10.1 ... then"):
+        assert redact.redact(text, []) == text, text
+
+
+def test_a_cut_repr_a_prefix_fragment_and_a_full_host_are_gone_from_a_junit_text(tmp_path):
+    cfg_literals = ["192.0.2.", "192.0.2.20"]
+    text = (
+        "<failure>RigConfig(supervisor_host='192.0.2...')\nprefix 192.0.2.\nhost 192.0.2.20\n</failure>"
+    )
+    raw = tmp_path / "reports" / "raw"
+    raw.mkdir(parents=True)
+    (raw / "junit.xml").write_text(text, encoding="utf-8")
+    redact.redact_tree(raw, tmp_path / "reports" / "redacted", cfg_literals)
+    out = (tmp_path / "reports" / "redacted" / "junit.xml").read_text(encoding="utf-8")
+    assert "192.0.2" not in out and "192.0." not in out
+
+
+# ---- 03-17 follow-up (WR-03): an address glued to a word character is masked too ----
+# The 03-17 patterns used \b and (?<![\w.]); a letter or underscore directly before or after an address
+# (`host_192.0.2.40`, `x198.51.100.40y`) matched neither. Only a digit or a dot next to the run may keep it
+# from being read as an address. Documentation addresses only.
+
+GLUED_FULL = [
+    "host_192.0.2.40",
+    "x198.51.100.40y",
+    "id=abc198.51.100.40",
+    "a192.0.2.40z end",
+    "name192.0.2.40_suffix",
+    "ip:203.0.113.9x",
+]
+
+
+@pytest.mark.parametrize("text", GLUED_FULL)
+def test_an_ipv4_address_glued_to_a_letter_or_underscore_is_masked(text):
+    out = redact.redact(text, [])
+    assert not re.search(r"\d+\.\d+\.\d+", out), out
+    assert "***" in out
+
+
+@pytest.mark.parametrize("ellipsis", ["...", "…"])
+@pytest.mark.parametrize("text", ["host_198.51.100", "x192.0.2", "id=abc198.51.100", "abc192.0", "y192.0.2.", "n192.0.2.2"])
+def test_an_ipv4_run_cut_by_truncation_and_glued_to_a_word_character_is_masked(text, ellipsis):
+    out = redact.redact(text + ellipsis, [])
+    assert not re.search(r"\d+\.\d+", out), out
+    assert out.endswith(ellipsis)
+
+
+def test_the_glued_cases_that_03_17_rewrote_with_a_separator_are_masked_without_one():
+    assert "198.51" not in redact.redact("x" * 290 + "198.51.100.200" + "y" * 96, [])
+    assert "198.51" not in redact.redact("x" * 262 + "198.51.100.200" + "y" * 100, [])
+    assert "198.51" not in redact.redact("RIG ERROR: " + "x" * 280 + "198.51.100.200 z", [])
+
+
+@pytest.mark.parametrize("text", ["see 192.0.2.20.", "at 192.0.2.20, then", "(192.0.2.20)", "192.0.2.20."])
+def test_a_full_address_before_punctuation_or_a_full_stop_is_masked(text):
+    out = redact.redact(text, [])
+    assert "192.0.2" not in out and "***" in out
+
+
+def test_a_mac_glued_to_a_word_character_is_masked():
+    assert "02:00" not in redact.redact("mac_02:00:00:00:00:0a", [])
+    assert "00:0a" not in redact.redact("id02:00:00:00:00:0a end", [])
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["2026.10.1", "2026.10.1...", "2026.10.1…", "esphome 2026.10.1...", "built on 2026.10.1.", "3.2+hil.b3655e0539a7", "v2026.10.1..."],
+)
+def test_a_version_tail_is_never_masked_as_an_address_even_with_an_ellipsis(text):
+    assert redact.redact(text, []) == text
+
+
+def test_a_four_group_number_has_an_address_shape_and_is_masked():
+    """The one deliberate conflict: 1.6.0.1 is shaped like an address and a leak is worse than a masked build
+    number, so four groups of 1-3 digits are masked. A three-group version is not (test above), and a first
+    group of four digits (2026.10.1.5) is not an octet, so an ESPHome version with a fourth group stays."""
+    assert redact.redact("build 1.6.0.1 ok", []) == "build *** ok"
+    assert redact.redact("v1.2.3.4", []) == "v***"
+    assert redact.redact("esphome 2026.10.1.5", []) == "esphome 2026.10.1.5"
