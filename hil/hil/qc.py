@@ -14,7 +14,7 @@ import time
 import tomllib
 from pathlib import Path
 
-from . import RigError, entities
+from . import FirmwareFailure, RigError, entities
 
 MAPPING_TOLERANCE = 0.10
 FAN_SETTLE_S = 15  # one phase (a duty step and the readings that follow it)
@@ -243,17 +243,20 @@ def measure_climate(link, window_s=HDC_WINDOW_S):
 def framework_from_device_info(text):
     """The framework a DUT reports in `QC Device Info`, as "arduino" or "esp-idf".
 
-    ValueError, never a skip or a guess, for a missing or empty report, one without the
+    FirmwareFailure, never a skip or a guess, for a missing or empty report, one without the
     `|Framework: ` field, or one whose value is not exactly "Arduino" or "ESP-IDF" (QC-05).
+    It is a FirmwareFailure and not a ValueError because the text is data the DUT reported: a
+    board that reports no or a wrong framework is a firmware outcome (FAIL, D-46), which the
+    Collector must not mistake for a harness fault.
     """
     if not isinstance(text, str) or not text:
-        raise ValueError("QC Device Info is missing or empty")
+        raise FirmwareFailure("QC Device Info is missing or empty")
     found = _FRAMEWORK_FIELD.search(text)
     if found is None:
-        raise ValueError("QC Device Info has no Framework field")
+        raise FirmwareFailure("QC Device Info has no Framework field")
     name = found.group(1)
     if name not in FRAMEWORK_NAMES:
-        raise ValueError("QC Device Info Framework value %r is not a known framework" % name)
+        raise FirmwareFailure("QC Device Info Framework value %r is not a known framework" % name)
     return FRAMEWORK_NAMES[name]
 
 
