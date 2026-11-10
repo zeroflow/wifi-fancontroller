@@ -260,6 +260,19 @@ def test_a_firmware_failure_is_a_failure_not_a_rig_event(tmp_path):
     assert (result["code"], result["verdict"], result["lines"]) == (1, "FAIL", [])
 
 
+def test_a_framework_the_dut_reports_wrongly_is_fail_through_the_collector(tmp_path):
+    # W-2: the real rig call path (test_21) on a DUT that reports an unknown framework is a firmware FAIL under D-46.
+    source = """
+        from hil import qc
+
+        def test_a():
+            qc.framework_from_device_info("x|Framework: Zephyr")
+    """
+    result = session(tmp_path, {"test_a.py": source})
+    assert (result["code"], result["verdict"], result["lines"]) == (1, "FAIL", [])
+    assert result["events"][0][:3] == ["fail", "test_a.py::test_a", "call"]
+
+
 def test_a_nonzero_exit_without_any_recorded_failure_stays_fail_and_zero_collected_is_rig_error(tmp_path):
     assert decide_verdict(1, Collector()) == ("FAIL", [])
     result = session(tmp_path, {"test_a.py": "x = 1\n"})

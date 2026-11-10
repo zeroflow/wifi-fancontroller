@@ -4,7 +4,7 @@ import copy
 
 import pytest
 
-from hil import RigError, entities, qc
+from hil import FirmwareFailure, RigError, entities, qc
 
 HZ = 25000
 E = qc.expected_reading(HZ)
@@ -492,9 +492,12 @@ def test_the_field_at_the_end_of_the_text_reads_too():
         ("|Framework: PlatformIO|", "not a known framework"),
     ],
 )
-def test_a_missing_empty_or_malformed_report_is_a_value_error_naming_the_problem(text, word):
-    with pytest.raises(ValueError, match=word):
+def test_a_missing_empty_or_malformed_report_is_a_firmware_failure_naming_the_problem(text, word):
+    # W-2, D-46: what the DUT reports is a firmware outcome (FAIL), never a harness error a Collector could call a rig event.
+    with pytest.raises(FirmwareFailure, match=word) as caught:
         qc.framework_from_device_info(text)
+    assert isinstance(caught.value, AssertionError)
+    assert not isinstance(caught.value, (ValueError, RigError))
 
 
 def test_four_equal_values_are_no_problem():
