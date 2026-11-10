@@ -786,3 +786,20 @@ def test_the_rollback_reports_are_stale_at_the_start_of_a_run():
 
     assert {rollback.STATES_REPORT, rollback.TEST_REPORT} <= set(entry.STALE_REPORTS)
     assert (summary.ROLLBACK_STATES_REPORT, summary.ROLLBACK_TEST_REPORT) == (rollback.STATES_REPORT, rollback.TEST_REPORT)
+
+
+# ---- 03-17 (WR-03): shapes are masked before the cut, so a cut never splits an address ----
+
+
+def test_first_line_masks_an_address_that_the_cut_would_have_split():
+    line = "x" * 290 + "198.51.100.200" + "y" * 96
+    assert len(line) == 400
+    out = summary._first_line(line)
+    assert "198.51" not in out and len(out) <= summary.MESSAGE_CHARS and out.endswith("...")
+
+
+def test_first_line_keeps_a_short_line_and_strips_ansi():
+    assert summary._first_line("fan stayed off") == "fan stayed off"
+    assert summary._first_line("\x1b[31mred\x1b[0m text\nsecond line") == "red text"
+    assert summary._first_line("") == ""
+    assert summary._first_line("a 192.0.2.20 b socket://192.0.2.20:6638 c 02:00:00:00:00:0a") == "a *** b socket://*** c ***"

@@ -808,3 +808,57 @@ def test_a_run_that_fails_before_any_test_clears_the_last_runs_files_and_records
         {"nodeid": None, "kind": "RigError", "message": "manifest: schema must be 2"}
     ]
     assert json.loads((tmp_path / "verdict.json").read_text(encoding="utf-8"))["verdict"] == "RIG ERROR"
+
+
+# ---- 03-17 (WR-03): no frame arguments in tracebacks, no cut before masking ------------------
+
+ARG_TEST = """
+    def helper(arg):
+        raise RuntimeError("boom")
+
+    def test_it():
+        helper("A" * 100 + ".".join(["192", "0", "2", "20"]) + "B" * 300)
+"""
+
+
+def pytest_text(tmp_path, tb):
+    """The printed output of a real pytest sub-session over ARG_TEST with the given --tb style."""
+    (tmp_path / "pytest.ini").write_text("[pytest]\n", encoding="utf-8")
+    (tmp_path / "test_arg.py").write_text(textwrap.dedent(ARG_TEST), encoding="utf-8")
+    proc = subprocess.run(
+        [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-q", "-c", "pytest.ini", "--tb=" + tb, "."],
+        cwd=tmp_path, env={"PYTHONPATH": str(PROJECT), "PATH": ""}, capture_output=True, text=True, timeout=120,
+    )
+    return proc.stdout + proc.stderr
+
+
+def test_run_passes_short_tracebacks_to_pytest(run_env, monkeypatch):
+    seen = {}
+
+    def stand_in(args, plugins):
+        seen["args"] = list(args)
+        plugins[0].pytest_runtest_logreport(report("t::canary", "call", "passed"))
+        plugins[0]._canary.add("t::canary")
+        return 0
+
+    monkeypatch.setattr(entry.pytest, "main", stand_in)
+    assert entry._run({}) == 0
+    assert "--tb=short" in seen["args"] and "-s" in seen["args"] and "junit_family=xunit2" in seen["args"]
+
+
+def test_short_tracebacks_print_no_frame_argument_and_the_long_style_does(tmp_path):
+    (tmp_path / "long").mkdir()
+    (tmp_path / "short").mkdir()
+    long = pytest_text(tmp_path / "long", "long")
+    short = pytest_text(tmp_path / "short", "short")
+    assert "192.0.2.20" in long, "the switch must matter: the long style prints the frame argument"
+    assert "RuntimeError: boom" in short and "192.0" not in short and "BBBB" not in short
+
+
+def test_a_verdict_annotation_never_carries_part_of_an_address_cut_by_the_message_limit():
+    message = "x" * 262 + "198.51.100.200" + "y" * 100
+    fail = make_collector(("fail", "t.py::test_x", "call", message))
+    (line,) = entry.verdict_annotation("FAIL", [], fail, "b", GITHUB)
+    assert "198.51" not in line and "\n" not in line and len(line) <= len("::error title=HIL FAIL::") + 300
+    (rig_line,) = entry.verdict_annotation("RIG ERROR", ["RIG ERROR: " + "x" * 280 + "198.51.100.200 z"], Collector(), "b", GITHUB)
+    assert "198.51" not in rig_line and len(rig_line) <= len("::error title=RIG ERROR::") + 300
