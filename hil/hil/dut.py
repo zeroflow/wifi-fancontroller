@@ -196,6 +196,11 @@ class Dut:
         uart_banner off), in the API log of `link` (a DutLink) since ota_end_at, because UART0 is dark
         under the release bootloader. Without that link the upgrade cannot be confirmed and the refusal
         stands: reset() passes none, so an EN reset after the upgrade needs this call with the link first.
+
+        Crash evidence (WR-01, D-46): when the link had a session at the start of the API wait and, at the
+        refusal, its session count changed or it is down, the image dropped its API session before its mark,
+        i.e. it rebooted (crash or watchdog) inside the rollback window. That is a firmware outcome and
+        raises FirmwareFailure (FAIL). Without that evidence the refusal stays a RigError.
         """
         left = self.unconfirmed_until - time.monotonic()
         if left <= 0:
@@ -208,9 +213,15 @@ class Dut:
             )
             if link is None or self.ota_end_at is None:
                 raise refusal
+            was_up, before = link.connected(), link.sessions()
             try:
                 at = link.wait_log(bootlog.BOOT_OK_RE.pattern, self.ota_end_at, wait_s)
             except RigError:
+                if was_up and (link.sessions() != before or not link.connected()):
+                    raise FirmwareFailure(
+                        "DUT %s: the upgraded image dropped its API session before 'Boot seems successful' "
+                        "(it rebooted before its mark)" % self.id
+                    ) from None
                 raise refusal from None
         else:
             refusal = RigError("EN reset refused: the OTA image was not confirmed (no 'Boot seems successful')")

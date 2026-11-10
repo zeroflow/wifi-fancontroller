@@ -10,6 +10,11 @@ its receipt time, and records every line it drives itself (a Reset or Bootloader
 DUT's EN and BOOT, set_switch(name, True) drives that line). The rig conftest's watchdog_guard
 compares the two after each test: a release of a line the test drove is RIG ERROR, any other
 release a warning, a counter rise no release line explains RIG ERROR (fail-closed).
+
+Lost session (WR-04, 03-16): when the API session ends while the facade is open (aioesphomeapi on_stop;
+the supervisor restarted or the link dropped), every accessor that reads cached state or sends a command
+raises RigError `supervisor API session lost` instead of returning values frozen at the loss. That is how
+the guard above fails closed after a supervisor restart. Closing the facade itself is not a loss.
 """
 
 import asyncio
@@ -154,6 +159,7 @@ class Supervisor:
         self._driven = []  # (command time, line) of every line this facade drove (D-47)
         self._record_lock = threading.Lock()
         self._closed = False
+        self._link_lost = False  # set by on_stop while open: cached state is stale from then on (WR-04)
         self._loop = asyncio.new_event_loop()
         self._thread = threading.Thread(target=self._loop.run_forever, name="hil-supervisor-loop", daemon=True)
         self._thread.start()
@@ -201,9 +207,15 @@ class Supervisor:
 
     async def _connect(self):
         client = APIClient(self._host, contract.API_PORT, None, noise_psk=self._key)
+
+        async def on_stop(_expected):
+            # Our own close() and a failed connect never count: only a session that was up and ended while open.
+            if self._client is client and not self._closed:
+                self._link_lost = True
+
         try:
             async with asyncio.timeout(SUPERVISOR_CONNECT_S):
-                await client.connect(login=True)
+                await client.connect(on_stop=on_stop, login=True)
                 entities, _services = await client.list_entities_services()
         except (APIConnectionError, OSError, TimeoutError) as exc:
             try:
@@ -229,6 +241,11 @@ class Supervisor:
         if found is None or found[0] is not kind:
             raise RigError("entity '%s' missing on supervisor" % name)
         return found[1]
+
+    def _require_link(self):
+        """RigError when the API session ended while the facade was open (WR-04); called first by every accessor."""
+        if self._link_lost:
+            raise RigError("supervisor API session lost")
 
     async def _command(self, function, *args):
         function(*args)
@@ -260,14 +277,20 @@ class Supervisor:
 
     def switch_is_on(self, name):
         """Last reported state of a contract switch: True, False, or None when never reported."""
+        self._require_link()
         return self._states.get(name)
 
     def press(self, name):
+        self._require_link()
         key = self._lookup(name, ButtonInfo)
         self._drove(BUTTON_LINES.get(name, ()))  # recorded before the command: a press that fails may still have driven
-        self.run(self._command(self._client.button_command, key), PRESS_S)
+        try:
+            self.run(self._command(self._client.button_command, key), PRESS_S)
+        except APIConnectionError as exc:
+            raise RigError("button '%s' press failed (%s)" % (name, type(exc).__name__)) from None
 
     def set_switch(self, name, on):
+        self._require_link()
         key = self._lookup(name, SwitchInfo)
         if on:
             self._drove((name,))  # an OFF command never holds a line, so it is never recorded
@@ -305,13 +328,15 @@ class Supervisor:
     def sensor_value(self, name):
         """Last reported value of a contract sensor as a float, or None when it has no value (RIG-06).
 
-        RigError when the supervisor has no sensor of that name.
+        RigError when the supervisor has no sensor of that name or the API session was lost.
         """
+        self._require_link()
         self._lookup(name, SensorInfo)
         return self._values.get(name)
 
     def watchdog_counts(self):
         """{dut: int} of both Watchdog Releases counters; RigError naming a counter without a value."""
+        self._require_link()
         counts = {}
         for dut_id, name in contract.WATCHDOG_RELEASES.items():
             value = self.sensor_value(name)
@@ -331,6 +356,7 @@ class Supervisor:
             return [line for at, line in self._driven if at >= t]
 
     def serial_connected(self, dut_id):
+        self._require_link()
         name = contract.SERIAL_CONNECTED[dut_id]
         self._lookup(name, BinarySensorInfo)
         return bool(self._states.get(name, False))
