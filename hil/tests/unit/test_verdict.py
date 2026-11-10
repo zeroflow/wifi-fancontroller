@@ -164,7 +164,9 @@ def test_a_canary_whose_teardown_fails_did_not_pass(tmp_path):
             pass
     """
     result = session(tmp_path, {"test_a.py": source})
-    assert result["code"] == 1 and result["verdict"] == "FAIL"
+    # WR-05 (tooling-is-rig-error): a RuntimeError out of a fixture is a tooling event, no longer a FAIL.
+    assert result["code"] == 1 and result["verdict"] == "RIG ERROR"
+    assert result["lines"] == ["RIG ERROR: RuntimeError: teardown broke"]
     assert result["report"]["canary_passed"] is False
     assert result["report"]["passed"] == 0
 
@@ -271,6 +273,99 @@ def test_a_framework_the_dut_reports_wrongly_is_fail_through_the_collector(tmp_p
     result = session(tmp_path, {"test_a.py": source})
     assert (result["code"], result["verdict"], result["lines"]) == (1, "FAIL", [])
     assert result["events"][0][:3] == ["fail", "test_a.py::test_a", "call"]
+
+
+TOOLING_FIRST = """
+    def test_a_tooling():
+        raise TypeError("x")
+
+    def test_b_fails():
+        assert False, "fan reading wrong"
+"""
+
+FAIL_THEN_TOOLING = """
+    def test_a_fails():
+        assert False, "fan reading wrong"
+
+    def test_b_tooling():
+        raise TypeError("x")
+"""
+
+
+def test_a_tooling_exception_is_a_rig_event_named_by_its_class(tmp_path):
+    source = """
+        def test_a():
+            raise TypeError("x")
+    """
+    result = session(tmp_path, {"test_a.py": source})
+    assert (result["code"], result["verdict"], result["lines"]) == (1, "RIG ERROR", ["RIG ERROR: TypeError: x"])
+    assert result["events"] == [["rig", "test_a.py::test_a", "call", "x"]]
+
+
+def test_a_tooling_exception_first_then_an_assertion_is_rig_error_and_the_failure_stays_listed(tmp_path):
+    result = session(tmp_path, {"test_a.py": TOOLING_FIRST})
+    assert (result["verdict"], result["lines"]) == ("RIG ERROR", ["RIG ERROR: TypeError: x"])
+    assert result["report"]["failed_tests"] == ["test_a.py::test_a_tooling", "test_a.py::test_b_fails"]
+
+
+def test_a_key_error_in_a_fixture_is_a_rig_event(tmp_path):
+    source = """
+        import pytest
+
+        @pytest.fixture
+        def broken():
+            return {}["missing"]
+
+        def test_a(broken):
+            pass
+    """
+    result = session(tmp_path, {"test_a.py": source})
+    assert (result["verdict"], result["lines"]) == ("RIG ERROR", ["RIG ERROR: KeyError: 'missing'"])
+    assert result["events"] == [["rig", "test_a.py::test_a", "setup", "'missing'"]]
+
+
+def test_an_assertion_first_then_a_tooling_exception_is_fail_and_the_later_one_is_listed(tmp_path):
+    result = session(tmp_path, {"test_a.py": FAIL_THEN_TOOLING})
+    assert (result["code"], result["verdict"]) == (1, "FAIL")
+    assert result["lines"] == ["RIG ERROR (after the first failure): TypeError: x"]
+
+
+def test_a_tooling_exception_gets_the_rig_error_annotation_with_its_class_and_first_line():
+    collector = Collector()
+    item = SimpleNamespace(nodeid="tests/rig/test_x.py::test_a", get_closest_marker=lambda name: None)
+    exc = TypeError("x\nsecond line with detail")
+    collector.pytest_runtest_makereport(item, SimpleNamespace(excinfo=SimpleNamespace(value=exc), when="call"))
+    assert collector.rig_errors == ["TypeError: x"]
+    assert collector.rig_error_records == [{"nodeid": "tests/rig/test_x.py::test_a", "kind": "TypeError", "message": "x\nsecond line with detail"}]
+    verdict, lines = decide_verdict(1, collector)
+    assert (verdict, lines) == ("RIG ERROR", ["RIG ERROR: TypeError: x"])
+    assert entry.verdict_annotation(verdict, lines, collector, "b1", GITHUB) == ["::error title=RIG ERROR::TypeError: x"]
+
+
+FAILURE_SOURCES = {
+    "assert": "def test_a():\n    assert False, 'wrong'\n",
+    "firmware-failure": "from hil import FirmwareFailure\n\ndef test_a():\n    raise FirmwareFailure('DUT A rebooted')\n",
+    "pytest-fail": "import pytest\n\ndef test_a():\n    pytest.fail('x')\n",
+    "raises-miss": "import pytest\n\ndef test_a():\n    with pytest.raises(ValueError):\n        pass\n",
+    "per-test-timeout": "import time\nimport pytest\n\n@pytest.mark.timeout(1)\ndef test_a():\n    time.sleep(3)\n",
+}
+
+
+@pytest.mark.parametrize("name", sorted(FAILURE_SOURCES))
+def test_what_a_test_asserts_stays_fail_whatever_the_taxonomy(tmp_path, name):
+    result = session(tmp_path, {"test_a.py": FAILURE_SOURCES[name]})
+    assert (result["code"], result["verdict"], result["lines"]) == (1, "FAIL", [])
+    assert [e[0] for e in result["events"]] == ["fail"]
+
+
+@pytest.mark.parametrize(
+    "exc", [pytest.skip.Exception("why"), KeyboardInterrupt(), pytest.exit.Exception("stop")], ids=["skip", "interrupt", "exit"]
+)
+def test_a_skip_an_interrupt_and_pytest_exit_record_no_event(exc):
+    collector = Collector()
+    item = SimpleNamespace(nodeid="tests/rig/test_x.py::test_a", get_closest_marker=lambda name: None)
+    collector.pytest_runtest_makereport(item, SimpleNamespace(excinfo=SimpleNamespace(value=exc), when="call"))
+    assert (collector.events, collector.rig_errors, collector.rig_error_records) == ([], [], [])
 
 
 def test_a_nonzero_exit_without_any_recorded_failure_stays_fail_and_zero_collected_is_rig_error(tmp_path):
@@ -678,6 +773,8 @@ def test_rig_errors_are_recorded_with_node_id_class_name_and_message_for_the_sum
         {"nodeid": "tests/rig/test_x.py::test_a", "kind": "SafeModeError", "message": "in safe mode"},
         {"nodeid": "tests/rig/test_x.py::test_a", "kind": "ResetBudgetExhausted", "message": "8/8"},
         {"nodeid": "tests/rig/test_x.py::test_a", "kind": "RigError", "message": "plain"},
+        # WR-05: a tooling exception is a rig event too, its kind is the class name.
+        {"nodeid": "tests/rig/test_x.py::test_a", "kind": "ValueError", "message": "not a rig error"},
     ]
 
 
