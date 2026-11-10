@@ -3,8 +3,9 @@
 Only reports/redacted/ is ever uploaded. redact_tree() builds it from reports/raw/
 plus the JSON reports in the reports root, replacing every rig literal (hosts,
 MACs in every form, keys, SSID, PSK), then anything shaped like an IPv4 address,
-a MAC or a socket:// URL, and stripping ANSI escapes. Literals go first, longest
-first, so a literal that contains a shorter one is masked as a whole.
+an IPv4 run cut by truncation (IPV4_CUT, 03-17), a MAC or a socket:// URL, and
+stripping ANSI escapes. Literals go first, longest first, so a literal that contains
+a shorter one is masked as a whole.
 """
 
 import json
@@ -15,6 +16,11 @@ from pathlib import Path
 MASK = "***"
 ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+# An address cut by a repr or a message limit ("192.0.2...", "192.0.", "192.0.2.2..."): two to four
+# dot-separated groups, the last possibly empty, directly followed by an ellipsis. No full-value mask
+# and not IPV4 matches it (03-14, run p1). The lookbehind keeps the tail of a version ("2026.10.1")
+# from being read as a run; the ellipsis stays in the text.
+IPV4_CUT = re.compile(r"(?<![\w.])\d{1,3}(?:\.\d{1,3}){1,3}\.?(?=\.\.\.|\u2026)")
 MAC = re.compile(r"\b(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}\b")
 SOCKET_URL = re.compile(r"socket://\S+")
 
@@ -34,6 +40,7 @@ def redact(text, literals):
     for literal in sorted(forms, key=len, reverse=True):
         text = text.replace(literal, MASK)
     text = SOCKET_URL.sub("socket://" + MASK, text)
+    text = IPV4_CUT.sub(MASK, text)
     text = IPV4.sub(MASK, text)
     text = MAC.sub(MASK, text)
     return text

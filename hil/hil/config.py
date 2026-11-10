@@ -271,6 +271,16 @@ def _mac_forms(mac):
     return forms
 
 
+def _prefix24(value):
+    """The address up to and including its third dot ("192.0.2." for "192.0.2.10"); "" for anything
+    that does not parse as a dotted IPv4 address (the push-check rule, tools/push-check.py)."""
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        return ""
+    return value.rsplit(".", 1)[0] + "."
+
+
 def _named_literals(cfg, env, network_file):
     network_file = network_file or NETWORK_FILE
     named = [("rig.toml supervisor.host", cfg.supervisor_host)]
@@ -278,6 +288,8 @@ def _named_literals(cfg, env, network_file):
         name = "dut." + dut_id.lower()
         named.append(("rig.toml %s.host" % name, dut.host))
         named.extend(("rig.toml %s.mac (%s)" % (name, label), value) for label, value in _mac_forms(dut.mac))
+    hosts = [cfg.supervisor_host] + [dut.host for dut in cfg.duts.values()]
+    named.extend(("rig.toml /24 prefix", _prefix24(host)) for host in hosts)
     named.append(("HIL_SUPERVISOR_KEY", cfg.supervisor_key))
     named.append(("DUT API key in use", cfg.dut_api_key))
     try:
@@ -311,7 +323,10 @@ def emit_masks(cfg, env=None, network_file=None):
 
     The lines are flushed before returning. stdout on the runner is a block-buffered pipe, while
     aioesphomeapi logs connection errors (with the address) to unbuffered stderr: without the flush
-    the masks reached the runner after such a line and it was published unmasked (03-14, run p1)."""
+    the masks reached the runner after such a line and it was published unmasked (03-14, run p1).
+
+    The /24 prefix of every IPv4 host is masked as well: a repr or message cut after the third octet
+    matched no full-address mask and was published (03-14, run p1)."""
     env = os.environ if env is None else env
     literals = mask_literals(cfg, env, network_file)
     if env.get("GITHUB_ACTIONS") == "true":
