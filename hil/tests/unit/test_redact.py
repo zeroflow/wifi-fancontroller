@@ -196,3 +196,38 @@ def test_without_a_config_only_tool_written_reports_are_added_and_a_redacted_tre
     main_env.redact_reports(None)
     names = sorted(p.name for p in (reports / "redacted").rglob("*") if p.is_file())
     assert names == ["uart-dut-a.log", "verdict.json"]
+
+
+# ---- 03-17 (WR-03): an address cut by truncation is masked too ----
+
+
+@pytest.mark.parametrize("ellipsis", ["...", "…"])
+def test_an_ipv4_run_cut_by_truncation_is_masked(ellipsis):
+    out = redact.redact("host='198.51.100%s'" % ellipsis, ["198.51.100.7"])
+    assert "198.51" not in out and out.endswith("%s'" % ellipsis)
+    for cut in ("at 192.0.2%s" % ellipsis, "x 192.0%s" % ellipsis, "x 192.0.2.%s" % ellipsis, "y 192.0.2.2%s" % ellipsis):
+        out = redact.redact(cut, [])
+        assert "192.0" not in out and out.endswith(ellipsis), cut
+
+
+def test_full_addresses_macs_and_socket_urls_are_masked_as_before():
+    out = redact.redact("a 192.0.2.20 b 02:00:00:00:00:0a c socket://192.0.2.20:6638 d", [])
+    assert out == "a *** b *** c socket://*** d"
+
+
+def test_versions_and_sentences_are_left_alone():
+    for text in ("v1.6.0", "2026.10.1", "3.2+hil.b3655e0539a7", "built on 2026.10.1.", "release v1.6.0 ... done", "see 2026.10.1 ... then"):
+        assert redact.redact(text, []) == text, text
+
+
+def test_a_cut_repr_a_prefix_fragment_and_a_full_host_are_gone_from_a_junit_text(tmp_path):
+    cfg_literals = ["192.0.2.", "192.0.2.20"]
+    text = (
+        "<failure>RigConfig(supervisor_host='192.0.2...')\nprefix 192.0.2.\nhost 192.0.2.20\n</failure>"
+    )
+    raw = tmp_path / "reports" / "raw"
+    raw.mkdir(parents=True)
+    (raw / "junit.xml").write_text(text, encoding="utf-8")
+    redact.redact_tree(raw, tmp_path / "reports" / "redacted", cfg_literals)
+    out = (tmp_path / "reports" / "redacted" / "junit.xml").read_text(encoding="utf-8")
+    assert "192.0.2" not in out and "192.0." not in out

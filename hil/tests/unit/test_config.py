@@ -285,3 +285,34 @@ def test_no_host_mac_or_subnet_in_the_repr_of_the_rig_config(tmp_path):
         assert literal not in text, literal
     assert cfg.supervisor_host == "192.0.2.10" and cfg.duts["A"].host == "192.0.2.20"
     assert "rev='3.2'" in repr(cfg.duts["A"])
+
+
+# ---- 03-17 (WR-03): the /24 prefix of every IPv4 rig host is a mask literal ----
+
+
+def prefix_values(tmp_path, **env_extra):
+    text = rig_toml(sup_host="192.0.2.10", a_host="192.0.2.20", b_host="198.51.100.30")
+    cfg, env, net = load(tmp_path, text, **env_extra)
+    return cfg, env, net, config.mask_literals(cfg, env=env, network_file=net)
+
+
+def test_the_prefix_of_every_ipv4_rig_host_is_a_mask_literal_once(tmp_path):
+    _cfg, _env, _net, lits = prefix_values(tmp_path)
+    assert lits.count("192.0.2.") == 1 and lits.count("198.51.100.") == 1
+    for host in ("192.0.2.10", "192.0.2.20", "198.51.100.30"):
+        assert host in lits
+
+
+def test_emit_masks_prints_the_prefixes_under_actions(tmp_path):
+    cfg, env, net, _lits = prefix_values(tmp_path, GITHUB_ACTIONS="true")
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        config.emit_masks(cfg, env=env, network_file=net)
+    lines = out.getvalue().splitlines()
+    assert "::add-mask::192.0.2." in lines and "::add-mask::198.51.100." in lines
+
+
+def test_a_host_that_is_not_ipv4_contributes_no_prefix_and_no_error():
+    for value in ("rig.example.net", "2001:db8::1", "", "192.0.2", "192.0.2.300", "a.b.c.d"):
+        assert config._prefix24(value) == "", value
+    assert config._prefix24("192.0.2.10") == "192.0.2."
