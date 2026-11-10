@@ -27,7 +27,13 @@ PYPROJECT = Path(__file__).resolve().parent.parent / "pyproject.toml"
 
 
 class Collector:
-    """pytest plugin: every RigError, and what each test did (passed, failed, skipped and why).
+    """pytest plugin: every rig event, and what each test did (passed, failed, skipped and why).
+
+    Classify by what a test asserts (D-45, D-46; the maintainer's choice of 2026-11-10, WR-05).
+    An AssertionError (FirmwareFailure included) or a pytest failure (pytest.fail, a pytest-timeout
+    expiry, a pytest.raises miss) is a firmware or test FAIL. A RigError, and any other exception
+    (a TypeError or KeyError in the harness, an aioesphomeapi error), is a rig or tooling event,
+    named by its class. Data the DUT reports raises FirmwareFailure, so it is never a rig event.
 
     The run's verdict is decided from these facts by decide_verdict, never from pytest's
     exit code alone: exit 0 also means "everything was skipped" or "the canary never ran".
@@ -47,12 +53,21 @@ class Collector:
 
     def pytest_runtest_makereport(self, item, call):
         value = call.excinfo.value if call.excinfo is not None else None
+        when = getattr(call, "when", None)
         if isinstance(value, RigError):
             self.rig_errors.append(str(value))
             self.rig_error_records.append(rig_error_record(item.nodeid, value))
-            self.events.append(("rig", item.nodeid, getattr(call, "when", None), first_line(value)))
-        elif value is not None and not isinstance(value, NOT_A_FAILURE):
-            self.events.append(("fail", item.nodeid, getattr(call, "when", None), first_line(value)))
+            self.events.append(("rig", item.nodeid, when, first_line(value)))
+        elif value is None or isinstance(value, NOT_A_FAILURE):
+            pass
+        elif isinstance(value, FAILURE_TYPES):
+            self.events.append(("fail", item.nodeid, when, first_line(value)))
+        else:
+            # Tooling-is-rig-error (maintainer choice d3, 2026-11-10): an exception that is neither an
+            # assertion nor a RigError is a harness or library fault and is named by its class.
+            self.rig_errors.append("%s: %s" % (type(value).__name__, first_line(value)))
+            self.rig_error_records.append(rig_error_record(item.nodeid, value))
+            self.events.append(("rig", item.nodeid, when, first_line(value)))
         if item.get_closest_marker("canary") is not None:
             self._canary.add(item.nodeid)
 
@@ -115,6 +130,9 @@ class Collector:
     def cut_line(self):
         return "RIG ERROR: run cut by the session deadline (%s); %d test(s) not run" % (self.session_cut, self.not_run)
 
+
+# Exceptions that say a test failed (a FirmwareFailure is an AssertionError; pytest-timeout and pytest.raises raise Failed).
+FAILURE_TYPES = (AssertionError, pytest.fail.Exception)
 
 # Not failures: a skip, an operator interrupt and pytest.exit() end a phase without saying anything about the firmware.
 NOT_A_FAILURE = (pytest.skip.Exception, KeyboardInterrupt, pytest.exit.Exception)
