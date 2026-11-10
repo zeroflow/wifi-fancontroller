@@ -856,9 +856,9 @@ def test_short_tracebacks_print_no_frame_argument_and_the_long_style_does(tmp_pa
 
 
 def test_a_verdict_annotation_never_carries_part_of_an_address_cut_by_the_message_limit():
-    message = "x" * 262 + "198.51.100.200" + "y" * 100
+    message = "x" * 261 + " host=198.51.100.200 " + "y" * 100
     fail = make_collector(("fail", "t.py::test_x", "call", message))
     (line,) = entry.verdict_annotation("FAIL", [], fail, "b", GITHUB)
     assert "198.51" not in line and "\n" not in line and len(line) <= len("::error title=HIL FAIL::") + 300
-    (rig_line,) = entry.verdict_annotation("RIG ERROR", ["RIG ERROR: " + "x" * 280 + "198.51.100.200 z"], Collector(), "b", GITHUB)
+    (rig_line,) = entry.verdict_annotation("RIG ERROR", ["RIG ERROR: " + "x" * 279 + " 198.51.100.200 z"], Collector(), "b", GITHUB)
     assert "198.51" not in rig_line and len(rig_line) <= len("::error title=RIG ERROR::") + 300

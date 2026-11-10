@@ -792,7 +792,7 @@ def test_the_rollback_reports_are_stale_at_the_start_of_a_run():
 
 
 def test_first_line_masks_an_address_that_the_cut_would_have_split():
-    line = "x" * 290 + "198.51.100.200" + "y" * 96
+    line = "x" * 289 + " 198.51.100.200 " + "y" * 95
     assert len(line) == 400
     out = summary._first_line(line)
     assert "198.51" not in out and len(out) <= summary.MESSAGE_CHARS and out.endswith("...")

@@ -379,8 +379,10 @@ def _run(holder):
         code = pytest.main(
             # Timeouts come from pyproject.toml (timeout, timeout_method = signal, session_timeout).
             # JUnit (xunit2) goes under reports/raw, so the redaction copies a masked version (CI-06).
+            # --tb=short: the default long style prints every frame's arguments through pytest's
+            # 240-character saferepr cut, which published a cut rig address in run p1 (03-14, WR-03).
             [
-                "-c", str(PYPROJECT), str(TEST_DIR), "-s",
+                "-c", str(PYPROJECT), str(TEST_DIR), "-s", "--tb=short",
                 "--junitxml=%s" % (reports / "raw" / "junit.xml"),
                 "-o", "junit_family=xunit2",
             ],

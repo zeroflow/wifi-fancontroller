@@ -273,7 +273,12 @@ def _dut_heading(manifest):
 
 
 def _first_line(text):
+    """The first line of text, shapes masked (ANSI, socket URL, IPv4, cut IPv4, MAC), then cut to MESSAGE_CHARS.
+
+    Masking comes before the cut: a cut inside an address left its first octets in the line (03-14,
+    run p1). The rig literals are applied later by write()."""
     line = str(text).strip().splitlines()[0] if str(text).strip() else ""
+    line = redact.redact(line, [])
     return line if len(line) <= MESSAGE_CHARS else line[: MESSAGE_CHARS - 3] + "..."
 
 
