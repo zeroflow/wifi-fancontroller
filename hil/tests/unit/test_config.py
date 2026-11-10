@@ -316,3 +316,18 @@ def test_a_host_that_is_not_ipv4_contributes_no_prefix_and_no_error():
     for value in ("rig.example.net", "2001:db8::1", "", "192.0.2", "192.0.2.300", "a.b.c.d"):
         assert config._prefix24(value) == "", value
     assert config._prefix24("192.0.2.10") == "192.0.2."
+
+
+# ---- 03-17 follow-up (WR-03): the literals for the emitters never raise ----
+
+
+def test_safe_mask_literals_equals_mask_literals_for_a_loaded_config(tmp_path):
+    cfg, env, net, lits = prefix_values(tmp_path)
+    assert lits and config.safe_mask_literals(cfg, env=env, network_file=net) == lits
+
+
+def test_safe_mask_literals_is_empty_for_none_and_for_a_config_that_did_not_load():
+    from types import SimpleNamespace
+
+    assert config.safe_mask_literals(None) == []
+    assert config.safe_mask_literals(SimpleNamespace(duts={"A": object()})) == []

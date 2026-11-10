@@ -803,3 +803,30 @@ def test_first_line_keeps_a_short_line_and_strips_ansi():
     assert summary._first_line("\x1b[31mred\x1b[0m text\nsecond line") == "red text"
     assert summary._first_line("") == ""
     assert summary._first_line("a 192.0.2.20 b socket://192.0.2.20:6638 c 02:00:00:00:00:0a") == "a *** b socket://*** c ***"
+
+
+# ---- 03-17 follow-up (WR-03): the rig literals reach the first-line path, and glued addresses are masked ----
+
+LITERAL = "hil-lab-ssid"  # a non-IP rig literal (a WiFi name stands in for any of them)
+
+
+def test_first_line_masks_the_rig_literals_it_is_given():
+    out = summary._first_line("join failed for %s on the bench" % LITERAL, [LITERAL])
+    assert LITERAL not in out and out == "join failed for *** on the bench"
+
+
+def test_first_line_masks_a_literal_before_the_cut_so_the_cut_never_splits_it():
+    out = summary._first_line("x" * 295 + LITERAL + "y" * 50, [LITERAL])
+    assert "hil" not in out and len(out) <= summary.MESSAGE_CHARS and out.endswith("...")
+
+
+def test_first_line_without_literals_is_pattern_only():
+    assert summary._first_line("join failed for %s" % LITERAL) == "join failed for %s" % LITERAL
+    assert summary._first_line("join failed for %s" % LITERAL, None) == "join failed for %s" % LITERAL
+    assert summary._first_line("host_192.0.2.40 up", []) == "host_*** up"
+
+
+def test_first_line_masks_an_address_glued_to_the_text_at_the_cut():
+    line = "x" * 290 + "198.51.100.200" + "y" * 96
+    out = summary._first_line(line)
+    assert "198.51" not in out and len(out) <= summary.MESSAGE_CHARS and out.endswith("...")

@@ -862,3 +862,72 @@ def test_a_verdict_annotation_never_carries_part_of_an_address_cut_by_the_messag
     assert "198.51" not in line and "\n" not in line and len(line) <= len("::error title=HIL FAIL::") + 300
     (rig_line,) = entry.verdict_annotation("RIG ERROR", ["RIG ERROR: " + "x" * 279 + " 198.51.100.200 z"], Collector(), "b", GITHUB)
     assert "198.51" not in rig_line and len(rig_line) <= len("::error title=RIG ERROR::") + 300
+
+
+# ---- 03-17 follow-up (WR-03): annotations get the rig literals; glued addresses stay masked ----
+
+LITERAL = "hil-lab-ssid"  # a non-IP rig literal
+
+
+def test_first_line_takes_the_literals_and_masks_before_the_cut():
+    assert entry.first_line("no join to %s" % LITERAL, [LITERAL]) == "no join to ***"
+    assert entry.first_line("no join to %s" % LITERAL) == "no join to %s" % LITERAL
+    out = entry.first_line("x" * 295 + LITERAL + "y" * 50, [LITERAL])
+    assert "hil" not in out and len(out) <= 300
+
+
+def test_a_fail_annotation_carries_no_rig_literal():
+    fail = Collector([LITERAL])
+    fail.events = [("fail", "t.py::test_x", "call", "ssid %s refused" % LITERAL)]
+    (line,) = entry.verdict_annotation("FAIL", [], fail, "b", GITHUB)
+    assert LITERAL not in line and "ssid *** refused" in line
+
+
+def test_a_collector_masks_the_literals_in_every_event_it_records():
+    collector = Collector([LITERAL])
+    item = SimpleNamespace(nodeid="t::a", get_closest_marker=lambda name: None)
+    for value in (AssertionError("bad %s" % LITERAL), entry.RigError("down %s" % LITERAL), TypeError("tool %s" % LITERAL)):
+        collector.pytest_runtest_makereport(item, SimpleNamespace(excinfo=SimpleNamespace(value=value), when="call"))
+    assert len(collector.events) == 3
+    assert all(LITERAL not in event[3] for event in collector.events)
+    assert all(LITERAL not in text for text in collector.rig_errors)
+
+
+def test_a_rig_error_annotation_carries_no_rig_literal_even_at_the_cut():
+    collector = Collector([LITERAL])
+    for cause in ("down at %s" % LITERAL, "x" * 285 + LITERAL + " tail"):
+        (line,) = entry.verdict_annotation("RIG ERROR", ["RIG ERROR: " + cause], collector, "b", GITHUB)
+        assert "hil" not in line and len(line) <= len("::error title=RIG ERROR::") + 300
+
+
+def test_a_collector_without_literals_still_masks_the_patterns():
+    (line,) = entry.verdict_annotation("RIG ERROR", ["RIG ERROR: down host_192.0.2.40"], Collector(), "b", GITHUB)
+    assert "192.0.2" not in line
+
+
+def test_the_03_17_cut_cases_hold_without_a_separator_before_the_address():
+    message = "x" * 262 + "198.51.100.200" + "y" * 100
+    fail = make_collector(("fail", "t.py::test_x", "call", message))
+    (line,) = entry.verdict_annotation("FAIL", [], fail, "b", GITHUB)
+    assert "198.51" not in line and "\n" not in line and len(line) <= len("::error title=HIL FAIL::") + 300
+    cause = "RIG ERROR: " + "x" * 280 + "198.51.100.200 z"
+    (rig_line,) = entry.verdict_annotation("RIG ERROR", [cause], Collector(), "b", GITHUB)
+    assert "198.51" not in rig_line and len(rig_line) <= len("::error title=RIG ERROR::") + 300
+
+
+def test_rig_literals_of_no_config_or_a_config_that_did_not_load_are_empty():
+    assert entry.rig_literals(None) == []
+    assert entry.rig_literals(SimpleNamespace(duts={"A": object()})) == []
+
+
+def test_run_prints_a_rig_error_annotation_without_the_literal_when_the_manifest_fails(run_env, monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(entry.config, "safe_mask_literals", lambda rig: [LITERAL])
+
+    def broken(*args):
+        raise entry.RigError("manifest of %s unreadable" % LITERAL)
+
+    monkeypatch.setattr(entry.manifest, "load_verified", broken)
+    assert entry._run({}) == 3
+    annotations = [line for line in capsys.readouterr().out.splitlines() if line.startswith("::error title=RIG ERROR::")]
+    assert annotations == ["::error title=RIG ERROR::manifest of *** unreadable"]

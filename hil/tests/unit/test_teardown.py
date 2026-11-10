@@ -1038,3 +1038,29 @@ def test_cmd_teardown_keeps_a_recorded_fail_when_it_cannot_reach_the_supervisor(
     assert [e["kind"] for e in rig_errors(rig)] == ["Teardown"]
     assert annotations(capsys.readouterr().out) == []
     assert summary_head(rig) == "## HIL run: FAIL"
+
+
+# ---- 03-17 follow-up (WR-03): the teardown annotation gets the rig literals ----
+
+
+def test_the_teardown_annotation_masks_the_literals_it_is_given(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    teardown.annotate_rig_error("no join to hil-lab-ssid", ["hil-lab-ssid"])
+    teardown.annotate_rig_error("host_192.0.2.40 down")
+    lines = annotations(capsys.readouterr().out)
+    assert lines == [ANNOTATION + "teardown: no join to ***", ANNOTATION + "teardown: host_*** down"]
+
+
+def test_rewrite_verdict_annotates_with_the_literals_and_keeps_the_cause_in_the_record_for_redaction(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    verdict(rig, "PASS")
+    teardown.rewrite_verdict(rig.tmp / "reports", teardown.read_verdict(rig.tmp / "reports"), cause="x hil-lab-ssid", literals=["hil-lab-ssid"])
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: x ***"]
+
+
+def test_run_teardown_hands_the_config_literals_to_the_annotation(rig, capsys):
+    rig.monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    rig.monkeypatch.setattr(teardown.config, "safe_mask_literals", lambda cfg: ["lines not"])
+    verdict(rig, "PASS")
+    assert teardown_with(rig, ReleaseRigError([])) == 3
+    assert annotations(capsys.readouterr().out) == [ANNOTATION + "teardown: *** released"]

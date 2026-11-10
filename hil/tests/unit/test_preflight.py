@@ -754,3 +754,13 @@ def test_other_commands_keep_their_behaviour_on_an_unexpected_exception(cli_env,
     monkeypatch.setattr(cli, "cmd_status", raising(Boom("x"), close=False))
     with pytest.raises(Boom):
         cli.main(["status", "--dut", "A"])
+
+
+def test_under_github_actions_a_preflight_annotation_carries_no_rig_literal(cli_env, monkeypatch, capsys):
+    literal = "hil-lab-ssid"
+    monkeypatch.setenv("GITHUB_ACTIONS", "true")
+    monkeypatch.setattr(cli.config, "safe_mask_literals", lambda rig: [literal])
+    monkeypatch.setattr(preflight, "run_preflight", fake_run(False, "no join to %s" % literal))
+    assert cli.main(["preflight"]) == 3
+    annotations = [line for line in capsys.readouterr().out.splitlines() if line.startswith(ANNOTATION)]
+    assert annotations == [ANNOTATION + "preflight: no join to ***"]
