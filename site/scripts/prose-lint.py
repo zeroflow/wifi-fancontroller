@@ -429,6 +429,7 @@ def mirror_problems(ident, path, sources, folder):
     return ["%s: %s list differs from the rules it mirrors (%s); %s" % (ident, kind, ", ".join(sources), detail)]
 
 
+UNRELEASED_PAGE = re.compile(r"rev-[4-9]")
 MAIN_LANG = re.compile(r"<main\b[^>]*?\blang=\"([^\"]*)\"")
 
 
@@ -508,8 +509,8 @@ def cmd_map(args):
                 problems.append("%s: %s has the wrong language for this rule" % (rule, page))
     verdict("(f) ratchet list", problems, "every blocking page is mapped, matches its rule language, rule file exists")
 
-    problems = ["%s: Rev 4.0 pages are out of scope (D-12)" % f for f in sorted(counts) if "rev-4" in f]
-    verdict("(g) scope", problems, "no Rev 4.0 page is mapped")
+    problems = ["%s: pages of unreleased hardware are out of scope (D-12)" % f for f in sorted(counts) if UNRELEASED_PAGE.search(f)]
+    verdict("(g) scope", problems, "no page of unreleased hardware is mapped")
 
     # (h) every rule file has exactly one rule-levels.yml entry, and every entry has a file.
     on_files = rule_files(styles_dir)
@@ -898,7 +899,7 @@ def cmd_guide(args):
         for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
             if REV_FOUR.search(line):
                 problems.append("mention of unreleased hardware in %s:%d (D-12)" % (relative(path), number))
-    verdict("(9) scope", problems, "no guide file mentions Rev 4.0")
+    verdict("(9) scope", problems, "no guide file mentions unreleased hardware")
     return 1 if failures else 0
 
 
