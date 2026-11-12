@@ -1,0 +1,15 @@
+# Named scopes shared by the DocsEN and DocsDE rules (Vale 3.23 or later).
+# Every selector runs against the BUILT html in site/dist, so the page chrome
+# (skip link, search, table of contents, pagination) is never linted.
+# The _de variants additionally require main[lang="de"], so an English fallback
+# page below /de/ never receives German rules.
+content: 'doc(.sl-markdown-content)'
+steps: 'doc(.sl-markdown-content ol > li)'
+safety: 'doc(.sl-markdown-content aside.starlight-aside--caution, .sl-markdown-content aside.starlight-aside--danger)'
+strict_elements: 'doc(.sl-markdown-content ol > li, .sl-markdown-content aside.starlight-aside--caution, .sl-markdown-content aside.starlight-aside--danger)'
+safety_title: 'doc(.sl-markdown-content aside.starlight-aside--caution p.starlight-aside__title, .sl-markdown-content aside.starlight-aside--danger p.starlight-aside__title)'
+content_de: 'doc(main[lang="de"] .sl-markdown-content)'
+steps_de: 'doc(main[lang="de"] .sl-markdown-content ol > li)'
+safety_de: 'doc(main[lang="de"] .sl-markdown-content aside.starlight-aside--caution, main[lang="de"] .sl-markdown-content aside.starlight-aside--danger)'
+strict_elements_de: 'doc(main[lang="de"] .sl-markdown-content ol > li, main[lang="de"] .sl-markdown-content aside.starlight-aside--caution, main[lang="de"] .sl-markdown-content aside.starlight-aside--danger)'
+safety_title_de: 'doc(main[lang="de"] .sl-markdown-content aside.starlight-aside--caution p.starlight-aside__title, main[lang="de"] .sl-markdown-content aside.starlight-aside--danger p.starlight-aside__title)'

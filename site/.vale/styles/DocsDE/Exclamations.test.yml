@@ -1,0 +1,35 @@
+- name: flags an exclamation mark at the end of a sentence
+  rule: Exclamations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Trennen Sie die Stromversorgung!</p></div></main>"
+  contains: "Ausrufezeichen"
+
+- name: flags an exclamation mark between sentences
+  rule: Exclamations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Trennen Sie die Stromversorgung! Warten Sie dann.</p></div></main>"
+  contains: "Ausrufezeichen"
+
+- name: accepts a plain sentence
+  rule: Exclamations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Hinweis: Das ist wichtig.</p></div></main>"
+  absent: "DocsDE.Exclamations"
+
+- name: ignores an exclamation mark inside code
+  rule: Exclamations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Schreiben Sie <code>!lambda</code> in die Datei.</p></div></main>"
+  absent: "DocsDE.Exclamations"
+
+- name: ignores the same text outside the content container
+  rule: Exclamations.yml
+  format: html
+  input: "<nav><p>Trennen Sie die Stromversorgung!</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Exclamations"
+
+- name: ignores the same text on an English fallback page
+  rule: Exclamations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Trennen Sie die Stromversorgung!</p></div></main>"
+  absent: "DocsDE.Exclamations"

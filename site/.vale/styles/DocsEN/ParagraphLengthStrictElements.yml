@@ -1,0 +1,6 @@
+extends: metric
+message: "This paragraph is too long. Keep a paragraph in a step or a caution or danger notice to 6 sentences or fewer."
+level: suggestion
+scope: 'paragraph & strict_elements'
+formula: sentences
+condition: "> 6"

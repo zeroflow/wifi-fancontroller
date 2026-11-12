@@ -1,0 +1,10 @@
+extends: existence
+message: "Schreiben Sie Zahl und Einheit mit einem Leerzeichen und mit Dezimalkomma ('%s'), zum Beispiel 12 V oder 2,5 A. Wo das Format es erlaubt, verwenden Sie ein geschütztes Leerzeichen."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '\b\d+(?:[.,]\d+)?(?:mV|mA|mW|kHz|MHz|GHz|Hz|mm|cm|ms|kB|KB|MB|GB|V|A|W|s)\b'
+  - '\b\d+(?:[.,]\d+)?(?:%|\x{00B0}C)'
+  - '\b\d+\.\d+[\s\x{00A0}\x{202F}]?(?:mV|mA|mW|kHz|MHz|GHz|Hz|mm|cm|ms|kB|KB|MB|GB|V|A|W|s)\b'

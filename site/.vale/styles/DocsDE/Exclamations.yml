@@ -1,0 +1,8 @@
+extends: existence
+message: "Beenden Sie keinen Satz mit einem Ausrufezeichen. Die Signalwörter der Sicherheitshinweise tragen die Dringlichkeit."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '!(?:\s|$)'

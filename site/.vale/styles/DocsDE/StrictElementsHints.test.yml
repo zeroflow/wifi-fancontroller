@@ -1,0 +1,47 @@
+- name: flags the subjunctive in a numbered step
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Sie würde das Netzteil prüfen.</p></li></ol></div></main>"
+  contains: "vermeiden"
+
+- name: flags man in a danger aside
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Man trennt die Stromversorgung.</p></div></aside></div></main>"
+  contains: "vermeiden"
+
+- name: flags a passive in a caution aside
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Der Lüfter wird von der Platine gesteuert.</p></div></aside></div></main>"
+  contains: "vermeiden"
+
+- name: flags a vague word in a numbered step
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Der Lüfter stoppt eventuell.</p></li></ol></div></main>"
+  contains: "vermeiden"
+
+- name: ignores the subjunctive in a plain paragraph
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Sie würde das Netzteil prüfen.</p></div></main>"
+  absent: "DocsDE.StrictElementsHints"
+
+- name: ignores man in a plain paragraph
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Man trennt die Stromversorgung.</p></div></main>"
+  absent: "DocsDE.StrictElementsHints"
+
+- name: ignores the same text outside the content container
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<nav><p>Sie würde das Netzteil prüfen.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.StrictElementsHints"
+
+- name: ignores the same text on an English fallback page
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Sie würde das Netzteil prüfen.</p></li></ol></div></main>"
+  absent: "DocsDE.StrictElementsHints"

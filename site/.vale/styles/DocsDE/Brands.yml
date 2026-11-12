@@ -1,0 +1,13 @@
+extends: substitution
+message: "Schreiben Sie den Markennamen als '%s' statt '%s'. Siehe site/style-guide/glossary.md."
+level: warning
+ignorecase: false
+scope: 'text & content_de'
+swap:
+  'Wifi Lüftersteuerung': WiFi Lüftersteuerung
+  'Wi-Fi Lüftersteuerung': WiFi Lüftersteuerung
+  'WLAN Lüftersteuerung': WiFi Lüftersteuerung
+  'Homeassistant': Home Assistant
+  'HomeAssistant': Home Assistant
+  'QWIIC': Qwiic
+  'Neopixel': NeoPixel

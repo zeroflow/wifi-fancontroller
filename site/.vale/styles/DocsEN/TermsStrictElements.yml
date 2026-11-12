@@ -1,0 +1,13 @@
+# mirrors: Terms
+extends: substitution
+message: "Steps and caution or danger notices use the glossary terms. Use '%s' instead of '%s'. See site/style-guide/glossary.md."
+level: warning
+ignorecase: false
+scope: 'text & strict_elements'
+swap:
+  'DC jacks?': barrel jack
+  '[Rr]eflash(?:es|ed|ing)?': re-flash
+  'factory images?': factory firmware
+  'Wi-Fi': WiFi
+  'WLAN': WiFi
+  'wireless networks?': WiFi

@@ -1,0 +1,53 @@
+- name: flags a 29 word sentence in a paragraph
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</p></div></main>"
+  contains: "höchstens 28 Wörter"
+
+- name: accepts a 28 word sentence in a paragraph
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil.</p></div></main>"
+  absent: "DocsDE.SentenceLength"
+
+- name: leaves a 29 word sentence in a numbered step to the steps rule
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</p></li></ol></div></main>"
+  absent: "DocsDE.SentenceLength"
+
+- name: leaves a 29 word sentence in a caution aside to the safety rule
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</p></div></aside></div></main>"
+  absent: "DocsDE.SentenceLength"
+
+- name: leaves a 29 word sentence in a danger aside to the safety rule
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</p></div></aside></div></main>"
+  absent: "DocsDE.SentenceLength"
+
+- name: flags a 29 word sentence in a note aside
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</p></div></aside></div></main>"
+  contains: "höchstens 28 Wörter"
+
+- name: ignores a 29 word sentence in a table cell
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><table><tbody><tr><td>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</td></tr></tbody></table></div></main>"
+  absent: "DocsDE.SentenceLength"
+
+- name: ignores a 29 word sentence outside the content container
+  rule: SentenceLength.yml
+  format: html
+  input: "<nav><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Guter Text.</p></div></main>"
+  absent: "DocsDE.SentenceLength"
+
+- name: ignores a 29 word sentence on an English fallback page
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal gedrückt haben, während das Netzteil weiter.</p></div></main>"
+  absent: "DocsDE.SentenceLength"

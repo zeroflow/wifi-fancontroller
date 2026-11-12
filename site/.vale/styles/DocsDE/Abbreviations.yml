@@ -1,0 +1,22 @@
+extends: existence
+message: "Schreiben Sie die Abkürzung '%s' aus, zum Beispiel 'zum Beispiel' statt 'z. B.' und 'höchstens' statt 'max.'."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content_de & ~table.cell & ~table.header'
+tokens:
+  - '(?i)\bz\.[ \x{00A0}\x{202F}]?B\.'
+  - '(?i)\bd\.[ \x{00A0}\x{202F}]?h\.'
+  - '(?i)\bu\.[ \x{00A0}\x{202F}]?a\.'
+  - '(?i)\bs\.[ \x{00A0}\x{202F}]?o\.'
+  - '(?i)\bs\.[ \x{00A0}\x{202F}]?u\.'
+  - '(?i)\busw\.'
+  - '(?i)\bbzw\.'
+  - '(?i)\bca\.'
+  - '(?i)\bggf\.'
+  - '(?i)\bevtl\.'
+  - '(?i)\binkl\.'
+  - '(?i)\bvgl\.'
+  - '(?i)\bNr\.'
+  - '(?i)\bAbb\.'
+  - '(?i)\b(?:max|min)\.\s*\d'

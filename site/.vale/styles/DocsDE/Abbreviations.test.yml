@@ -1,0 +1,125 @@
+- name: flags z. B. with a space
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie z. B. einen PWM-Lüfter.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags z.B. without a space
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie z.B. einen PWM-Lüfter.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags z. B. with a non-breaking space
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie z.\u00a0B. einen PWM-Lüfter.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags d. h.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie einen Lüfter, d. h. einen PWM-Lüfter.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags usw.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Lüfter, Kabel usw. liegen bei.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags bzw.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie einen Lüfter bzw. zwei Lüfter.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags ca.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter dreht mit ca. 1200 U/min.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags ggf.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Tauschen Sie ggf. das Netzteil.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags evtl.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Tauschen Sie evtl. das Netzteil.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags inkl.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Satz kommt inkl. Kabel.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags vgl.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Vgl. die Tabelle.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags Nr. before a number
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Siehe Schritt Nr. 3.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags Abb. before a number
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Siehe Abb. 2.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: flags max. before a number
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Eingangsspannung beträgt max. 12 V.</p></div></main>"
+  contains: "aus, zum Beispiel"
+
+- name: accepts min at the end of a sentence
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Warten Sie 5 min.</p></div></main>"
+  absent: "DocsDE.Abbreviations"
+
+- name: accepts the written out words
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie zum Beispiel einen PWM-Lüfter.</p></div></main>"
+  absent: "DocsDE.Abbreviations"
+
+- name: accepts a word that ends in ca
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Erica. Danach geht es weiter.</p></div></main>"
+  absent: "DocsDE.Abbreviations"
+
+- name: ignores an abbreviation in a table cell
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><table><tbody><tr><td>z. B. 12 V</td></tr></tbody></table></div></main>"
+  absent: "DocsDE.Abbreviations"
+
+- name: ignores an abbreviation in a table header cell
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><table><thead><tr><th>Max. 12 V</th></tr></thead></table></div></main>"
+  absent: "DocsDE.Abbreviations"
+
+- name: ignores the same text outside the content container
+  rule: Abbreviations.yml
+  format: html
+  input: "<nav><p>Nutzen Sie z. B. einen PWM-Lüfter.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Abbreviations"
+
+- name: ignores the same text on an English fallback page
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Nutzen Sie z. B. einen PWM-Lüfter.</p></div></main>"
+  absent: "DocsDE.Abbreviations"

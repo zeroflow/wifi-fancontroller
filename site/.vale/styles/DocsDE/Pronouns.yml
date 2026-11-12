@@ -1,0 +1,8 @@
+extends: existence
+message: "Vermeiden Sie das unpersönliche Pronomen '%s'. Sprechen Sie direkt mit Sie an, zum Beispiel: Drücken Sie die Reset-Taste."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '\b[Mm]an\b'

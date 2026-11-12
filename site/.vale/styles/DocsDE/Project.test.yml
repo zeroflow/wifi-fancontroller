@@ -1,0 +1,35 @@
+- name: lints WiFi as a generic word (control)
+  about: "A project case: Vale lints it through site/.vale.ini and the vhtml section, because an isolated rule case does not read the token ignore list."
+  format: vhtml
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die WiFi Verbindung steht.</p></div></main>"
+  contains: "DocsDE.Terms"
+
+- name: ignores WiFi inside the brand WiFi Lüftersteuerung
+  format: vhtml
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die WiFi Lüftersteuerung hat vier Anschlüsse.</p></div></main>"
+  absent: "DocsDE.Terms"
+
+- name: ignores WiFi inside the brand WiFi Fan Controller
+  format: vhtml
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die WiFi Fan Controller hat vier Anschlüsse.</p></div></main>"
+  absent: "DocsDE.Terms"
+
+- name: ignores WiFi inside the brand in a numbered step
+  format: vhtml
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Starten Sie die WiFi Lüftersteuerung neu.</p></li></ol></div></main>"
+  absent: "DocsDE.TermsStrictElements"
+
+- name: ignores a flagged word inside a host name
+  format: vhtml
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Öffnen Sie <a href='#'>WiFi.example.com</a> für die Anleitung.</p></div></main>"
+  absent: "DocsDE.Terms"
+
+- name: lints Betreiber on its own (control)
+  format: vhtml
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Betreiber haftet für den Einsatz.</p></div></main>"
+  contains: "DocsDE.RoleNouns"
+
+- name: ignores the approved pair Betreiberin oder Betreiber
+  format: vhtml
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Betreiberin oder Betreiber müssen das Netzteil prüfen.</p></div></main>"
+  absent: "DocsDE.RoleNouns"

@@ -1,0 +1,23 @@
+# mirrors: Contractions, Semicolons, Abbreviations
+extends: existence
+message: "Steps and caution or danger notices use strict wording. Rewrite '%s'. See site/style-guide/en.md."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & strict_elements'
+tokens:
+  - '(?i)\b(?:ca|wo|do|does|did|is|are|was|were|has|have|had|should|would|could)n[''\x{2019}]t\b'
+  - '(?i)\b(?:it|that|there|here|what|let)[''\x{2019}]s\b'
+  - '(?i)\b(?:you|we|they)[''\x{2019}](?:re|ve|ll|d)\b'
+  - '(?i)\bit[''\x{2019}]ll\b'
+  - '(?i)\bI[''\x{2019}](?:m|ve|ll|d)\b'
+  - ';'
+  - '(?i)\be\.g\.'
+  - '(?i)\bi\.e\.'
+  - '(?i)\betc\.'
+  - '(?i)\bapprox\.'
+  - '(?i)\bvs\.'
+  - '(?i)\bFig\.'
+  - '(?i)\bincl\.'
+  - '(?i)\bresp\.'
+  - '(?i)\b(?:max|min)\.\s*\d'

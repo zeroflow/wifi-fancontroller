@@ -1,0 +1,6 @@
+extends: metric
+message: "Dieser Satz ist zu lang. Halten Sie jeden Satz in einem Caution- oder Danger-Hinweis auf höchstens 22 Wörter."
+level: warning
+scope: 'sentence & safety_de'
+formula: words
+condition: "> 22"

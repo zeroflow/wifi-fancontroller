@@ -1,0 +1,9 @@
+extends: existence
+message: "Consider the active voice: '%s' is a passive form. Name who or what does the action. The passive is fine when the agent is unknown."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content'
+tokens:
+  - '(?i)\b(?:is|are|was|were|be|been|being)\s+\w{2,}ed\b'
+  - '(?i)\b(?:is|are|was|were|be|been|being)\s+(?:built|done|given|taken|shown|written|made|found|held|kept|sent|seen|known|chosen|broken|driven|hidden|lost|told|set)\b'

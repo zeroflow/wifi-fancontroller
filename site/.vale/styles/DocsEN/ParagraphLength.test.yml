@@ -1,0 +1,29 @@
+- name: flags a paragraph of 7 sentences
+  rule: ParagraphLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></main>"
+  contains: "Keep a paragraph"
+
+- name: accepts a paragraph of 6 sentences
+  rule: ParagraphLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></main>"
+  absent: "DocsEN.ParagraphLength"
+
+- name: leaves 7 sentences in a caution aside to the strict elements rule
+  rule: ParagraphLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></div></aside></div></main>"
+  absent: "DocsEN.ParagraphLength"
+
+- name: leaves 7 sentences in a numbered step to the strict elements rule
+  rule: ParagraphLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></li></ol></div></main>"
+  absent: "DocsEN.ParagraphLength"
+
+- name: ignores 7 sentences outside the content container
+  rule: ParagraphLength.yml
+  format: html
+  input: "<nav><p>Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the. Check the fan to the.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.ParagraphLength"

@@ -1,0 +1,35 @@
+- name: flags a title case heading
+  rule: Headings.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><div class='sl-heading-wrapper level-h2'><h2 id='x'>Getting Started With The Board</h2></div></div></main>"
+  contains: "sentence case"
+
+- name: flags a title case h3
+  rule: Headings.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><div class='sl-heading-wrapper level-h3'><h3 id='x'>Check The Fan Connector</h3></div></div></main>"
+  contains: "sentence case"
+
+- name: accepts a sentence case heading
+  rule: Headings.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><div class='sl-heading-wrapper level-h2'><h2 id='x'>Getting started with the board</h2></div></div></main>"
+  absent: "DocsEN.Headings"
+
+- name: accepts a heading with a product name
+  rule: Headings.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><div class='sl-heading-wrapper level-h2'><h2 id='x'>Connect the board to Home Assistant</h2></div></div></main>"
+  absent: "DocsEN.Headings"
+
+- name: accepts a heading with ESPHome and USB-C
+  rule: Headings.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><div class='sl-heading-wrapper level-h2'><h2 id='x'>Flash the ESPHome firmware over USB-C</h2></div></div></main>"
+  absent: "DocsEN.Headings"
+
+- name: ignores a heading outside the content container
+  rule: Headings.yml
+  format: html
+  input: "<main lang='en'><h2>Getting Started With The Board</h2><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Headings"

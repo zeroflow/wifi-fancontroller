@@ -1,0 +1,29 @@
+- name: flags a 21 word sentence in a caution aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset.</p></div></aside></div></main>"
+  contains: "Keep each sentence in a caution or danger notice"
+
+- name: flags a 21 word sentence in a danger aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset.</p></div></aside></div></main>"
+  contains: "Keep each sentence in a caution or danger notice"
+
+- name: accepts a 20 word sentence in a caution aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the.</p></div></aside></div></main>"
+  absent: "DocsEN.SentenceLengthSafety"
+
+- name: ignores a 21 word sentence in a note aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset.</p></div></aside></div></main>"
+  absent: "DocsEN.SentenceLengthSafety"
+
+- name: ignores a 21 word sentence in a tip aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--tip'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset.</p></div></aside></div></main>"
+  absent: "DocsEN.SentenceLengthSafety"

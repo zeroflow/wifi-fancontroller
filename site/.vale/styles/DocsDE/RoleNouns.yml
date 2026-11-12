@@ -1,0 +1,14 @@
+extends: existence
+message: "Die Rollenbezeichnung '%s' steht nicht im Glossar. Sprechen Sie direkt mit Sie an, nutzen Sie eine neutrale Form wie 'Personen, die die Platine betreiben' oder, nur wenn die Rolle genannt werden muss, die Paarform aus dem Glossar. Siehe die Rollenzeilen in site/style-guide/glossary.md und die Reihenfolge in site/style-guide/de.md."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '\bBenutzer(?:s|n)?\b'
+  - '\bNutzer(?:s|n)?\b'
+  - '\bAnwender(?:s|n)?\b'
+  - '\bNutzende[nr]?\b'
+  - '\bElektriker(?:s|n)?\b'
+  - '\bKunden?\b'
+  - '\bBetreiber(?:s|n)?\b'

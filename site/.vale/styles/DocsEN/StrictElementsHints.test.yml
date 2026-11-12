@@ -1,0 +1,41 @@
+- name: flags a vague word in a numbered step
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>The fan usually stops.</p></li></ol></div></main>"
+  contains: "Steps and caution or danger notices avoid"
+
+- name: flags a passive in a danger aside
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>The fan is controlled by the board.</p></div></aside></div></main>"
+  contains: "Steps and caution or danger notices avoid"
+
+- name: flags a vague word in a caution aside
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>The fan might stop.</p></div></aside></div></main>"
+  contains: "Steps and caution or danger notices avoid"
+
+- name: ignores a vague word in a plain paragraph
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan usually stops.</p></div></main>"
+  absent: "DocsEN.StrictElementsHints"
+
+- name: ignores a passive in a plain paragraph
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan is controlled by the board.</p></div></main>"
+  absent: "DocsEN.StrictElementsHints"
+
+- name: ignores a passive in a tip aside
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--tip'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>The fan is controlled by the board.</p></div></aside></div></main>"
+  absent: "DocsEN.StrictElementsHints"
+
+- name: ignores the same text outside the content container
+  rule: StrictElementsHints.yml
+  format: html
+  input: "<nav><p>The fan usually stops.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.StrictElementsHints"

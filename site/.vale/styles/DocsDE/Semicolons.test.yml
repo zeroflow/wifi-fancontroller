@@ -1,0 +1,29 @@
+- name: flags a semicolon
+  rule: Semicolons.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Lüfter anschließen; dann einschalten.</p></div></main>"
+  contains: "kein Semikolon"
+
+- name: ignores a semicolon inside code
+  rule: Semicolons.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Schreiben Sie <code>a;b</code> in die Datei.</p></div></main>"
+  absent: "DocsDE.Semicolons"
+
+- name: ignores an ampersand entity
+  rule: Semicolons.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Lüfter &amp; Platine sind verbunden.</p></div></main>"
+  absent: "DocsDE.Semicolons"
+
+- name: ignores the same text outside the content container
+  rule: Semicolons.yml
+  format: html
+  input: "<nav><p>Lüfter anschließen; dann einschalten.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Semicolons"
+
+- name: ignores the same text on an English fallback page
+  rule: Semicolons.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Lüfter anschließen; dann einschalten.</p></div></main>"
+  absent: "DocsDE.Semicolons"

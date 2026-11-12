@@ -1,0 +1,65 @@
+- name: flags eventuell
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter stoppt eventuell.</p></div></main>"
+  contains: "ungenaue Wort"
+
+- name: flags vielleicht
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter stoppt vielleicht.</p></div></main>"
+  contains: "ungenaue Wort"
+
+- name: flags relativ
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter ist relativ leise.</p></div></main>"
+  contains: "ungenaue Wort"
+
+- name: flags normalerweise
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter stoppt normalerweise.</p></div></main>"
+  contains: "ungenaue Wort"
+
+- name: flags möglicherweise
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter stoppt möglicherweise.</p></div></main>"
+  contains: "ungenaue Wort"
+
+- name: flags unter Umständen
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Lüfter stoppt unter Umständen.</p></div></main>"
+  contains: "ungenaue Wort"
+
+- name: flags an inflected form
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Eine einfache Verbindung genügt.</p></div></main>"
+  contains: "ungenaue Wort"
+
+- name: accepts a precise statement
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Abstand beträgt genau 20 cm.</p></div></main>"
+  absent: "DocsDE.Vague"
+
+- name: accepts a compound that starts with a vague word
+  rule: Vague.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Starten Sie den Schnellstart.</p></div></main>"
+  absent: "DocsDE.Vague"
+
+- name: ignores the same text outside the content container
+  rule: Vague.yml
+  format: html
+  input: "<nav><p>Der Lüfter stoppt eventuell.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.Vague"
+
+- name: ignores the same text on an English fallback page
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Der Lüfter stoppt eventuell.</p></div></main>"
+  absent: "DocsDE.Vague"

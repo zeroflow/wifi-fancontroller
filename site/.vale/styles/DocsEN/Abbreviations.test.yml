@@ -1,0 +1,83 @@
+- name: flags e.g.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use a PWM fan, e.g. a four wire fan.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags i.e.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use a PWM fan, i.e. a four wire fan.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags etc.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Fans, cables, etc. are in the box.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags approx.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan runs at approx. 1200 RPM.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags vs.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Compare DC vs. PWM control.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags Fig. with a number
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>See Fig. 2 for the layout.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags incl.
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The kit comes incl. a cable.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags max. before a number
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The input takes max. 12 V.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: flags min. before a number
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan needs min. 5 V.</p></div></main>"
+  contains: "Write out the abbreviation"
+
+- name: accepts min at the end of a sentence
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Wait 5 min.</p></div></main>"
+  absent: "DocsEN.Abbreviations"
+
+- name: accepts the written out words
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use a PWM fan, for example a four wire fan.</p></div></main>"
+  absent: "DocsEN.Abbreviations"
+
+- name: ignores an abbreviation in a table cell
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><table><tbody><tr><td>e.g. 12 V</td></tr></tbody></table></div></main>"
+  absent: "DocsEN.Abbreviations"
+
+- name: ignores Max in a table header cell
+  rule: Abbreviations.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><table><thead><tr><th>Max. 12 V</th></tr></thead></table></div></main>"
+  absent: "DocsEN.Abbreviations"
+
+- name: ignores the same text outside the content container
+  rule: Abbreviations.yml
+  format: html
+  input: "<nav><p>Use a PWM fan, e.g. a four wire fan.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Abbreviations"

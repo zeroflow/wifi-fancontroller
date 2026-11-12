@@ -1,0 +1,6 @@
+extends: metric
+message: "Dieser Satz ist zu lang. Halten Sie Sätze im Fließtext auf höchstens 28 Wörter."
+level: warning
+scope: 'sentence & content_de & ~strict_elements_de & ~table.cell & ~table.header'
+formula: words
+condition: "> 28"

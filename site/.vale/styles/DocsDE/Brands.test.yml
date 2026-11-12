@@ -1,0 +1,65 @@
+- name: flags Wifi Lüftersteuerung
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Wifi Lüftersteuerung hat vier Anschlüsse.</p></div></main>"
+  contains: "'WiFi Lüftersteuerung' statt 'Wifi Lüftersteuerung'"
+
+- name: flags Wi-Fi Lüftersteuerung
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Wi-Fi Lüftersteuerung hat vier Anschlüsse.</p></div></main>"
+  contains: "'WiFi Lüftersteuerung'"
+
+- name: flags WLAN Lüftersteuerung
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die WLAN Lüftersteuerung hat vier Anschlüsse.</p></div></main>"
+  contains: "'WiFi Lüftersteuerung'"
+
+- name: flags Homeassistant
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Fügen Sie das Gerät zu Homeassistant hinzu.</p></div></main>"
+  contains: "'Home Assistant' statt 'Homeassistant'"
+
+- name: flags HomeAssistant
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Fügen Sie das Gerät zu HomeAssistant hinzu.</p></div></main>"
+  contains: "'Home Assistant' statt 'HomeAssistant'"
+
+- name: flags QWIIC
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie den QWIIC-Anschluss.</p></div></main>"
+  contains: "'Qwiic' statt 'QWIIC'"
+
+- name: flags Neopixel
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Schließen Sie einen Neopixel-Streifen an.</p></div></main>"
+  contains: "'NeoPixel' statt 'Neopixel'"
+
+- name: accepts the correct brand names
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die WiFi Lüftersteuerung verbindet Home Assistant mit dem Qwiic-Anschluss und einem NeoPixel-Streifen.</p></div></main>"
+  absent: "DocsDE.Brands"
+
+- name: ignores a miscased name in inline code
+  rule: Brands.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Setzen Sie <code>QWIIC</code> auf true.</p></div></main>"
+  absent: "DocsDE.Brands"
+
+- name: ignores the same text outside the content container
+  rule: Brands.yml
+  format: html
+  input: "<nav><p>Nutzen Sie den QWIIC-Anschluss.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Guter Text.</p></div></main>"
+  absent: "DocsDE.Brands"
+
+- name: ignores the same text on an English fallback page
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Nutzen Sie den QWIIC-Anschluss.</p></div></main>"
+  absent: "DocsDE.Brands"

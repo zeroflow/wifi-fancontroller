@@ -1,0 +1,65 @@
+- name: flags Wifi Fan Controller
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The Wifi Fan Controller has four ports.</p></div></main>"
+  contains: "'WiFi Fan Controller' instead of 'Wifi Fan Controller'"
+
+- name: flags Wi-Fi Fan Controller
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The Wi-Fi Fan Controller has four ports.</p></div></main>"
+  contains: "'WiFi Fan Controller'"
+
+- name: flags WIFI Fan Controller
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The WIFI Fan Controller has four ports.</p></div></main>"
+  contains: "'WiFi Fan Controller'"
+
+- name: flags WiFi Fancontroller
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The WiFi Fancontroller has four ports.</p></div></main>"
+  contains: "'WiFi Fan Controller'"
+
+- name: flags Homeassistant
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Add the device to Homeassistant.</p></div></main>"
+  contains: "'Home Assistant' instead of 'Homeassistant'"
+
+- name: flags HomeAssistant
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Add the device to HomeAssistant.</p></div></main>"
+  contains: "'Home Assistant' instead of 'HomeAssistant'"
+
+- name: flags QWIIC
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use the QWIIC connector.</p></div></main>"
+  contains: "'Qwiic' instead of 'QWIIC'"
+
+- name: flags Neopixel
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect a Neopixel strip.</p></div></main>"
+  contains: "'NeoPixel' instead of 'Neopixel'"
+
+- name: accepts the correct brand names
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The WiFi Fan Controller links Home Assistant to the Qwiic port and a NeoPixel strip.</p></div></main>"
+  absent: "DocsEN.Brands"
+
+- name: ignores a miscased name in inline code
+  rule: Brands.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Set <code>QWIIC</code> to true.</p></div></main>"
+  absent: "DocsEN.Brands"
+
+- name: ignores the same text outside the content container
+  rule: Brands.yml
+  format: html
+  input: "<nav><p>Use the QWIIC connector.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Brands"

@@ -1,0 +1,6 @@
+extends: metric
+message: "This paragraph is too long. Keep a paragraph to 6 sentences or fewer and start a new paragraph for a new topic."
+level: suggestion
+scope: 'paragraph & content & ~strict_elements'
+formula: sentences
+condition: "> 6"

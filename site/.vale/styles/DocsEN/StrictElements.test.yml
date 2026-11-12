@@ -1,0 +1,53 @@
+- name: flags a contraction in a numbered step
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Don't connect the fan.</p></li></ol></div></main>"
+  contains: "strict wording"
+
+- name: flags a typographic contraction in a numbered step
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Don\u2019t connect the fan.</p></li></ol></div></main>"
+  contains: "strict wording"
+
+- name: flags a semicolon in a caution aside
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan; then power on.</p></div></aside></div></main>"
+  contains: "strict wording"
+
+- name: flags an abbreviation in a danger aside
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Use a PWM fan, e.g. a four wire fan.</p></div></aside></div></main>"
+  contains: "strict wording"
+
+- name: ignores a contraction in a plain paragraph
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Don't connect the fan.</p></div></main>"
+  absent: "DocsEN.StrictElements"
+
+- name: ignores a semicolon in a plain paragraph
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect the fan; then power on.</p></div></main>"
+  absent: "DocsEN.StrictElements"
+
+- name: ignores an abbreviation in a plain paragraph
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use a PWM fan, e.g. a four wire fan.</p></div></main>"
+  absent: "DocsEN.StrictElements"
+
+- name: ignores a contraction in a note aside
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Don't connect the fan.</p></div></aside></div></main>"
+  absent: "DocsEN.StrictElements"
+
+- name: ignores the same text outside the content container
+  rule: StrictElements.yml
+  format: html
+  input: "<nav><p>Don't connect the fan.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.StrictElements"

@@ -1,0 +1,47 @@
+- name: flags an abbreviation in a numbered step
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Nutzen Sie z. B. einen PWM-Lüfter.</p></li></ol></div></main>"
+  contains: "strenge Schreibweise"
+
+- name: flags a semicolon in a caution aside
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Lüfter anschließen; dann einschalten.</p></div></aside></div></main>"
+  contains: "strenge Schreibweise"
+
+- name: flags an exclamation mark in a danger aside
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Trennen Sie die Stromversorgung!</p></div></aside></div></main>"
+  contains: "strenge Schreibweise"
+
+- name: ignores an abbreviation in a plain paragraph
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzen Sie z. B. einen PWM-Lüfter.</p></div></main>"
+  absent: "DocsDE.StrictElements"
+
+- name: ignores a semicolon in a plain paragraph
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Lüfter anschließen; dann einschalten.</p></div></main>"
+  absent: "DocsDE.StrictElements"
+
+- name: ignores an exclamation mark in a plain paragraph
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Trennen Sie die Stromversorgung!</p></div></main>"
+  absent: "DocsDE.StrictElements"
+
+- name: ignores the same text outside the content container
+  rule: StrictElements.yml
+  format: html
+  input: "<nav><p>Nutzen Sie z. B. einen PWM-Lüfter.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.StrictElements"
+
+- name: ignores the same text on an English fallback page
+  rule: StrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Nutzen Sie z. B. einen PWM-Lüfter.</p></li></ol></div></main>"
+  absent: "DocsDE.StrictElements"

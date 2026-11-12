@@ -1,0 +1,53 @@
+- name: flags a caution title without a signal word
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Use a regulated power supply</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  contains: "CAUTION:"
+
+- name: accepts a caution title with CAUTION
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>CAUTION: Use a regulated power supply</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  absent: "DocsEN.SafetyTitle"
+
+- name: accepts a danger title with WARNING
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>WARNING: RF exposure</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  absent: "DocsEN.SafetyTitle"
+
+- name: accepts a danger title with DANGER
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>DANGER: Mains voltage</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  absent: "DocsEN.SafetyTitle"
+
+- name: flags a danger title without a signal word
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>RF exposure</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  contains: "CAUTION:"
+
+- name: yields exactly one alert for two asides with one correct
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>CAUTION: Use a regulated power supply</p><div class='starlight-aside__content'><p>Body.</p></div></aside><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Use a regulated power supply</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  want: "1:149:DocsEN.SafetyTitle:Start the title of a caution or danger notice with CAUTION:, WARNING: or DANGER:. See site/style-guide/safety.md."
+
+- name: ignores a note aside with any title
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Use a regulated power supply</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  absent: "DocsEN.SafetyTitle"
+
+- name: ignores a tip aside with any title
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--tip'><p class='starlight-aside__title'>Use a regulated power supply</p><div class='starlight-aside__content'><p>Body.</p></div></aside></div></main>"
+  absent: "DocsEN.SafetyTitle"
+
+- name: ignores a caution title outside the content container
+  rule: SafetyTitle.yml
+  format: html
+  input: "<main lang='en'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>No signal word</p></aside><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.SafetyTitle"

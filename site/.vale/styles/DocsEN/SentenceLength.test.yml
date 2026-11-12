@@ -1,0 +1,54 @@
+- name: flags a 26 word sentence in a paragraph
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power stays.</p></div></main>"
+  contains: "Keep sentences in running text"
+
+- name: accepts a 25 word sentence in a paragraph
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power.</p></div></main>"
+  absent: "DocsEN.SentenceLength"
+
+- name: leaves a 26 word sentence in a numbered step to the steps rule
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power stays.</p></li></ol></div></main>"
+  absent: "DocsEN.SentenceLength"
+
+- name: leaves a 26 word sentence in a caution aside to the safety rule
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power stays.</p></div></aside></div></main>"
+  absent: "DocsEN.SentenceLength"
+
+- name: leaves a 26 word sentence in a danger aside to the safety rule
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power stays.</p></div></aside></div></main>"
+  absent: "DocsEN.SentenceLength"
+
+- name: flags a 26 word sentence in a note aside
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power stays.</p></div></aside></div></main>"
+  contains: "Keep sentences in running text"
+
+- name: ignores a 26 word sentence in a table cell
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><table><tbody><tr><td>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power stays.</td></tr></tbody></table></div></main>"
+  absent: "DocsEN.SentenceLength"
+
+- name: ignores a 26 word sentence outside the content container
+  rule: SentenceLength.yml
+  format: html
+  input: "<nav><p>Connect the fan to the board and check that the light shows a steady green color after you press the reset button once while power stays.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.SentenceLength"
+
+- name: does not flag a 30 word sentence that the sentence splitter cuts at an abbreviation
+  about: Limitation, not a feature. Vale ends a sentence after approx. so the length is wrong. The abbreviation rule keeps such text out of the docs.
+  rule: SentenceLength.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect connect the fan to the board and check that the approx. light shows a steady green color after you press the reset button once while power stays on.</p></div></main>"
+  absent: "DocsEN.SentenceLength"

@@ -1,0 +1,8 @@
+extends: existence
+message: "Schreiben Sie aktiv ('%s' ist eine Passivform). Nennen Sie, wer oder was handelt. Ist der Handelnde unbekannt, ist das Passiv in Ordnung."
+level: suggestion
+ignorecase: false
+nonword: true
+scope: 'text & content_de'
+tokens:
+  - '(?i:wird|werden|wurde|wurden|worden)(?:\s+[\p{L}\p{N}*-]+){0,4}?\s+\b(?:an|auf|aus|ab|bei|ein|fest|her|hin|mit|nach|vor|weg|zu|zurück|um)?ge\p{L}{2,}(?:t|en)\b'

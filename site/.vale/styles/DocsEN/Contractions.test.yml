@@ -1,0 +1,101 @@
+- name: flags a contraction with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Don't connect the fan.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags a contraction with a typographic apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Don\u2019t connect the fan.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags it is with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>It's a fan header.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags it is with a typographic apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>It\u2019s a fan header.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags can not with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>You can't use this header.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags can not with a typographic apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>You can\u2019t use this header.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags you are with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>You're ready.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags you are with a typographic apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>You\u2019re ready.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags you will with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>You'll need a cable.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags we have with a typographic apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>We\u2019ve tested it.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags I am with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>I'm sure.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags will not with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan won't start.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: flags let us with a typographic apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Let\u2019s start.</p></div></main>"
+  contains: "Write out the contraction"
+
+- name: accepts a possessive with a straight apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Check the board's header.</p></div></main>"
+  absent: "DocsEN.Contractions"
+
+- name: accepts a possessive with a typographic apostrophe
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Check the board\u2019s header.</p></div></main>"
+  absent: "DocsEN.Contractions"
+
+- name: accepts the written out form
+  rule: Contractions.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Do not connect the fan.</p></div></main>"
+  absent: "DocsEN.Contractions"
+
+- name: ignores the same text outside the content container
+  rule: Contractions.yml
+  format: html
+  input: "<nav><p>Don't connect the fan.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Contractions"

@@ -1,0 +1,8 @@
+extends: existence
+message: "Do not use a semicolon. Write two sentences instead."
+level: warning
+ignorecase: false
+nonword: true
+scope: 'text & content'
+tokens:
+  - ';'

@@ -1,0 +1,89 @@
+- name: flags DC jack and names barrel jack
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Plug the supply into the DC jack.</p></div></main>"
+  contains: "'barrel jack' instead of 'DC jack'"
+
+- name: flags the plural DC jacks
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Both DC jacks work.</p></div></main>"
+  contains: "'barrel jack'"
+
+- name: flags reflash and names re-flash
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>You can reflash the board over USB.</p></div></main>"
+  contains: "'re-flash' instead of 'reflash'"
+
+- name: flags Reflash at a sentence start
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Reflash the board over USB.</p></div></main>"
+  contains: "'re-flash'"
+
+- name: flags reflashing
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Reflashing takes one minute.</p></div></main>"
+  contains: "'re-flash'"
+
+- name: flags factory image
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use the factory image for the first flash.</p></div></main>"
+  contains: "'factory firmware' instead of 'factory image'"
+
+- name: flags Wi-Fi
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect to your Wi-Fi network.</p></div></main>"
+  contains: "'WiFi' instead of 'Wi-Fi'"
+
+- name: flags WLAN
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect to your WLAN.</p></div></main>"
+  contains: "'WiFi' instead of 'WLAN'"
+
+- name: flags wireless network
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Join the wireless network.</p></div></main>"
+  contains: "'WiFi' instead of 'wireless network'"
+
+- name: accepts barrel jack
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Plug the supply into the barrel jack.</p></div></main>"
+  absent: "DocsEN.Terms"
+
+- name: accepts re-flash
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>You can re-flash the board over USB.</p></div></main>"
+  absent: "DocsEN.Terms"
+
+- name: accepts factory firmware
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Use the factory firmware for the first flash.</p></div></main>"
+  absent: "DocsEN.Terms"
+
+- name: accepts WiFi
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect to your WiFi network.</p></div></main>"
+  absent: "DocsEN.Terms"
+
+- name: ignores the same text in inline code
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Set <code>reflash</code> to true.</p></div></main>"
+  absent: "DocsEN.Terms"
+
+- name: ignores the same text outside the content container
+  rule: Terms.yml
+  format: html
+  input: "<nav><p>Connect to your Wi-Fi network.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Terms"

@@ -1,0 +1,65 @@
+- name: flags usually
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan usually stops.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: flags typically
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan typically stops.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: flags probably
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan probably stops.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: flags simply
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Simply connect the fan.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: flags various
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Various fans work.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: flags might
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The fan might stop.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: flags maybe
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Maybe the fan stops.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: flags basically
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The board basically works.</p></div></main>"
+  contains: "Avoid the vague word"
+
+- name: accepts a precise statement
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The default is 20.</p></div></main>"
+  absent: "DocsEN.Vague"
+
+- name: accepts a word that contains a vague word
+  rule: Vague.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>The mighty fan runs.</p></div></main>"
+  absent: "DocsEN.Vague"
+
+- name: ignores the same text outside the content container
+  rule: Vague.yml
+  format: html
+  input: "<nav><p>The fan usually stops.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.Vague"

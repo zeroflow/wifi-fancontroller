@@ -1,0 +1,71 @@
+- name: flags the asterisk
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Nutzer*innen lesen das.</p></div></main>"
+  contains: "Gendersonderzeichen"
+
+- name: flags the colon
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Nutzer:innen lesen das.</p></div></main>"
+  contains: "Gendersonderzeichen"
+
+- name: flags the underscore
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Nutzer_innen lesen das.</p></div></main>"
+  contains: "Gendersonderzeichen"
+
+- name: flags the capital I
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die NutzerInnen lesen das.</p></div></main>"
+  contains: "Gendersonderzeichen"
+
+- name: flags a singular form with an asterisk
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Jede Kund*in liest das.</p></div></main>"
+  contains: "Gendersonderzeichen"
+
+- name: accepts Innenraum
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Innenraum ist trocken.</p></div></main>"
+  absent: "DocsDE.GenderCharacters"
+
+- name: accepts Bedienelemente
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Bedienelemente sind beschriftet.</p></div></main>"
+  absent: "DocsDE.GenderCharacters"
+
+- name: accepts innen liegende Kontakte
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die innen liegende Kontakte sind blank.</p></div></main>"
+  absent: "DocsDE.GenderCharacters"
+
+- name: accepts a colon followed by innen
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Hinweis: innen ist es trocken.</p></div></main>"
+  absent: "DocsDE.GenderCharacters"
+
+- name: accepts the pair form
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzerinnen und Nutzer lesen das.</p></div></main>"
+  absent: "DocsDE.GenderCharacters"
+
+- name: ignores the same text outside the content container
+  rule: GenderCharacters.yml
+  format: html
+  input: "<nav><p>Die Nutzer*innen lesen das.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsDE.GenderCharacters"
+
+- name: ignores the same text on an English fallback page
+  rule: GenderCharacters.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Die Nutzer*innen lesen das.</p></div></main>"
+  absent: "DocsDE.GenderCharacters"
