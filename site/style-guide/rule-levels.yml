@@ -1,0 +1,53 @@
+# Rule levels per page tier for the docs prose lint (single source, read by
+# prose-lint.py, which writes them into the generated part of site/.vale.ini).
+#
+# One line per rule, for every rule file under site/.vale/styles/DocsEN and
+# site/.vale/styles/DocsDE:
+#   <Style>.<Rule>: {strict: <L>, moderate: <L>, free: <L>}
+# <L> is NO (the rule is off for that tier), suggestion or warning. The level
+# error is never written here. A rule becomes an error on a page only when the
+# page is listed for that rule in site/style-guide/blocking.yml (the ratchet).
+# Blank lines and comment lines are allowed, anything else is a parse error.
+#
+# The tier of a page comes from site/style-guide/page-tiers.yml. Numbered steps
+# and caution or danger asides are strict on every page (decision D-01): the
+# rules named *StrictElements, *Hints, *Steps and *Safety carry that strictness
+# onto moderate and free pages, and they are off on the tiers where the base
+# rule already covers the whole page.
+#
+# To change a level: edit the line, then run
+#   bash site/scripts/verify-prose.sh --write-config
+# and commit this file together with site/.vale.ini. The rule catalogue in
+# site/style-guide/en.md and de.md must name the same levels.
+
+DocsEN.Dashes: {strict: warning, moderate: warning, free: warning}
+DocsEN.SentenceLength: {strict: warning, moderate: suggestion, free: NO}
+DocsEN.SentenceLengthSteps: {strict: warning, moderate: warning, free: warning}
+DocsEN.SentenceLengthSafety: {strict: warning, moderate: warning, free: warning}
+DocsEN.ParagraphLength: {strict: suggestion, moderate: NO, free: NO}
+DocsEN.ParagraphLengthStrictElements: {strict: NO, moderate: suggestion, free: suggestion}
+DocsEN.Headings: {strict: suggestion, moderate: suggestion, free: suggestion}
+DocsEN.SafetyTitle: {strict: warning, moderate: warning, free: warning}
+DocsEN.Passive: {strict: suggestion, moderate: suggestion, free: NO}
+DocsEN.Contractions: {strict: warning, moderate: warning, free: NO}
+DocsEN.Semicolons: {strict: warning, moderate: warning, free: NO}
+DocsEN.Abbreviations: {strict: warning, moderate: warning, free: NO}
+DocsEN.Vague: {strict: suggestion, moderate: suggestion, free: NO}
+DocsEN.Spelling: {strict: warning, moderate: warning, free: warning}
+DocsEN.Units: {strict: suggestion, moderate: suggestion, free: suggestion}
+DocsEN.StrictElements: {strict: NO, moderate: NO, free: warning}
+DocsEN.StrictElementsHints: {strict: NO, moderate: NO, free: suggestion}
+
+DocsDE.Dashes: {strict: warning, moderate: warning, free: warning}
+DocsDE.Passive: {strict: suggestion, moderate: suggestion, free: NO}
+DocsDE.Subjunctive: {strict: suggestion, moderate: suggestion, free: NO}
+DocsDE.Abbreviations: {strict: warning, moderate: warning, free: NO}
+DocsDE.Vague: {strict: suggestion, moderate: suggestion, free: NO}
+DocsDE.Pronouns: {strict: suggestion, moderate: suggestion, free: NO}
+DocsDE.Semicolons: {strict: warning, moderate: warning, free: NO}
+DocsDE.Exclamations: {strict: warning, moderate: warning, free: NO}
+DocsDE.Units: {strict: suggestion, moderate: suggestion, free: suggestion}
+DocsDE.SafetyTitle: {strict: warning, moderate: warning, free: warning}
+DocsDE.GenderCharacters: {strict: warning, moderate: warning, free: warning}
+DocsDE.StrictElements: {strict: NO, moderate: NO, free: warning}
+DocsDE.StrictElementsHints: {strict: NO, moderate: NO, free: suggestion}

@@ -9,12 +9,14 @@ Subcommands
   pages                    print the built page (dist path) of every mapped content file
   dist <source-path>       print the built page (dist path) of one content file
   report <vale-json>       readable report, ratchet check, exit code
-  map                      integrity checks of the tier map, generated config and ratchet list
+  map                      integrity checks of the tier map, rule levels, twins, generated config and ratchet list
   inject <in> <out> <kind> copy a built page and plant a dash (kind: em-dash or hyphens)
 
 Data files (grammars are fixed, anything else is a parse error)
   site/style-guide/page-tiers.yml  lines: blank, '#' comment, '<path>: <tier>'
   site/style-guide/blocking.yml    lines: blank, '#' comment, '<Style>.<Rule>:', '  - <path>'
+  site/style-guide/rule-levels.yml lines: blank, '#' comment,
+                                   '<Style>.<Rule>: {strict: <L>, moderate: <L>, free: <L>}'
 """
 
 import argparse
@@ -30,6 +32,8 @@ SITE = ROOT / "site"
 DOCS = SITE / "src" / "content" / "docs"
 TIERS_FILE = SITE / "style-guide" / "page-tiers.yml"
 BLOCKING_FILE = SITE / "style-guide" / "blocking.yml"
+LEVELS_FILE = SITE / "style-guide" / "rule-levels.yml"
+STYLES_DIR = SITE / ".vale" / "styles"
 INI_FILE = SITE / ".vale.ini"
 
 BEGIN_MARK = "# BEGIN GENERATED SECTIONS"
@@ -41,6 +45,11 @@ STYLE_LANG = {"DocsEN": "en", "DocsDE": "de"}
 TIER_LINE = re.compile(r"^(?P<path>[A-Za-z0-9][A-Za-z0-9/._-]*\.mdx?): (?P<tier>strict|moderate|free)$")
 RULE_HEADER = re.compile(r"^(?P<style>[A-Za-z][A-Za-z0-9]*)\.(?P<rule>[A-Za-z][A-Za-z0-9]*):$")
 BLOCK_ITEM = re.compile(r"^  - (?P<path>[A-Za-z0-9][A-Za-z0-9/._-]*\.mdx?)$")
+LEVEL_LINE = re.compile(
+    r"^(?P<style>[A-Za-z][A-Za-z0-9]*)\.(?P<rule>[A-Za-z][A-Za-z0-9]*): "
+    r"\{strict: (?P<strict>[A-Za-z]+), moderate: (?P<moderate>[A-Za-z]+), free: (?P<free>[A-Za-z]+)\}$"
+)
+VALID_LEVELS = ("NO", "suggestion", "warning")
 
 CONTROL = re.compile(r"[\x00-\x1f\x7f-\x9f]+")
 TAG = re.compile(r"<[^>]*>")
@@ -92,6 +101,43 @@ def parse_blocking(path):
     return rules
 
 
+def parse_levels(path):
+    """Return a list of (style, rule, {tier: level}) in file order. Duplicates are kept.
+
+    The grammar fixes the shape of a line. Whether a level value is allowed is a
+    separate check (invalid_levels), so map can report it on its own line.
+    """
+    entries = []
+    for number, raw in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        line = raw.rstrip("\n")
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        match = LEVEL_LINE.match(line)
+        if not match:
+            raise DataError(
+                "%s:%d: not a '<Style>.<Rule>: {strict: <L>, moderate: <L>, free: <L>}' line: %r" % (path, number, line)
+            )
+        entries.append((match.group("style"), match.group("rule"), {t: match.group(t) for t in TIERS}))
+    return entries
+
+
+def level_table(entries):
+    """{'Style.Rule': {tier: level}} (a later duplicate wins; map reports duplicates)."""
+    return {"%s.%s" % (style, rule): levels for style, rule, levels in entries}
+
+
+def invalid_levels(entries):
+    problems = []
+    for style, rule, levels in entries:
+        for tier in TIERS:
+            if levels[tier] not in VALID_LEVELS:
+                problems.append(
+                    "%s.%s: level '%s' for %s is not one of %s"
+                    % (style, rule, levels[tier], tier, ", ".join(VALID_LEVELS))
+                )
+    return problems
+
+
 def lang_of(source_path):
     return "de" if source_path.startswith("de/") else "en"
 
@@ -118,7 +164,10 @@ def source_of_dist(tiers):
 # .vale.ini generation
 # ---------------------------------------------------------------------------
 
-def generate_block(tiers, blocking):
+def generate_block(tiers, blocking, levels):
+    bad = invalid_levels(levels)
+    if bad:
+        raise DataError("rule-levels.yml: " + "; ".join(bad))
     page_rules = {}
     for rule, paths in blocking.items():
         for page in paths:
@@ -134,6 +183,9 @@ def generate_block(tiers, blocking):
         lines.append("# %s %s" % (style, tier))
         lines.append("[{%s}]" % ",".join(sorted(groups[key])))
         lines.append("BasedOnStyles = %s" % style)
+        for rule_style, rule, table in levels:
+            if rule_style == style:
+                lines.append("%s.%s = %s" % (style, rule, table[tier]))
         for rule in rules:
             lines.append("%s = error" % rule)
         lines.append("")
@@ -159,7 +211,7 @@ def split_ini(text):
 def cmd_config(args):
     tiers = parse_tiers(args.tiers)
     blocking = parse_blocking(args.blocking)
-    fresh = generate_block(tiers, blocking)
+    fresh = generate_block(tiers, blocking, parse_levels(args.levels))
     ini = Path(args.ini)
     head, current, tail = split_ini(ini.read_text(encoding="utf-8"))
     if args.write:
@@ -230,6 +282,7 @@ def load_alerts(path):
 def cmd_report(args):
     tiers = parse_tiers(args.tiers)
     blocking = parse_blocking(args.blocking)
+    levels = level_table(parse_levels(args.levels))
     data = load_alerts(args.vale_json)
     if data is None:
         print("FAIL: Vale output is not valid JSON")
@@ -263,8 +316,11 @@ def cmd_report(args):
         style = rule.split(".", 1)[0]
         language = STYLE_LANG.get(style)
         listed = set(blocking[rule])
-        for page, _ in tiers:
+        for page, tier in tiers:
             if language is None or lang_of(page) != language:
+                continue
+            # A page whose tier switches the rule off can never be a ratchet candidate.
+            if levels.get(rule, {}).get(tier) == "NO":
                 continue
             dist_path = dist_of(page)
             if only is not None and dist_path not in only:
@@ -302,6 +358,72 @@ def cmd_report(args):
 # map
 # ---------------------------------------------------------------------------
 
+MIRROR_HEAD = re.compile(r"^# mirrors: (?P<names>[A-Za-z0-9]+(?:, [A-Za-z0-9]+)*)$")
+
+
+def rule_files(styles_dir):
+    """{'Style.Rule': path} for every non-test rule file below the two own styles."""
+    found = {}
+    for style in STYLE_LANG:
+        folder = Path(styles_dir) / style
+        if not folder.is_dir():
+            continue
+        for path in sorted(folder.glob("*.yml")):
+            if path.name.endswith(".test.yml"):
+                continue
+            found["%s.%s" % (style, path.stem)] = path
+    return found
+
+
+def mirror_sources(path):
+    """The rule names listed in a '# mirrors:' first line, or None when there is none."""
+    first = Path(path).read_text(encoding="utf-8").split("\n", 1)[0].rstrip()
+    match = MIRROR_HEAD.match(first)
+    if not match:
+        return None
+    return match.group("names").split(", ")
+
+
+def rule_list(path):
+    """('tokens' or 'swap', [list lines as text]) of a rule file, or (None, [])."""
+    lines = Path(path).read_text(encoding="utf-8").split("\n")
+    for index, line in enumerate(lines):
+        if line.rstrip() in ("tokens:", "swap:"):
+            kind = line.rstrip()[:-1]
+            items = []
+            for follow in lines[index + 1:]:
+                if not follow.strip():
+                    continue
+                if not follow.startswith((" ", "\t")):
+                    break
+                items.append(follow.rstrip())
+            return kind, items
+    return None, []
+
+
+def mirror_problems(ident, path, sources, folder):
+    kind, own = rule_list(path)
+    if kind is None:
+        return ["%s: a '# mirrors:' rule needs a tokens or swap list" % ident]
+    expected = []
+    for name in sources:
+        source = Path(folder) / (name + ".yml")
+        if not source.is_file():
+            return ["%s: mirrored rule %s has no file" % (ident, name)]
+        source_kind, items = rule_list(source)
+        if source_kind != kind:
+            return ["%s: mirrored rule %s has a %s list, this rule has a %s list" % (ident, name, source_kind, kind)]
+        expected += items
+    if own == expected:
+        return []
+    detail = "%d items against %d expected" % (len(own), len(expected))
+    for index in range(min(len(own), len(expected))):
+        if own[index] != expected[index]:
+            detail = "first difference at item %d: %s against expected %s" % (index + 1, own[index].strip(), expected[index].strip())
+            break
+    return ["%s: %s list differs from the rules it mirrors (%s); %s" % (ident, kind, ", ".join(sources), detail)]
+
+
 MAIN_LANG = re.compile(r"<main\b[^>]*?\blang=\"([^\"]*)\"")
 
 
@@ -309,6 +431,8 @@ def cmd_map(args):
     """Print one PASS or FAIL line per check, exit 1 when any check fails."""
     tiers = parse_tiers(args.tiers)
     blocking = parse_blocking(args.blocking)
+    level_entries = parse_levels(args.levels)
+    styles_dir = Path(args.styles)
     mapped = [path for path, _ in tiers]
     failures = 0
 
@@ -357,7 +481,7 @@ def cmd_map(args):
     ini = Path(args.ini)
     try:
         _, current, _ = split_ini(ini.read_text(encoding="utf-8"))
-        stale = current.strip("\n") != generate_block(tiers, blocking).strip("\n")
+        stale = current.strip("\n") != generate_block(tiers, blocking, level_entries).strip("\n")
         problems = ["generated block of %s is stale; run --write-config" % ini] if stale else []
     except DataError as error:
         problems = [str(error)]
@@ -370,7 +494,7 @@ def cmd_map(args):
         if style not in STYLE_LANG:
             problems.append("%s: unknown style %s" % (rule, style))
             continue
-        if not (SITE / ".vale" / "styles" / style / (name + ".yml")).is_file():
+        if not (styles_dir / style / (name + ".yml")).is_file():
             problems.append("%s: rule file site/.vale/styles/%s/%s.yml missing" % (rule, style, name))
         for page in pages:
             if page not in known:
@@ -381,6 +505,42 @@ def cmd_map(args):
 
     problems = ["%s: Rev 4.0 pages are out of scope (D-12)" % f for f in sorted(counts) if "rev-4" in f]
     verdict("(g) scope", problems, "no Rev 4.0 page is mapped")
+
+    # (h) every rule file has exactly one rule-levels.yml entry, and every entry has a file.
+    on_files = rule_files(styles_dir)
+    seen = {}
+    for style, rule, _ in level_entries:
+        seen["%s.%s" % (style, rule)] = seen.get("%s.%s" % (style, rule), 0) + 1
+    problems = ["%s: rule file without a rule-levels.yml entry" % r for r in sorted(on_files) if r not in seen]
+    problems += ["%s: rule-levels.yml entry without a rule file" % r for r in sorted(seen) if r not in on_files]
+    problems += ["%s: %d rule-levels.yml entries, exactly one is allowed" % (r, n) for r, n in sorted(seen.items()) if n > 1]
+    verdict("(h) rule levels", problems, "%d rule files, each with exactly one rule-levels.yml entry" % len(on_files))
+
+    # (i) mirrored twins carry the lists of the rules they mirror, line by line.
+    problems = []
+    twins = 0
+    for ident in sorted(on_files):
+        style, _, name = ident.partition(".")
+        path = styles_dir / style / (name + ".yml")
+        sources = mirror_sources(path)
+        if sources is None:
+            continue
+        twins += 1
+        problems += mirror_problems(ident, path, sources, styles_dir / style)
+    verdict("(i) mirrored twins", problems, "%d twin rule(s) match the rules they mirror" % twins)
+
+    # (j) no blocking page for a rule that its tier switches off.
+    table = level_table(level_entries)
+    tier_of = dict(tiers)
+    problems = []
+    for rule, pages in blocking.items():
+        for page in pages:
+            if page in tier_of and table.get(rule, {}).get(tier_of[page]) == "NO":
+                problems.append("%s: %s is a %s page and the rule level there is NO" % (rule, page, tier_of[page]))
+    verdict("(j) ratchet levels", problems, "no blocking page is listed for a rule that is NO in its tier")
+
+    # (k) level values.
+    verdict("(k) level values", invalid_levels(level_entries), "every level is NO, suggestion or warning")
     return 1 if failures else 0
 
 
@@ -423,6 +583,7 @@ def build_parser():
     def paths(p):
         p.add_argument("--tiers", default=str(TIERS_FILE))
         p.add_argument("--blocking", default=str(BLOCKING_FILE))
+        p.add_argument("--levels", default=str(LEVELS_FILE))
 
     p = sub.add_parser("config")
     group = p.add_mutually_exclusive_group(required=True)
@@ -449,6 +610,7 @@ def build_parser():
 
     p = sub.add_parser("map")
     p.add_argument("--ini", default=str(INI_FILE))
+    p.add_argument("--styles", default=str(STYLES_DIR), help="styles directory (default site/.vale/styles)")
     paths(p)
     p.set_defaults(func=cmd_map)
 

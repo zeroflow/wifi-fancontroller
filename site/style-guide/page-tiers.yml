@@ -5,8 +5,8 @@
 # with de/, otherwise en. Blank lines and comment lines are allowed, anything
 # else is a parse error.
 #
-# STATUS: the tiers are proposals until the maintainer approves them at the
-# Phase 22 checkpoint (plan 22-02).
+# STATUS: the maintainer approved all 47 tiers on 2026-11-12 (9 strict, 35
+# moderate, 3 free), without changes.
 #
 # Numbered steps and caution or danger asides are strict on every page,
 # whatever the page tier (decision D-01). The lint applies that per element.
