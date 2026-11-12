@@ -41,7 +41,7 @@ Some built pages are not content files and are never linted: print routes, blog 
 | [safety.md](safety.md) | Safety notices: aside types, hazard levels, signal words, title pattern, structure |
 | [glossary.md](glossary.md) | One preferred term per concept in English and German, with a status per row |
 
-Three data files drive the tooling. `page-tiers.yml` maps pages to tiers. `blocking.yml` lists the pages where a rule blocks CI. `rule-levels.yml` maps every rule to a level per tier. The last file arrives together with the remaining Vale rules.
+Three data files drive the tooling. `page-tiers.yml` maps pages to tiers. `blocking.yml` lists the pages where a rule blocks CI. `rule-levels.yml` maps every rule to a level per tier (`NO`, `suggestion` or `warning`; `error` comes only from `blocking.yml`). After editing a data file, run `bash site/scripts/verify-prose.sh --write-config` and commit `site/.vale.ini` with it.
 
 ## Machine-checked and human-reviewed rules
 
@@ -66,13 +66,15 @@ Without a flag the script runs every check except `--write-config` and `--baseli
 | `--lint` | Lints the mapped pages, prints the report and sets the exit code. |
 | `--selftest` | Plants a dash in a clean page and proves the exit code flips. |
 | `--write-config` | Regenerates the per-tier sections of `site/.vale.ini` and exits. |
-| `--map` | Checks the page map, the generated config and the ratchet list. |
+| `--map` | Checks the page map, the rule levels, the mirrored twin rules, the generated config and the ratchet list. |
 | `--pin` | Checks that one exact Vale tag is used and no style packages are fetched. |
-| `--glossary` | Checks that glossary terms and swap rules agree. |
-| `--guide` | Checks the guide files for dashes, forbidden claims and rule names. |
+| `--glossary` | Checks that the glossary rows, the term, brand and role rules and the ignore list in `site/.vale.ini` agree. |
+| `--guide` | Checks the guide files for dashes, conformity claims, standard names in rules, undocumented rules, published guide routes and mentions of unreleased hardware. |
 | `--baseline` | Regenerates `baseline.md`, the measured violations per tier and rule. |
 
-The flags `--glossary`, `--guide` and `--baseline` arrive with the remaining Phase 22 work. Until then the script rejects them as unknown flags.
+The flag `--baseline` arrives with the last Phase 22 plan. Until then the script rejects it as an unknown flag.
+
+The hand-written part of `site/.vale.ini` holds the ignore list for brand names, the approved German pair form and host names. Vale reads that list only inside a section, so it sits in a section that matches every built page. A second section with the extension `vhtml` is for test cases only: a Vale test case without a `rule` runs through the config like a real page, and the `vhtml` section switches both own styles on for it. No built page has that extension.
 
 ## CI and the ratchet
 

@@ -10,5 +10,5 @@ tokens:
   - '\bAnwender(?:s|n)?\b'
   - '\bNutzende[nr]?\b'
   - '\bElektriker(?:s|n)?\b'
-  - '\bKunde[n]?\b'
+  - '\bKunden?\b'
   - '\bBetreiber(?:s|n)?\b'

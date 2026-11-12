@@ -6,12 +6,14 @@
 #   npm --prefix site run build
 #   bash site/scripts/verify-prose.sh [flags]
 #
-# Flags (no flag runs --test --lint --selftest --map --pin):
+# Flags (no flag runs --test --lint --selftest --map --pin --glossary --guide):
 #   --test          vale test cases of the own styles, with coverage
 #   --lint          lint the built pages, ratchet report, exit code
 #   --selftest      plant a dash in a clean page and prove the exit code flips
 #   --map           page to tier map, generated config and ratchet list checks
 #   --pin           supply chain checks (single pinned image, no packages)
+#   --glossary      glossary rows, term, brand and role rules and the ignore list agree
+#   --guide         guide files: dashes, conformity claims, standard names, rule catalogue
 #   --write-config  regenerate the per-tier sections of site/.vale.ini and exit
 set -euo pipefail
 
@@ -36,8 +38,8 @@ fail() {
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: bash site/scripts/verify-prose.sh [--test] [--lint] [--selftest] [--map] [--pin] [--write-config]
-  No flag runs --test --lint --selftest --map --pin.
+Usage: bash site/scripts/verify-prose.sh [--test] [--lint] [--selftest] [--map] [--pin] [--glossary] [--guide] [--write-config]
+  No flag runs --test --lint --selftest --map --pin --glossary --guide.
 USAGE
 }
 
@@ -65,6 +67,8 @@ RUN_LINT=false
 RUN_SELFTEST=false
 RUN_MAP=false
 RUN_PIN=false
+RUN_GLOSSARY=false
+RUN_GUIDE=false
 RUN_WRITE=false
 ANY=false
 
@@ -75,6 +79,8 @@ for arg in "$@"; do
     --selftest) RUN_SELFTEST=true ;;
     --map) RUN_MAP=true ;;
     --pin) RUN_PIN=true ;;
+    --glossary) RUN_GLOSSARY=true ;;
+    --guide) RUN_GUIDE=true ;;
     --write-config) RUN_WRITE=true ;;
     *)
       echo "Unknown flag: $arg" >&2
@@ -91,6 +97,8 @@ if [[ "$ANY" == "false" ]]; then
   RUN_SELFTEST=true
   RUN_MAP=true
   RUN_PIN=true
+  RUN_GLOSSARY=true
+  RUN_GUIDE=true
 fi
 
 if [[ "$RUN_WRITE" == "true" ]]; then
@@ -238,6 +246,30 @@ run_map() {
   fi
 }
 
+# ─── --glossary and --guide ──────────────────────────────────────────────────
+
+# Run one prose-lint.py check command and count its PASS and FAIL lines.
+run_checks() {
+  local out rc=0 passes fails
+  out=$("${PY[@]}" "$@") || rc=$?
+  echo "$out"
+  passes=$(echo "$out" | grep -c '^PASS:' || true)
+  fails=$(echo "$out" | grep -c '^FAIL:' || true)
+  PASS_COUNT=$((PASS_COUNT + passes))
+  FAIL_COUNT=$((FAIL_COUNT + fails))
+  if [[ "$rc" -ne 0 && "$fails" -eq 0 ]]; then
+    fail "$1: prose-lint.py $1 exited $rc without a FAIL line"
+  fi
+}
+
+run_glossary() {
+  run_checks glossary
+}
+
+run_guide() {
+  run_checks guide
+}
+
 # ─── --pin ───────────────────────────────────────────────────────────────────
 
 # Supply chain checks (T-22-01, T-22-02): one pinned image, no style packages,
@@ -282,6 +314,8 @@ run_pin() {
 [[ "$RUN_SELFTEST" == "true" ]] && run_selftest
 [[ "$RUN_MAP" == "true" ]] && run_map
 [[ "$RUN_PIN" == "true" ]] && run_pin
+[[ "$RUN_GLOSSARY" == "true" ]] && run_glossary
+[[ "$RUN_GUIDE" == "true" ]] && run_guide
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 

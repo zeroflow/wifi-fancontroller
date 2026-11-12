@@ -10,6 +10,8 @@ Subcommands
   dist <source-path>       print the built page (dist path) of one content file
   report <vale-json>       readable report, ratchet check, exit code
   map                      integrity checks of the tier map, rule levels, twins, generated config and ratchet list
+  glossary [--glossary-file F]  glossary rows, term, brand and role rules, ignore list agree
+  guide [--guide-dir D]    guide files: dashes, claims, standard names, rule catalogue, routes
   inject <in> <out> <kind> copy a built page and plant a dash (kind: em-dash or hyphens)
 
 Data files (grammars are fixed, anything else is a parse error)
@@ -34,6 +36,8 @@ TIERS_FILE = SITE / "style-guide" / "page-tiers.yml"
 BLOCKING_FILE = SITE / "style-guide" / "blocking.yml"
 LEVELS_FILE = SITE / "style-guide" / "rule-levels.yml"
 STYLES_DIR = SITE / ".vale" / "styles"
+GUIDE_DIR = SITE / "style-guide"
+GLOSSARY_FILE = GUIDE_DIR / "glossary.md"
 INI_FILE = SITE / ".vale.ini"
 
 BEGIN_MARK = "# BEGIN GENERATED SECTIONS"
@@ -545,6 +549,358 @@ def cmd_map(args):
 
 
 # ---------------------------------------------------------------------------
+# glossary
+# ---------------------------------------------------------------------------
+
+GLOSSARY_ROW = re.compile(r"^\| G-\d{2} \|")
+GLOSSARY_STATUS = ("APPROVED", "REJECTED", "LOCKED")
+USABLE_STATUS = ("APPROVED", "LOCKED")
+SWAP_LINE = re.compile(r"^\s+(?:'(?P<quoted>(?:[^']|'')*)'|(?P<plain>[^:'][^:]*)):\s+(?P<value>\S.*?)\s*$")
+BRAND_NAME = re.compile(r"^(?P<name>.+?) \(the brand, verbatim\)")
+PAIR_FORM = re.compile(r"[A-ZÄÖÜ][a-zäöüß]+ (?:oder|und) [A-ZÄÖÜ][a-zäöüß]+")
+STANDALONE_OR = re.compile(r"(?<![A-Za-z])or(?![A-Za-z])")
+
+
+def glossary_rows(path):
+    """List of (line number, cells) for every '| G-NN |' row."""
+    rows = []
+    for number, raw in enumerate(Path(path).read_text(encoding="utf-8").splitlines(), 1):
+        if GLOSSARY_ROW.match(raw):
+            rows.append((number, [cell.strip() for cell in raw.strip()[1:-1].split("|")]))
+    return rows
+
+
+def swap_values(path):
+    """The replacement value of every swap line of a substitution rule file."""
+    kind, items = rule_list(path)
+    if kind != "swap":
+        return []
+    values = []
+    for item in items:
+        found = SWAP_LINE.match(item)
+        if found:
+            values.append(found.group("value").strip("'\""))
+    return values
+
+
+def ini_token_ignores(ini):
+    for line in Path(ini).read_text(encoding="utf-8").splitlines():
+        if line.startswith("TokenIgnores"):
+            return line
+    return None
+
+
+def cmd_glossary(args):
+    """Print one PASS or FAIL line per check, exit 1 when any check fails."""
+    failures = 0
+    rows = glossary_rows(args.glossary_file)
+    styles = Path(args.styles)
+
+    def verdict(label, problems, ok_text):
+        nonlocal failures
+        if problems:
+            failures += 1
+            print("FAIL: glossary %s: %d problem(s)" % (label, len(problems)))
+            for problem in problems:
+                print("  %s" % problem)
+        else:
+            print("PASS: glossary %s: %s" % (label, ok_text))
+
+    problems = []
+    if not rows:
+        problems.append("%s: no '| G-NN |' row found" % args.glossary_file)
+    for number, cells in rows:
+        ident = cells[0]
+        if len(cells) != 8:
+            problems.append("line %d: %s has %d cells, 8 are required" % (number, ident, len(cells)))
+            continue
+        status = cells[7]
+        if status == "PROPOSED":
+            problems.append("line %d: %s is a PROPOSED row, a decision is still open" % (number, ident))
+        elif status not in GLOSSARY_STATUS:
+            problems.append("line %d: %s has status '%s', expected APPROVED, REJECTED or LOCKED" % (number, ident, status))
+    verdict("(1) rows", problems, "%d rows, 8 cells each, none PROPOSED" % len(rows))
+
+    usable = [cells for _, cells in rows if len(cells) == 8 and cells[7] in USABLE_STATUS]
+    preferred = {"en": [cells[2] for cells in usable], "de": [cells[4] for cells in usable]}
+    problems = []
+    checked = 0
+    for style, lang in (("DocsEN", "en"), ("DocsDE", "de")):
+        for name in ("Terms", "Brands"):
+            path = styles / style / (name + ".yml")
+            if not path.is_file():
+                problems.append("%s.%s: rule file missing" % (style, name))
+                continue
+            for value in swap_values(path):
+                checked += 1
+                if not any(value in cell for cell in preferred[lang]):
+                    problems.append(
+                        "%s.%s: swap value not in glossary: '%s' is in no %s preferred cell of an APPROVED or LOCKED row"
+                        % (style, name, value, lang.upper())
+                    )
+    verdict("(2) swap values", problems, "%d swap values, each from an APPROVED or LOCKED %s row" % (checked, "EN or DE"))
+
+    problems = []
+    role_path = styles / "DocsDE" / "RoleNouns.yml"
+    role_text = role_path.read_text(encoding="utf-8") if role_path.is_file() else ""
+    if not role_path.is_file():
+        problems.append("DocsDE.RoleNouns: rule file missing")
+    role_rows = [cells for cells in usable if cells[1].startswith("Role:") and cells[0] != ""]
+    forms = 0
+    for cells in role_rows:
+        for form in cells[5].split(". "):
+            form = form.strip().rstrip(".")
+            form = form.split(" as a ")[0].strip()
+            if not form or form == "none":
+                continue
+            forms += 1
+            if form not in role_text:
+                problems.append("%s: DE avoid form '%s' does not occur in DocsDE/RoleNouns.yml" % (cells[0], form))
+    verdict("(3) role nouns", problems, "%d DE avoid forms of %d role rows occur in RoleNouns.yml" % (forms, len(role_rows)))
+
+    problems = []
+    for cells in role_rows:
+        cell = cells[4]
+        if "/" in cell or ";" in cell or "bzw." in cell or STANDALONE_OR.search(cell):
+            problems.append("%s: DE preferred cell holds more than one form: %s" % (cells[0], cell))
+    verdict("(4) one form per role", problems, "the DE preferred cell of each of %d role rows holds one form" % len(role_rows))
+
+    problems = []
+    line = ini_token_ignores(args.ini)
+    names = []
+    for cells in usable:
+        if cells[0] == "G-01":
+            for cell in (cells[2], cells[4]):
+                found = BRAND_NAME.match(cell)
+                if found:
+                    names.append(found.group("name"))
+    for cells in role_rows:
+        names += PAIR_FORM.findall(cells[4])
+    if line is None:
+        problems.append("%s: no TokenIgnores line" % args.ini)
+    else:
+        for name in names:
+            if name not in line:
+                problems.append("%s is missing from the TokenIgnores line of %s" % (name, args.ini))
+    if not any(cells[0] == "G-01" for cells in usable):
+        problems.append("G-01 is not an APPROVED or LOCKED row, so no brand names can be checked")
+    verdict("(5) ignore list", problems, "%d brand names and pair forms are in TokenIgnores" % len(names))
+    return 1 if failures else 0
+
+
+# ---------------------------------------------------------------------------
+# guide
+# ---------------------------------------------------------------------------
+
+GUIDE_FILES = (
+    "README.md", "en.md", "de.md", "safety.md", "glossary.md", "page-tiers.yml", "rule-levels.yml", "blocking.yml",
+)
+DASH_CHARS = re.compile("[" + chr(0x2013) + chr(0x2014) + "]")
+SPACED_DASH = re.compile(r"\S[ \t]+-{1,3}[ \t]+\S")
+FENCE = re.compile(r"^\s*(```|~~~)")
+INLINE_CODE = re.compile(r"`[^`]*`")
+# Standard names and claim words for check (4). Matching is case insensitive and
+# looks at one sentence at a time, in either order.
+STANDARD_PATTERNS = (
+    r"ASD[- ]?STE[- ]?100",
+    r"\bSTE\b",
+    r"IEC/IEEE[ ]?82079(?:-1)?",
+    r"\b82079(?:-1)?\b",
+    r"ISO[ ]?24495(?:-1)?",
+    r"\b24495(?:-1)?\b",
+    r"\btekom\b",
+)
+CLAIM_PATTERNS = (
+    r"\bcompliant\b",
+    r"\bconformant\b",
+    r"\bconforms\b",
+    r"\bcertified\b",
+    r"\bkonform\b",
+    r"\bzertifiziert\b",
+)
+STANDARD_RE = re.compile("|".join("(?:%s)" % p for p in STANDARD_PATTERNS), re.I)
+CLAIM_RE = re.compile("|".join("(?:%s)" % p for p in CLAIM_PATTERNS), re.I)
+CLAIM_PAIR_RE = re.compile(
+    "(?:(?:%s).*(?:%s))|(?:(?:%s).*(?:%s))"
+    % ("|".join(STANDARD_PATTERNS), "|".join(CLAIM_PATTERNS), "|".join(CLAIM_PATTERNS), "|".join(STANDARD_PATTERNS)),
+    re.I,
+)
+BANNED_WORDS = re.compile(r"\b(?:ASD|STE|tekom)\b|82079|24495", re.I)
+REV_FOUR = re.compile(r"rev[ -]?4", re.I)
+RULE_MENTION = re.compile(r"\b(Docs(?:EN|DE))\.([A-Za-z][A-Za-z0-9]*)")
+SENTENCE_BREAK = re.compile(r"(?<=[.!?])\s+")
+
+
+def prose_lines(text):
+    """(line number, text) of guide Markdown with fenced blocks and inline code removed."""
+    inside = False
+    out = []
+    for number, raw in enumerate(text.splitlines(), 1):
+        if FENCE.match(raw):
+            inside = not inside
+            continue
+        if inside:
+            continue
+        out.append((number, INLINE_CODE.sub("", raw)))
+    return out
+
+
+def sentences(text):
+    """Sentences of a text, split at blank lines, line starts of list items and end punctuation."""
+    found = []
+    for block in re.split(r"\n\s*\n", text):
+        for line in block.splitlines():
+            found += [part for part in SENTENCE_BREAK.split(line) if part.strip()]
+    return found
+
+
+def own_files(guide_dir):
+    """Every file the dash check reads: guide folder, Vale folder, scripts, workflow, README section."""
+    files = [p for p in sorted(Path(guide_dir).rglob("*")) if p.is_file()]
+    files += [p for p in sorted((SITE / ".vale").rglob("*")) if p.is_file()]
+    files += [INI_FILE, SITE / "scripts" / "verify-prose.sh", SITE / "scripts" / "prose-lint.py"]
+    files += [ROOT / ".github" / "workflows" / "lint-docs.yml"]
+    return [p for p in files if p.is_file()]
+
+
+def readme_contributing():
+    readme = ROOT / "README.md"
+    if not readme.is_file():
+        return ""
+    text = readme.read_text(encoding="utf-8")
+    found = re.search(r"^## Contributing\s*$(.*?)(?=^## |\Z)", text, re.S | re.M)
+    return found.group(1) if found else ""
+
+
+def relative(path):
+    try:
+        return str(Path(path).resolve().relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def cmd_guide(args):
+    """Print one PASS or FAIL line per check, exit 1 when any check fails."""
+    failures = 0
+    guide = Path(args.guide_dir)
+    styles = Path(args.styles)
+
+    def verdict(label, problems, ok_text):
+        nonlocal failures
+        if problems:
+            failures += 1
+            print("FAIL: guide %s: %d problem(s)" % (label, len(problems)))
+            for problem in problems:
+                print("  %s" % problem)
+        else:
+            print("PASS: guide %s: %s" % (label, ok_text))
+
+    verdict("(1) files", ["%s is missing from %s" % (n, guide) for n in GUIDE_FILES if not (guide / n).is_file()],
+            "all %d required files exist" % len(GUIDE_FILES))
+
+    problems = []
+    scanned = 0
+    for path in own_files(guide):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        scanned += 1
+        for number, line in enumerate(text.splitlines(), 1):
+            if DASH_CHARS.search(line):
+                problems.append("dash character U+2013 or U+2014 in %s:%d" % (relative(path), number))
+    contributing = readme_contributing()
+    for number, line in enumerate(contributing.splitlines(), 1):
+        if DASH_CHARS.search(line):
+            problems.append("dash character U+2013 or U+2014 in README.md, Contributing section, line %d" % number)
+    verdict("(2) dash characters", problems, "no U+2013 or U+2014 in %d files and the README Contributing section" % scanned)
+
+    problems = []
+    guide_md = [p for p in sorted(guide.glob("*.md")) if p.is_file()]
+    for path in guide_md:
+        for number, line in prose_lines(path.read_text(encoding="utf-8")):
+            if SPACED_DASH.search(line):
+                problems.append("spaced hyphen dash in %s:%d: %s" % (relative(path), number, line.strip()[:80]))
+    rule_files_all = [p for style in STYLE_LANG for p in sorted((styles / style).glob("*.yml"))] if styles.is_dir() else []
+    for path in rule_files_all:
+        if path.name.endswith(".test.yml"):
+            continue
+        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+            if line.startswith("message:") and SPACED_DASH.search(line[len("message:"):]):
+                problems.append("spaced hyphen dash in the message of %s:%d" % (relative(path), number))
+    verdict("(3) spaced hyphen dashes", problems, "none in %d guide files and in the rule messages" % len(guide_md))
+
+    problems = []
+    claim_files = guide_md + rule_files_all
+    for path in claim_files:
+        text = path.read_text(encoding="utf-8")
+        for sentence in sentences(text):
+            if CLAIM_PAIR_RE.search(sentence):
+                problems.append("claim phrase in %s: %s" % (relative(path), SPACES.sub(" ", sentence).strip()[:100]))
+    verdict("(4) conformity claims", problems, "no standard name near a claim word in %d files" % len(claim_files))
+
+    problems = []
+    style_files = [p for p in sorted(styles.rglob("*")) if p.is_file()] if styles.is_dir() else []
+    for path in style_files:
+        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            found = BANNED_WORDS.search(line)
+            if found:
+                problems.append("'%s' in %s:%d" % (found.group(0), relative(path), number))
+    verdict("(5) standard names in rules", problems, "no ASD, STE, tekom or standard number in %d rule and test files" % len(style_files))
+
+    problems = []
+    levels_path = guide / "rule-levels.yml"
+    try:
+        named = {"%s.%s" % (style, rule) for style, rule, _ in parse_levels(levels_path)} if levels_path.is_file() else set()
+    except DataError as error:
+        named = set()
+        problems.append(str(error))
+    docs = {}
+    for name in ("en.md", "de.md"):
+        path = guide / name
+        docs[name] = set(
+            "%s.%s" % (m.group(1), m.group(2)) for m in RULE_MENTION.finditer(path.read_text(encoding="utf-8"))
+        ) if path.is_file() else set()
+    for ident in sorted(named):
+        home = "en.md" if ident.startswith("DocsEN.") else "de.md"
+        if ident not in docs[home]:
+            problems.append("undocumented rule: %s is in rule-levels.yml and not named in %s" % (ident, home))
+    mentioned = set()
+    for path in guide_md:
+        mentioned |= set("%s.%s" % (m.group(1), m.group(2)) for m in RULE_MENTION.finditer(path.read_text(encoding="utf-8")))
+    for ident in sorted(mentioned - named):
+        problems.append("unknown rule: %s is named in the guide and not in rule-levels.yml" % ident)
+    verdict("(6) rule catalogue", problems, "%d rules in rule-levels.yml, each documented, none unknown" % len(named))
+
+    problems = []
+    dist = SITE / "dist"
+    if dist.is_dir():
+        if (dist / "style-guide").exists():
+            problems.append("site/dist/style-guide exists, the guide must not be published (D-10)")
+        for sitemap in sorted(dist.glob("sitemap*.xml")):
+            if "style-guide" in sitemap.read_text(encoding="utf-8", errors="replace"):
+                problems.append("a style-guide URL is in %s (D-10)" % relative(sitemap))
+        ok = "site/dist has no style-guide path and no sitemap URL"
+    else:
+        ok = "site/dist does not exist, nothing to check (build the site first)"
+    verdict("(7) not published", problems, ok)
+
+    readme = ROOT / "README.md"
+    linked = readme.is_file() and "site/style-guide/README.md" in readme.read_text(encoding="utf-8")
+    verdict("(8) root README link", [] if linked else ["README.md does not link site/style-guide/README.md"],
+            "the root README links the guide")
+
+    problems = []
+    guide_all = [p for p in sorted(guide.rglob("*")) if p.is_file()]
+    for path in guide_all:
+        for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
+            if REV_FOUR.search(line):
+                problems.append("mention of unreleased hardware in %s:%d (D-12)" % (relative(path), number))
+    verdict("(9) scope", problems, "no guide file mentions Rev 4.0")
+    return 1 if failures else 0
+
+
+# ---------------------------------------------------------------------------
 # inject
 # ---------------------------------------------------------------------------
 
@@ -613,6 +969,17 @@ def build_parser():
     p.add_argument("--styles", default=str(STYLES_DIR), help="styles directory (default site/.vale/styles)")
     paths(p)
     p.set_defaults(func=cmd_map)
+
+    p = sub.add_parser("glossary")
+    p.add_argument("--glossary-file", default=str(GLOSSARY_FILE))
+    p.add_argument("--styles", default=str(STYLES_DIR), help="styles directory (default site/.vale/styles)")
+    p.add_argument("--ini", default=str(INI_FILE))
+    p.set_defaults(func=cmd_glossary)
+
+    p = sub.add_parser("guide")
+    p.add_argument("--guide-dir", default=str(GUIDE_DIR), help="guide directory (default site/style-guide)")
+    p.add_argument("--styles", default=str(STYLES_DIR), help="styles directory (default site/.vale/styles)")
+    p.set_defaults(func=cmd_guide)
 
     p = sub.add_parser("inject")
     p.add_argument("input")
