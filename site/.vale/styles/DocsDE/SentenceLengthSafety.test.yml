@@ -1,0 +1,35 @@
+- name: flags a 23 word sentence in a caution aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></div></aside></div></main>"
+  contains: "höchstens 22 Wörter"
+
+- name: flags a 23 word sentence in a danger aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></div></aside></div></main>"
+  contains: "höchstens 22 Wörter"
+
+- name: accepts a 22 word sentence in a caution aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste.</p></div></aside></div></main>"
+  absent: "DocsDE.SentenceLengthSafety"
+
+- name: ignores a 23 word sentence in a note aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></div></aside></div></main>"
+  absent: "DocsDE.SentenceLengthSafety"
+
+- name: ignores a 23 word sentence in a tip aside
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--tip'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></div></aside></div></main>"
+  absent: "DocsDE.SentenceLengthSafety"
+
+- name: ignores a 23 word sentence in a caution aside on an English fallback page
+  rule: SentenceLengthSafety.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Titel</p><div class='starlight-aside__content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></div></aside></div></main>"
+  absent: "DocsDE.SentenceLengthSafety"

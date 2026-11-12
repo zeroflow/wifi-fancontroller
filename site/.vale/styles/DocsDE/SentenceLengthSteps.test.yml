@@ -1,0 +1,30 @@
+- name: flags a 23 word sentence in a numbered step
+  rule: SentenceLengthSteps.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></li></ol></div></main>"
+  contains: "höchstens 22 Wörter"
+
+- name: accepts a 22 word sentence in a numbered step
+  rule: SentenceLengthSteps.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste.</p></li></ol></div></main>"
+  absent: "DocsDE.SentenceLengthSteps"
+
+- name: ignores a 23 word sentence in a plain paragraph
+  rule: SentenceLengthSteps.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></div></main>"
+  absent: "DocsDE.SentenceLengthSteps"
+
+- name: ignores a 23 word sentence in a step on an English fallback page
+  rule: SentenceLengthSteps.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Resettaste einmal.</p></li></ol></div></main>"
+  absent: "DocsDE.SentenceLengthSteps"
+
+- name: counts a hyphenated compound as two words
+  about: Vale counts a hyphenated compound such as Reset-Taste or PWM-Signal as two words, so a step with 22 blank separated words that holds one such compound counts 23 words and fires. Plan one or two words of margin for compounds.
+  rule: SentenceLengthSteps.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Schließen Sie den Lüfter an die Platine an und prüfen Sie danach, ob die Leuchte dauerhaft grün leuchtet, nachdem Sie die Reset-Taste.</p></li></ol></div></main>"
+  contains: "höchstens 22 Wörter"

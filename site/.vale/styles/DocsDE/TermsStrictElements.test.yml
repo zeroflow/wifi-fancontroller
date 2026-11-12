@@ -1,0 +1,41 @@
+- name: flags an avoid form in a numbered step
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><ol><li><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></li></ol></div></main>"
+  contains: "Glossarbegriffe"
+
+- name: flags an avoid form in a caution aside
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Das Tastverhältnis darf nicht über 100 liegen.</p></div></aside></div></main>"
+  contains: "'Tastgrad'"
+
+- name: flags an avoid form in a danger aside
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Das Tastverhältnis darf nicht über 100 liegen.</p></div></aside></div></main>"
+  contains: "'Tastgrad'"
+
+- name: ignores an avoid form in a plain paragraph
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></div></main>"
+  absent: "DocsDE.TermsStrictElements"
+
+- name: ignores an avoid form in a note aside
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></div></aside></div></main>"
+  absent: "DocsDE.TermsStrictElements"
+
+- name: ignores the same text outside the content container
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<nav><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Guter Text.</p></div></main>"
+  absent: "DocsDE.TermsStrictElements"
+
+- name: ignores the same text on an English fallback page
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></li></ol></div></main>"
+  absent: "DocsDE.TermsStrictElements"

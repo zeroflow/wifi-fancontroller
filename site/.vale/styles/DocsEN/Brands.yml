@@ -1,0 +1,14 @@
+extends: substitution
+message: "Write the brand name as '%s' instead of '%s'. See site/style-guide/glossary.md."
+level: warning
+ignorecase: false
+scope: 'text & content'
+swap:
+  'Wifi Fan Controller': WiFi Fan Controller
+  'Wi-Fi Fan Controller': WiFi Fan Controller
+  'WIFI Fan Controller': WiFi Fan Controller
+  'WiFi Fancontroller': WiFi Fan Controller
+  'Homeassistant': Home Assistant
+  'HomeAssistant': Home Assistant
+  'QWIIC': Qwiic
+  'Neopixel': NeoPixel

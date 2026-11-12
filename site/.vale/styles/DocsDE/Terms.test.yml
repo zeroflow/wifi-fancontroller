@@ -1,0 +1,65 @@
+- name: flags Package und nennt Paket
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Binden Sie das Package ein.</p></div></main>"
+  contains: "'Paket' statt 'Package'"
+
+- name: flags Packages
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Binden Sie beide Packages ein.</p></div></main>"
+  contains: "'Paket'"
+
+- name: flags Tastverhältnis
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Das Tastverhältnis steigt.</p></div></main>"
+  contains: "'Tastgrad' statt 'Tastverhältnis'"
+
+- name: flags Duty-Cycle
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Duty-Cycle steigt.</p></div></main>"
+  contains: "'Tastgrad' statt 'Duty-Cycle'"
+
+- name: flags WiFi as a generic word
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></div></main>"
+  contains: "'WLAN' statt 'WiFi'"
+
+- name: flags Wi-Fi
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Verbinden Sie die Platine mit Ihrem Wi-Fi.</p></div></main>"
+  contains: "'WLAN' statt 'Wi-Fi'"
+
+- name: accepts Paket
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Binden Sie das Paket ein.</p></div></main>"
+  absent: "DocsDE.Terms"
+
+- name: accepts Tastgrad
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Tastgrad steigt.</p></div></main>"
+  absent: "DocsDE.Terms"
+
+- name: accepts WLAN
+  rule: Terms.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Verbinden Sie die Platine mit Ihrem WLAN.</p></div></main>"
+  absent: "DocsDE.Terms"
+
+- name: ignores the same text outside the content container
+  rule: Terms.yml
+  format: html
+  input: "<nav><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Guter Text.</p></div></main>"
+  absent: "DocsDE.Terms"
+
+- name: ignores the same text on an English fallback page
+  rule: Terms.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Verbinden Sie die Platine mit Ihrem WiFi.</p></div></main>"
+  absent: "DocsDE.Terms"

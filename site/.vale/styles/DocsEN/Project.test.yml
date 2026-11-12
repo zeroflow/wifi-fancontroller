@@ -1,0 +1,11 @@
+- name: lints a flagged word in a plain sentence (control)
+  about: "A project case: Vale lints it through site/.vale.ini and the vhtml section, because an isolated rule case does not read the token ignore list."
+  format: vhtml
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Open the WLAN settings.</p></div></main>"
+  contains: "DocsEN.Terms"
+
+- name: ignores a flagged word inside a host name
+  about: "The host name pattern in the token ignore list covers letters, digits, dots and hyphens that end in a top level domain."
+  format: vhtml
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Open <a href='#'>WLAN.example.com</a> for the guide.</p></div></main>"
+  absent: "DocsEN.Terms"

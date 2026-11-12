@@ -1,0 +1,131 @@
+- name: flags Benutzer
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Benutzer drückt die Taste.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Benutzers
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Wahl des Benutzers zählt.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Benutzern
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Das hilft den Benutzern.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Nutzer
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Nutzer drückt die Taste.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Nutzern
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Das hilft den Nutzern.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Anwender
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Anwender drückt die Taste.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Nutzende
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Nutzende drücken die Taste.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Nutzenden
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Das hilft den Nutzenden.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Elektriker
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Ein Elektriker prüft die Anlage.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Elektrikern
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Das zeigen Sie den Elektrikern.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Kunden
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wir informieren unsere Kunden.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Kunde
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Kunde erhält die Platine.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags Betreiber on its own
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Betreiber haftet für den Einsatz.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: flags the old pair Nutzerin oder Nutzer
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Nutzerin oder Nutzer müssen das Netzteil prüfen.</p></div></main>"
+  contains: "Rollenbezeichnung"
+
+- name: accepts the neutral form Personen
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Personen, die die Platine betreiben, prüfen das Netzteil.</p></div></main>"
+  absent: "DocsDE.RoleNouns"
+
+- name: accepts Elektrofachkraft
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Eine Elektrofachkraft prüft die Anlage.</p></div></main>"
+  absent: "DocsDE.RoleNouns"
+
+- name: accepts Kundschaft
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Wir informieren unsere Kundschaft.</p></div></main>"
+  absent: "DocsDE.RoleNouns"
+
+- name: accepts Hersteller
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Der Hersteller erklärt die Konformität.</p></div></main>"
+  absent: "DocsDE.RoleNouns"
+
+- name: accepts compounds that are not role nouns
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Die Benutzeroberfläche und der Kundenservice sind bereit.</p></div></main>"
+  absent: "DocsDE.RoleNouns"
+
+- name: ignores a role noun in inline code
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='de'><div class='sl-markdown-content'><p>Setzen Sie <code>Benutzer</code> auf true.</p></div></main>"
+  absent: "DocsDE.RoleNouns"
+
+- name: ignores the same text outside the content container
+  rule: RoleNouns.yml
+  format: html
+  input: "<nav><p>Der Benutzer drückt die Taste.</p></nav><main lang='de'><div class='sl-markdown-content'><p>Guter Text.</p></div></main>"
+  absent: "DocsDE.RoleNouns"
+
+- name: ignores the same text on an English fallback page
+  rule: RoleNouns.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Der Benutzer drückt die Taste.</p></div></main>"
+  absent: "DocsDE.RoleNouns"

@@ -1,0 +1,12 @@
+extends: substitution
+message: "Use the glossary term '%s' instead of '%s'. See site/style-guide/glossary.md."
+level: warning
+ignorecase: false
+scope: 'text & content'
+swap:
+  'DC jacks?': barrel jack
+  '[Rr]eflash(?:es|ed|ing)?': re-flash
+  'factory images?': factory firmware
+  'Wi-Fi': WiFi
+  'WLAN': WiFi
+  'wireless networks?': WiFi

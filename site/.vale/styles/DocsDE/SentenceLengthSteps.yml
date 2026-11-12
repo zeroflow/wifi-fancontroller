@@ -1,0 +1,6 @@
+extends: metric
+message: "Dieser Satz in einem Schritt ist zu lang. Halten Sie jeden Satz in einem Schritt auf höchstens 22 Wörter."
+level: warning
+scope: 'sentence & steps_de'
+formula: words
+condition: "> 22"

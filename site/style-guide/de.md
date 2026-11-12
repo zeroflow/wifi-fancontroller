@@ -55,16 +55,16 @@ Diese sechs Regeln gelten auf jeder Seite.
 
 ### DE-05 DocsDE.Brands
 
-- **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `warning`. Aktiv erst nach Freigabe des Glossars.
-- **Regel:** Schreiben Sie Marken- und Produktnamen so, wie das Glossar es festlegt (Zeile G-15 und die Markenzeilen).
+- **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `warning`. Aktiv seit der Freigabe des Glossars am 2026-11-12.
+- **Regel:** Schreiben Sie Marken- und Produktnamen so, wie das Glossar es festlegt (Zeile G-15 und die Markenzeilen). Die Regel tauscht die falsch geschriebenen Formen aus den freigegebenen Zeilen, zum Beispiel `QWIIC`, `Neopixel` und `Homeassistant`.
 - **Basis:** tekom B 301 (einheitliche Benennungen), als Anregung für eine Schreibweise je Name.
 - **Gut:** Der Qwiic-Anschluss führt I2C.
 - **Schlecht:** `Der QWIIC-Anschluss führt I2C.`
 
 ### DE-06 DocsDE.RoleNouns
 
-- **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `warning`. Aktiv erst nach Freigabe der Rollenzeilen im Glossar.
-- **Regel:** Verwenden Sie für jede Rolle genau die Form aus dem Glossar. Das generische Maskulinum und Partizipformen sind ausgeschlossen. Das sind die Punkte (2) und (5) der Konvention.
+- **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `warning`. Aktiv seit der Freigabe der Rollenzeilen am 2026-11-12.
+- **Regel:** Verwenden Sie für jede Rolle genau die Form aus dem Glossar. Das generische Maskulinum und Partizipformen sind ausgeschlossen. Das sind die Punkte (2) und (5) der Konvention. Die Regel meldet die Formen aus der Spalte "DE meiden" der Rollenzeilen G-10 bis G-13. Die freigegebene Paarform "Betreiberin oder Betreiber" meldet sie nicht, und "Hersteller" bleibt erlaubt (G-14).
 - **Basis:** Projektentscheidung D-13 und Glossarzeilen G-10 bis G-14.
 - **Gut:** die Elektrofachkraft, die Kundschaft
 - **Schlecht:** `der Elektriker`, `die Nutzenden`
@@ -75,7 +75,7 @@ STRICT sind Anleitungen, Sicherheits- und Warnhinweise, Fehlersuche, Flashen, Er
 
 | Regel | Name | Kürzel | Ebene auf STRICT-Seiten |
 |---|---|---|---|
-| DE-07 | `DocsDE.SentenceLength` | M | `warning` (VORSCHLAG) |
+| DE-07 | `DocsDE.SentenceLength` | M | `warning` |
 | DE-08 | `DocsDE.Passive` | M? | `suggestion` |
 | DE-09 | `DocsDE.Subjunctive` | M | `suggestion` |
 | DE-10 | `DocsDE.Abbreviations` | M | `warning` |
@@ -83,15 +83,15 @@ STRICT sind Anleitungen, Sicherheits- und Warnhinweise, Fehlersuche, Flashen, Er
 | DE-12 | `DocsDE.Pronouns` | M | `suggestion` |
 | DE-13 | `DocsDE.Semicolons` | M | `warning` |
 | DE-14 | `DocsDE.Exclamations` | M | `warning` |
-| DE-15 | `DocsDE.Terms` | M | `warning` (nach Freigabe des Glossars) |
+| DE-15 | `DocsDE.Terms` | M | `warning` |
 
 ### DE-07 DocsDE.SentenceLength
 
 - **Kürzel und Ebenen:** M. Strict `warning`, moderate `suggestion`, free `NO`.
-- **Regel:** Ein Satz im Fließtext hat höchstens M Wörter. Steht der Wert M noch nicht fest, ist die Regel nicht geschrieben (siehe "Satzlänge").
+- **Regel:** Ein Satz im Fließtext hat höchstens 28 Wörter (siehe "Satzlänge").
 - **Basis:** tekom S 302, die Regel gegen zu lange Sätze. Der Leitfaden nennt dafür keine Zahl.
 - **Gut:** Die Platine liest die Temperatur und sendet sie an Home Assistant. Home Assistant wählt die Drehzahl und sendet sie zurück.
-- **Schlecht:** Ein Satz mit mehr als 25 Wörtern, der Messung, Übertragung und Reaktion in einer Kette verbindet.
+- **Schlecht:** Ein Satz mit mehr als 28 Wörtern, der Messung, Übertragung und Reaktion in einer Kette verbindet.
 
 ### DE-08 DocsDE.Passive
 
@@ -151,11 +151,11 @@ STRICT sind Anleitungen, Sicherheits- und Warnhinweise, Fehlersuche, Flashen, Er
 
 ### DE-15 DocsDE.Terms
 
-- **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `NO`. Aktiv erst nach Freigabe des Glossars.
-- **Regel:** Nennen Sie jedes Konzept mit dem bevorzugten Begriff des Glossars. Die Spalte "DE meiden" listet die Formen, die die Regel meldet.
+- **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `NO`. Aktiv seit der Freigabe des Glossars am 2026-11-12.
+- **Regel:** Nennen Sie jedes Konzept mit dem bevorzugten Begriff des Glossars. Die Spalte "DE meiden" listet die Formen, die die Regel meldet. Die Regel tauscht nur Formen mit einem eindeutigen Ersatz, zum Beispiel `WiFi` gegen `WLAN` (außer in der Marke), `Package` gegen `Paket` und `Tastverhältnis` gegen `Tastgrad`. Formen, deren Ersatz vom Satz abhängt, zum Beispiel `Board` oder `Gerät` für die Platine, stehen im Glossar mit dem Vermerk "H, context-dependent", und ein Mensch prüft sie.
 - **Basis:** tekom B 301 (einheitliche Benennung von Bedien- und Anzeigeelementen) und L 107 (gebräuchliche Benennungen).
-- **Gut:** Schließen Sie den Lüfter an die Platine an.
-- **Schlecht:** `Schließen Sie den Lüfter an das Board an.` (wenn "Board" die Platine meint)
+- **Gut:** Verbinden Sie die Platine mit Ihrem WLAN.
+- **Schlecht:** `Verbinden Sie die Platine mit Ihrem WiFi.`
 
 ## Stufe MODERATE
 
@@ -188,18 +188,18 @@ Ein nummerierter Schritt sowie ein Caution- oder Danger-Hinweis gilt auf jeder S
 ### DE-16 DocsDE.SentenceLengthSteps
 
 - **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `warning`.
-- **Regel:** Ein Satz in einem nummerierten Schritt hat höchstens N Wörter (VORSCHLAG: N = 20). Die Regel entsteht erst nach der Entscheidung zu "Satzlänge".
+- **Regel:** Ein Satz in einem nummerierten Schritt hat höchstens 22 Wörter (siehe "Satzlänge").
 - **Basis:** tekom S 302.
 - **Gut:** Öffnen Sie die Improv-Seite in Chrome oder Edge.
-- **Schlecht:** Ein Schritt mit mehr als 20 Wörtern, der drei Handlungen verbindet.
+- **Schlecht:** Ein Schritt mit mehr als 22 Wörtern, der drei Handlungen verbindet.
 
 ### DE-17 DocsDE.SentenceLengthSafety
 
 - **Kürzel und Ebenen:** M. Strict `warning`, moderate `warning`, free `warning`.
-- **Regel:** Ein Satz in einem Caution- oder Danger-Hinweis hat höchstens N Wörter (VORSCHLAG: N = 20). Die Regel entsteht erst nach der Entscheidung zu "Satzlänge".
+- **Regel:** Ein Satz in einem Caution- oder Danger-Hinweis hat höchstens 22 Wörter (siehe "Satzlänge").
 - **Basis:** tekom S 302. Kurze Sätze zählen dort am meisten, wo Menschen unter Risiko handeln.
 - **Gut:** Diese Spannung beschädigt die Platine dauerhaft. Verwenden Sie ein geregeltes 12-V-Netzteil.
-- **Schlecht:** Ein Satz mit mehr als 20 Wörtern, der Folge, Ursache und Maßnahme zusammenzieht.
+- **Schlecht:** Ein Satz mit mehr als 22 Wörtern, der Folge, Ursache und Maßnahme zusammenzieht.
 
 ### DE-18 DocsDE.StrictElements
 
@@ -215,7 +215,7 @@ Ein nummerierter Schritt sowie ein Caution- oder Danger-Hinweis gilt auf jeder S
 
 ### DE-20 DocsDE.TermsStrictElements
 
-- **Kürzel und Ebenen:** M. Strict `NO`, moderate `NO`, free `warning`. Aktiv erst nach Freigabe des Glossars.
+- **Kürzel und Ebenen:** M. Strict `NO`, moderate `NO`, free `warning`. Aktiv seit der Freigabe des Glossars am 2026-11-12.
 - **Regel:** In Schritten und Sicherheitshinweisen gelten die Begriffstausche von DE-15. Auf FREE-Seiten ist DE-15 aus, deshalb braucht es diese Regel.
 - **Basis:** wie DE-15.
 
@@ -231,18 +231,18 @@ Die Konvention ist eine feste Entscheidung des Projekts (D-13). Die Absicht: ink
 
 Die Wahl zwischen (2) und (3) prüft ein Mensch. Das Glossar legt für jede Rolle genau eine Form fest.
 
-Der Bestand: Die vier Vorkommen von "Benutzer" stehen in der Tasterzeile der vier Hardwareseiten. Die Überarbeitung formuliert sie um, nicht diese Phase. Die Paarform "Nutzerin oder Nutzer" steht auf der Ersteinrichtungsseite und auf der Compliance-Seite. Die Überarbeitung gleicht sie mit dem Glossar ab.
+Der Bestand: Die vier Vorkommen von "Benutzer" stehen in der Tasterzeile der vier Hardwareseiten. Die Überarbeitung formuliert sie um, nicht diese Phase. Die Paarform "Nutzerin oder Nutzer" steht auf der Ersteinrichtungsseite und auf der Compliance-Seite. Das Glossar legt in Zeile G-13 "Betreiberin oder Betreiber" für den Compliance-Text fest, und die Überarbeitung ersetzt die alte Paarform. Das Wort "Hersteller" bleibt (G-14), weil es ein Unternehmen oder eine einzelne männliche Person benennt.
 
 ## Satzlänge
 
-Die Grenzen sind ein VORSCHLAG und warten auf die Entscheidung der Betreuung:
+Die Betreuung hat am 2026-11-12 diese Grenzen freigegeben:
 
-- 20 Wörter in Schritten und Sicherheitshinweisen.
-- 25 Wörter in allem anderen Text.
+- 22 Wörter in Schritten und Sicherheitshinweisen.
+- 28 Wörter in allem anderen Text.
 
-Die Gründe: tekom S 302 nennt in der Leseprobe keine Zahl. Die englischen Regeln verwenden 20 und 25, und die deutschen Werte spiegeln sie. Vale zählt einen Bindestrich-Begriff wie "PWM-Signal" als zwei Wörter. Deutsche Komposita treiben die Zählung darum nach oben. Planen Sie ein bis zwei Wörter Spielraum ein. Als lockerere Alternative stehen 22 und 28 Wörter zur Wahl.
+Hintergrund: tekom S 302 nennt in der Leseprobe keine Zahl. Das Projekt wählt die Werte selbst. Die deutschen Grenzen liegen bewusst über den englischen von 20 und 25, und die Betreuung hat das ausdrücklich gebilligt. Vale zählt einen Bindestrich-Begriff wie "PWM-Signal" als zwei Wörter. Deutsche Komposita treiben die Zählung darum nach oben. Planen Sie ein bis zwei Wörter Spielraum ein.
 
-Die Dateien `DocsDE.SentenceLength*` entstehen erst nach dieser Entscheidung. Bis dahin sind DE-07, DE-16 und DE-17 nur beschrieben und nicht geprüft.
+Die Regeln sind `DocsDE.SentenceLength` (DE-07), `DocsDE.SentenceLengthSteps` (DE-16) und `DocsDE.SentenceLengthSafety` (DE-17).
 
 ## Abkürzungen
 

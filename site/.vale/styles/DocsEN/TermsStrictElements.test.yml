@@ -1,0 +1,47 @@
+- name: flags an avoid form in a numbered step
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Connect to your Wi-Fi network.</p></li></ol></div></main>"
+  contains: "glossary terms"
+
+- name: flags reflash in a numbered step
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Reflash the board.</p></li></ol></div></main>"
+  contains: "'re-flash'"
+
+- name: flags an avoid form in a caution aside
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--caution'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Do not unplug the DC jack.</p></div></aside></div></main>"
+  contains: "'barrel jack'"
+
+- name: flags an avoid form in a danger aside
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--danger'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Do not touch the DC jack.</p></div></aside></div></main>"
+  contains: "'barrel jack'"
+
+- name: ignores an avoid form in a plain paragraph
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><p>Connect to your Wi-Fi network.</p></div></main>"
+  absent: "DocsEN.TermsStrictElements"
+
+- name: ignores an avoid form in a note aside
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><aside class='starlight-aside starlight-aside--note'><p class='starlight-aside__title'>Title</p><div class='starlight-aside__content'><p>Connect to your Wi-Fi network.</p></div></aside></div></main>"
+  absent: "DocsEN.TermsStrictElements"
+
+- name: accepts the preferred term in a numbered step
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<main lang='en'><div class='sl-markdown-content'><ol><li><p>Connect to your WiFi network.</p></li></ol></div></main>"
+  absent: "DocsEN.TermsStrictElements"
+
+- name: ignores the same text outside the content container
+  rule: TermsStrictElements.yml
+  format: html
+  input: "<nav><p>Connect to your Wi-Fi network.</p></nav><main lang='en'><div class='sl-markdown-content'><p>Fine text.</p></div></main>"
+  absent: "DocsEN.TermsStrictElements"

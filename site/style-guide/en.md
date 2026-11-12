@@ -64,8 +64,8 @@ Spelling list, with the number of uses in the docs today:
 
 ### EN-05 DocsEN.Brands
 
-- **Tag and levels:** M. Strict `warning`, moderate `warning`, free `warning`. Active after glossary approval.
-- **Rule:** Write brand and product names with the casing in the glossary (row G-15 and the brand rows).
+- **Tag and levels:** M. Strict `warning`, moderate `warning`, free `warning`. Active since the glossary approval of 2026-11-12.
+- **Rule:** Write brand and product names with the casing in the glossary (row G-15 and the brand rows). The rule swaps the miscased forms listed in the approved rows, for example `QWIIC`, `Neopixel` and `Homeassistant`.
 - **Basis:** Project choice, one form per name.
 - **Good:** The Qwiic connector carries I2C.
 - **Bad:** `The QWIIC connector carries I2C.`
@@ -91,7 +91,7 @@ STRICT pages are procedures, safety and warning notices, troubleshooting, flashi
 | EN-11 | `DocsEN.Semicolons` | M | `warning` |
 | EN-12 | `DocsEN.Abbreviations` | M | `warning` |
 | EN-13 | `DocsEN.Vague` | M | `suggestion` |
-| EN-14 | `DocsEN.Terms` | M | `warning` (after glossary approval) |
+| EN-14 | `DocsEN.Terms` | M | `warning` |
 
 ### EN-07 DocsEN.SentenceLength
 
@@ -151,11 +151,11 @@ STRICT pages are procedures, safety and warning notices, troubleshooting, flashi
 
 ### EN-14 DocsEN.Terms
 
-- **Tag and levels:** M. Strict `warning`, moderate `warning`, free `NO`. Active after glossary approval.
-- **Rule:** Use the preferred term of the glossary for each concept. The avoid column lists the forms that the rule flags.
+- **Tag and levels:** M. Strict `warning`, moderate `warning`, free `NO`. Active since the glossary approval of 2026-11-12.
+- **Rule:** Use the preferred term of the glossary for each concept. The rule swaps only avoid forms with one clear replacement, for example `DC jack`, `reflash`, `factory image`, `Wi-Fi` and `WLAN`. Avoid forms whose replacement depends on the sentence, such as `unit` or `device` for the board, are marked "H, context-dependent" in the glossary and a person checks them.
 - **Basis:** Adapted from the ASD-STE100 principle of one word per meaning.
-- **Good:** Connect the fan to the board.
-- **Bad:** `Connect the fan to the unit.` (when "unit" means the board)
+- **Good:** Plug the supply into the barrel jack.
+- **Bad:** `Plug the supply into the DC jack.`
 
 ## Moderate tier
 
@@ -203,7 +203,7 @@ A numbered step or a caution or danger aside is STRICT on every page. Six rules 
 ### EN-17 DocsEN.ParagraphLengthStrictElements
 
 - **Tag and levels:** M. Strict `NO`, moderate `suggestion`, free `suggestion`.
-- **Rule:** A paragraph inside a step or a safety aside has at most 6 sentences. On strict pages EN-08 already covers the whole page, so this rule is off there.
+- **Rule:** A paragraph inside a caution or danger aside has at most 6 sentences. The checker reads a numbered step as one block, so this rule does not reach step text. Sentence length in steps is covered by EN-15, and the human review checklist asks for one action per step. On strict pages EN-08 already covers the whole page, so this rule is off there.
 - **Basis:** Same as EN-08.
 
 ### EN-18 DocsEN.StrictElements
@@ -220,7 +220,7 @@ A numbered step or a caution or danger aside is STRICT on every page. Six rules 
 
 ### EN-20 DocsEN.TermsStrictElements
 
-- **Tag and levels:** M. Strict `NO`, moderate `NO`, free `warning`. Active after glossary approval.
+- **Tag and levels:** M. Strict `NO`, moderate `NO`, free `warning`. Active since the glossary approval of 2026-11-12.
 - **Rule:** Inside steps and safety asides, the glossary term swaps of EN-14 apply. Free pages need the rule because EN-14 is off there.
 - **Basis:** Same as EN-14.
 

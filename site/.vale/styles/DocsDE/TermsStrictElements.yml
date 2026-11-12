@@ -1,0 +1,12 @@
+# mirrors: Terms
+extends: substitution
+message: "Schritte und Sicherheitshinweise verlangen die Glossarbegriffe. Verwenden Sie '%s' statt '%s'. Siehe site/style-guide/glossary.md."
+level: warning
+ignorecase: false
+scope: 'text & strict_elements_de'
+swap:
+  'Packages?': Paket
+  'Tastverhältnis': Tastgrad
+  'Duty-Cycle': Tastgrad
+  'WiFi': WLAN
+  'Wi-Fi': WLAN

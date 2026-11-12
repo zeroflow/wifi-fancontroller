@@ -37,8 +37,14 @@ DocsEN.Spelling: {strict: warning, moderate: warning, free: warning}
 DocsEN.Units: {strict: suggestion, moderate: suggestion, free: suggestion}
 DocsEN.StrictElements: {strict: NO, moderate: NO, free: warning}
 DocsEN.StrictElementsHints: {strict: NO, moderate: NO, free: suggestion}
+DocsEN.Terms: {strict: warning, moderate: warning, free: NO}
+DocsEN.TermsStrictElements: {strict: NO, moderate: NO, free: warning}
+DocsEN.Brands: {strict: warning, moderate: warning, free: warning}
 
 DocsDE.Dashes: {strict: warning, moderate: warning, free: warning}
+DocsDE.SentenceLength: {strict: warning, moderate: suggestion, free: NO}
+DocsDE.SentenceLengthSteps: {strict: warning, moderate: warning, free: warning}
+DocsDE.SentenceLengthSafety: {strict: warning, moderate: warning, free: warning}
 DocsDE.Passive: {strict: suggestion, moderate: suggestion, free: NO}
 DocsDE.Subjunctive: {strict: suggestion, moderate: suggestion, free: NO}
 DocsDE.Abbreviations: {strict: warning, moderate: warning, free: NO}
@@ -51,3 +57,7 @@ DocsDE.SafetyTitle: {strict: warning, moderate: warning, free: warning}
 DocsDE.GenderCharacters: {strict: warning, moderate: warning, free: warning}
 DocsDE.StrictElements: {strict: NO, moderate: NO, free: warning}
 DocsDE.StrictElementsHints: {strict: NO, moderate: NO, free: suggestion}
+DocsDE.Terms: {strict: warning, moderate: warning, free: NO}
+DocsDE.TermsStrictElements: {strict: NO, moderate: NO, free: warning}
+DocsDE.Brands: {strict: warning, moderate: warning, free: warning}
+DocsDE.RoleNouns: {strict: warning, moderate: warning, free: warning}
