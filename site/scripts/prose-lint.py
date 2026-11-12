@@ -12,6 +12,7 @@ Subcommands
   map                      integrity checks of the tier map, rule levels, twins, generated config and ratchet list
   glossary [--glossary-file F]  glossary rows, term, brand and role rules, ignore list agree
   guide [--guide-dir D]    guide files: dashes, claims, standard names, rule catalogue, routes
+  baseline <vale-json> --out <file>  write the measured violations per tier, rule and page
   inject <in> <out> <kind> copy a built page and plant a dash (kind: em-dash or hyphens)
 
 Data files (grammars are fixed, anything else is a parse error)
@@ -693,7 +694,8 @@ def cmd_glossary(args):
 # ---------------------------------------------------------------------------
 
 GUIDE_FILES = (
-    "README.md", "en.md", "de.md", "safety.md", "glossary.md", "page-tiers.yml", "rule-levels.yml", "blocking.yml",
+    "README.md", "en.md", "de.md", "safety.md", "glossary.md", "baseline.md", "page-tiers.yml", "rule-levels.yml",
+    "blocking.yml",
 )
 DASH_CHARS = re.compile("[" + chr(0x2013) + chr(0x2014) + "]")
 SPACED_DASH = re.compile(r"\S[ \t]+-{1,3}[ \t]+\S")
@@ -901,6 +903,196 @@ def cmd_guide(args):
 
 
 # ---------------------------------------------------------------------------
+# baseline
+# ---------------------------------------------------------------------------
+
+SEVERITIES = ("error", "warning", "suggestion")
+BASELINE_LANGS = (("en", "DocsEN", "English"), ("de", "DocsDE", "German"))
+BASELINE_COMMAND = "bash site/scripts/verify-prose.sh --baseline"
+
+
+def baseline_counts(data, tiers):
+    """Tally Vale alerts. Returns (totals, per_page, alert_count).
+
+    totals   {(lang, tier, rule): {severity: n}}
+    per_page {source path: {rule: n}}
+    Raises DataError for an alert on an unmapped page or with an unknown severity.
+    """
+    sources = source_of_dist(tiers)
+    tier_of = dict(tiers)
+    totals = {}
+    per_page = {}
+    count = 0
+    for dist_path in sorted(data):
+        for alert in data[dist_path]:
+            source = sources.get(dist_path)
+            if source is None:
+                raise DataError("Vale reported an alert on %s, which is not a mapped page" % dist_path)
+            severity = str(alert.get("Severity", "")).lower()
+            if severity not in SEVERITIES:
+                raise DataError("Vale reported an alert with unknown severity '%s' on %s" % (severity, dist_path))
+            rule = clean(str(alert.get("Check", "?")))
+            row = totals.setdefault((lang_of(source), tier_of[source], rule), {s: 0 for s in SEVERITIES})
+            row[severity] += 1
+            page = per_page.setdefault(source, {})
+            page[rule] = page.get(rule, 0) + 1
+            count += 1
+    return totals, per_page, count
+
+
+def baseline_text(totals, per_page, count, tiers, blocking, level_entries, image, commit):
+    """The baseline Markdown. It holds counts and paths only: no matched text, no snippet, no timestamp."""
+    table = level_table(level_entries)
+    tier_of = dict(tiers)
+    mapped = [path for path, _ in tiers]
+    out = []
+    add = out.append
+
+    add("# Prose lint baseline")
+    add("")
+    add("Measured violations of the docs prose lint, handed to Phase 23 and the rewrite passes. Counts only: no page text is quoted, so the file does not change when a sentence is edited.")
+    add("")
+    add("## How this file is made")
+    add("")
+    add("- Command: `%s`" % BASELINE_COMMAND)
+    add("- Vale image: `%s`" % image)
+    add("- Commit: `%s` (HEAD when the file was generated; a rerun on a later commit changes this line and no other)" % commit)
+    add("- Mapped pages: %d (see `page-tiers.yml`)" % len(mapped))
+    add("- Alerts counted: %d" % count)
+    add("")
+    add("The command builds nothing. Run `npm --prefix site run build` first. It lints the mapped pages of `site/dist` with the same configuration as CI and does not fail on findings. The level columns are the levels Vale reports, which come from `rule-levels.yml` and `blocking.yml`.")
+    add("")
+
+    add("## Totals by tier and rule")
+    add("")
+    for lang, style, title in BASELINE_LANGS:
+        rows = sorted(
+            ((tier, rule, row) for (l, tier, rule), row in totals.items() if l == lang),
+            key=lambda item: (TIERS.index(item[0]), item[1]),
+        )
+        sums = {s: 0 for s in SEVERITIES}
+        add("### %s (%s)" % (title, style))
+        add("")
+        if rows:
+            add("| Tier | Rule | Error | Warning | Suggestion | Total |")
+            add("|---|---|---|---|---|---|")
+            for tier, rule, row in rows:
+                add("| %s | %s | %d | %d | %d | %d |" % (tier, rule, row["error"], row["warning"], row["suggestion"], sum(row.values())))
+                for s in SEVERITIES:
+                    sums[s] += row[s]
+            add("")
+        add("%s total: %d alerts (%d errors, %d warnings, %d suggestions)." % (
+            title, sum(sums.values()), sums["error"], sums["warning"], sums["suggestion"]))
+        add("")
+
+    add("## Pages")
+    add("")
+    add("One row per mapped page. The last column lists the rules with at least one alert on the page and their counts.")
+    add("")
+    add("| Page | Tier | Alerts | Rules |")
+    add("|---|---|---|---|")
+    for path in sorted(mapped):
+        rules = per_page.get(path, {})
+        detail = ", ".join("%s %d" % (rule, rules[rule]) for rule in sorted(rules)) or "none"
+        add("| %s | %s | %d | %s |" % (path, tier_of[path], sum(rules.values()), detail))
+    add("")
+
+    add("## Ratchet candidates")
+    add("")
+    add("A candidate is a page with zero alerts for a rule that is not yet blocking there, where the rule is on in the page's tier. Promoting a candidate means adding the page to `blocking.yml`, which is a decision for later and not an action of this file. The lint itself already fails when a page is clean for a rule that has a `blocking.yml` header and is not listed.")
+    add("")
+    for lang, style, title in BASELINE_LANGS:
+        pages = sorted(path for path in mapped if lang_of(path) == lang)
+        add("### %s (%s)" % (title, style))
+        add("")
+        shown = 0
+        for rule_style, rule, _ in level_entries:
+            if rule_style != style:
+                continue
+            ident = "%s.%s" % (style, rule)
+            eligible = [p for p in pages if table[ident][tier_of[p]] != "NO"]
+            listed = set(blocking.get(ident, []))
+            candidates = [p for p in eligible if per_page.get(p, {}).get(ident, 0) == 0 and p not in listed]
+            if not candidates:
+                continue
+            shown += 1
+            if len(candidates) == len(eligible):
+                add("- `%s`: %s." % (ident, "the one page where the rule is on is clean" if len(eligible) == 1
+                                    else "all %d pages where the rule is on are clean" % len(eligible)))
+            else:
+                add("- `%s`: %d of %d pages are clean: %s" % (ident, len(candidates), len(eligible), ", ".join("`%s`" % p for p in candidates)))
+        if shown == 0:
+            add("No candidates.")
+        add("")
+
+    dash_pages = {lang: 0 for lang, _, _ in BASELINE_LANGS}
+    for path in mapped:
+        if any(rule.endswith(".Dashes") for rule in per_page.get(path, {})):
+            dash_pages[lang_of(path)] += 1
+    add("## Notes for Phase 23")
+    add("")
+    add("- The research phase counted violations with draft rules. This file supersedes those numbers: it uses the final rule set, the per-tier levels and the approved glossary.")
+    add("- The rewrite passes after Phase 23 work from the Pages and Totals tables. A page leaves the table when its row shows zero alerts for the rules it is meant to pass.")
+    add("- Accepted deferral (maintainer decision during Phase 22): ten MDX pages still carry a double hyphen and `index.mdx` still emits U+2014, because the MDX integration ignores the smartypants setting. They stay as they are, count in the dash rows above, and are fixed in the Phase 23 rewrite passes. This is not a failure of the lint.")
+    add("- Pages with at least one dash finding today: %d English, %d German." % (dash_pages["en"], dash_pages["de"]))
+    add("- Regenerate this file with `%s` after `npm --prefix site run build`. The command prints a PASS line when the table totals equal the alert count in the Vale output." % BASELINE_COMMAND)
+    add("")
+    return "\n".join(out)
+
+
+def baseline_table_sum(text):
+    """Sum every count in the Totals tables of a baseline file. Returns (sum, problems)."""
+    problems = []
+    total = 0
+    inside = False
+    for line in text.split("\n"):
+        if line.startswith("## "):
+            inside = line == "## Totals by tier and rule"
+            continue
+        if not inside or not line.startswith("|"):
+            continue
+        cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        if cells[0] not in TIERS:
+            continue
+        if len(cells) != 6 or not all(c.isdigit() for c in cells[2:]):
+            problems.append("malformed totals row: %s" % line[:80])
+            continue
+        parts = [int(c) for c in cells[2:5]]
+        if sum(parts) != int(cells[5]):
+            problems.append("row total differs from its columns: %s" % line[:80])
+        total += sum(parts)
+    return total, problems
+
+
+def cmd_baseline(args):
+    tiers = parse_tiers(args.tiers)
+    blocking = parse_blocking(args.blocking)
+    level_entries = parse_levels(args.levels)
+    data = load_alerts(args.vale_json)
+    if data is None:
+        print("FAIL: Vale output is not valid JSON")
+        return 1
+    totals, per_page, count = baseline_counts(data, tiers)
+    text = baseline_text(totals, per_page, count, tiers, blocking, level_entries, args.image, args.commit)
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(text, encoding="utf-8")
+    # Read the file back: the proof is about the bytes on disk, not the in-memory tally.
+    summed, problems = baseline_table_sum(out.read_text(encoding="utf-8"))
+    if problems:
+        for problem in problems:
+            print("  %s" % problem)
+        print("FAIL: baseline totals do not match: the table could not be read back")
+        return 1
+    if summed != count:
+        print("FAIL: baseline totals do not match: tables sum to %d, Vale reported %d alerts" % (summed, count))
+        return 1
+    print("wrote %s" % relative(out))
+    print("PASS: baseline totals match (%d alerts)" % count)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # inject
 # ---------------------------------------------------------------------------
 
@@ -980,6 +1172,14 @@ def build_parser():
     p.add_argument("--guide-dir", default=str(GUIDE_DIR), help="guide directory (default site/style-guide)")
     p.add_argument("--styles", default=str(STYLES_DIR), help="styles directory (default site/.vale/styles)")
     p.set_defaults(func=cmd_guide)
+
+    p = sub.add_parser("baseline")
+    p.add_argument("vale_json")
+    p.add_argument("--out", required=True, help="file to write (site/style-guide/baseline.md)")
+    p.add_argument("--image", default="unknown", help="Vale image tag to record")
+    p.add_argument("--commit", default="unknown", help="short commit SHA to record")
+    paths(p)
+    p.set_defaults(func=cmd_baseline)
 
     p = sub.add_parser("inject")
     p.add_argument("input")

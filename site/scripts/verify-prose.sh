@@ -15,6 +15,7 @@
 #   --glossary      glossary rows, term, brand and role rules and the ignore list agree
 #   --guide         guide files: dashes, conformity claims, standard names, rule catalogue
 #   --write-config  regenerate the per-tier sections of site/.vale.ini and exit
+#   --baseline      regenerate site/style-guide/baseline.md from Vale JSON (never part of the default)
 set -euo pipefail
 
 cd "$(git rev-parse --show-toplevel)"
@@ -38,7 +39,7 @@ fail() {
 
 usage() {
   cat >&2 <<'USAGE'
-Usage: bash site/scripts/verify-prose.sh [--test] [--lint] [--selftest] [--map] [--pin] [--glossary] [--guide] [--write-config]
+Usage: bash site/scripts/verify-prose.sh [--test] [--lint] [--selftest] [--map] [--pin] [--glossary] [--guide] [--baseline] [--write-config]
   No flag runs --test --lint --selftest --map --pin --glossary --guide.
 USAGE
 }
@@ -69,6 +70,7 @@ RUN_MAP=false
 RUN_PIN=false
 RUN_GLOSSARY=false
 RUN_GUIDE=false
+RUN_BASELINE=false
 RUN_WRITE=false
 ANY=false
 
@@ -81,6 +83,7 @@ for arg in "$@"; do
     --pin) RUN_PIN=true ;;
     --glossary) RUN_GLOSSARY=true ;;
     --guide) RUN_GUIDE=true ;;
+    --baseline) RUN_BASELINE=true ;;
     --write-config) RUN_WRITE=true ;;
     *)
       echo "Unknown flag: $arg" >&2
@@ -270,6 +273,37 @@ run_guide() {
   run_checks guide
 }
 
+# ─── --baseline ──────────────────────────────────────────────────────────────
+
+# Regenerate site/style-guide/baseline.md (STYLE-08). Not part of the no-flag
+# default, so a stale baseline never fails CI. The helper reads the file back
+# and prints a PASS line when its table totals equal the alert count in the JSON.
+run_baseline() {
+  need_dist
+  local -a pages
+  mapfile -t pages < <("${PY[@]}" pages)
+  local json err vale_rc=0 out rc=0 passes fails
+  json=$(mktemp)
+  err=$(mktemp)
+  # Vale's own exit code is informational: the helper decides pass or fail.
+  vale --output=JSON "${pages[@]}" >"$json" 2>"$err" || vale_rc=$?
+  out=$("${PY[@]}" baseline "$json" --out site/style-guide/baseline.md \
+    --image "$VALE_IMAGE" --commit "$(git rev-parse --short=7 HEAD)") || rc=$?
+  echo "$out"
+  passes=$(echo "$out" | grep -c '^PASS:' || true)
+  fails=$(echo "$out" | grep -c '^FAIL:' || true)
+  PASS_COUNT=$((PASS_COUNT + passes))
+  FAIL_COUNT=$((FAIL_COUNT + fails))
+  if [[ "$rc" -ne 0 && "$fails" -eq 0 ]]; then
+    fail "baseline: prose-lint.py baseline exited $rc without a FAIL line"
+  fi
+  if [[ "$rc" -ne 0 && -s "$err" ]]; then
+    echo "--- Vale stderr ---"
+    cat "$err"
+  fi
+  rm -f "$json" "$err"
+}
+
 # ─── --pin ───────────────────────────────────────────────────────────────────
 
 # Supply chain checks (T-22-01, T-22-02): one pinned image, no style packages,
@@ -316,6 +350,7 @@ run_pin() {
 [[ "$RUN_PIN" == "true" ]] && run_pin
 [[ "$RUN_GLOSSARY" == "true" ]] && run_glossary
 [[ "$RUN_GUIDE" == "true" ]] && run_guide
+[[ "$RUN_BASELINE" == "true" ]] && run_baseline
 
 # ─── Summary ─────────────────────────────────────────────────────────────────
 
