@@ -376,6 +376,21 @@ zigbee:
   # Fires on join and on rejoin after a reboot
   on_join:
     then:
+      # TX power 10 dBm instead of the stack default of 20 dBm. At 20 dBm the C6
+      # is much louder than it can hear: in a Zigbee2MQTT mesh the neighbours
+      # reported it about 85 LQI better than it reported them, and battery end
+      # devices joined it after a power cut over links too weak for their own
+      # uplink. 10 dBm measured balanced. The component has no YAML option for
+      # this, and on_join runs outside the Zigbee task, hence the lock.
+      - lambda: |-
+          esp_zigbee_lock_acquire(portMAX_DELAY);
+          int8_t before = 0;
+          ezb_get_tx_power(&before);
+          ezb_set_tx_power(10);  // dBm
+          int8_t after = 0;
+          ezb_get_tx_power(&after);
+          esp_zigbee_lock_release();
+          ESP_LOGI("zigbee", "TX power %d -> %d dBm", before, after);
       - script.execute: zigbee_led_joined
       # Push the current fan state so Zigbee2MQTT sees the restored state
       - zigbee.setAttr:
