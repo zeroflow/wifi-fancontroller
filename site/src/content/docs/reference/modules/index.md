@@ -100,6 +100,7 @@ Substitution names live in one shared namespace across every package. If two mod
 | [Temperature Curve Dual](/reference/modules/temperature-curve-dual/) | Medium | Two switchable profiles (e.g. aggressive vs defensive) | 27 (numbers, sensor, switches, binary sensor) | All |
 | [Temperature Curve Triple](/reference/modules/temperature-curve-triple/) | Medium | Three switchable profiles over one shared temperature axis | 27 (numbers, select, sensor, switches, binary sensor) | All |
 | [Temperature Curve Triple Independent](/reference/modules/temperature-curve-triple-independent/) | Medium | Three switchable profiles with separate axes and separate source sensors | 37 (numbers, select, sensor, switches, binary sensor) | All |
+| [Temperature Curve Per Fan](/reference/modules/temperature-curve-per-fan/) | Medium | Independent Manual/preset/Custom curves for each of four fans | 48 (numbers, selects, binary sensors) | All |
 | [RPM PI Control](/reference/modules/rpm-pi-control/) | Advanced | Exact RPM targeting per fan | 31 (numbers, sensors, switches, button) | All |
 | [RPM Status LEDs](/reference/modules/rpm-status-leds/) | Simple | Visual RPM feedback via board LEDs | 0 (writes to existing LED entities) | Rev 3.1+ |
 | [Stall Guard](/reference/modules/stall-guard/) | Simple | Fan stall detection and automatic recovery | 9 (binary sensors, text sensors, button) | All |
@@ -112,7 +113,7 @@ Substitution names live in one shared namespace across every package. If two mod
 ### Temperature modules are mutually exclusive
 
 :::caution
-You can only use **one** temperature control module at a time (PID, Linear, Curve, Curve Dual, Curve Triple, or Curve Triple Independent). These modules define overlapping internal component IDs -- PID and Linear both define `proxy_output`, while Linear, Curve, Curve Dual, Curve Triple, and Curve Triple Independent all define `auto_control_fan1`--`auto_control_fan4` switches. Even where IDs don't conflict, running two temperature controllers simultaneously would cause unpredictable fan behavior.
+You can only use **one** temperature control module at a time (PID, Linear, Curve, Curve Dual, Curve Triple, Curve Triple Independent, or Curve Per Fan). These modules define overlapping internal component IDs -- PID and Linear both define `proxy_output`, while Linear, Curve, Curve Dual, Curve Triple, and Curve Triple Independent all define `auto_control_fan1`--`auto_control_fan4` switches. Even where IDs don't conflict, running two temperature controllers simultaneously would cause unpredictable fan behavior.
 :::
 
 :::caution
@@ -132,27 +133,30 @@ You can only use **one** temperature control module at a time (PID, Linear, Curv
 :::
 
 :::caution
-**Ten of these modules assume the fan speed level count stays at its hardware default of 100.** They read and write fan speed as though one level equals one percent, which only holds at that default. Lowering the level count, for example to make the Home Assistant slider snap in coarser steps, silently rescales every percentage these modules compute. See [Speed steps](/reference/modules/usr-buttons-mode/#speed-steps) for the full explanation and what lifting this would take.
+**Several of these modules assume the fan speed level count stays at its hardware default of 100.** They read and write fan speed as though one level equals one percent, which only holds at that default. Lowering the level count, for example to make the Home Assistant slider snap in coarser steps, silently rescales every percentage these modules compute. See [Speed steps](/reference/modules/usr-buttons-mode/#speed-steps) for the full explanation and what lifting this would take.
 :::
+
+**Temperature Curve Per Fan** is an optional standalone controller. It cannot run with another temperature module or RPM PI Control. It works with RPM Status LEDs, Stall Guard, Fallback Mode, and either USR Buttons module; physical overrides pause its automatic output.
 
 ### Compatibility matrix
 
 Most modules can be combined freely. The two exceptions are: temperature modules are mutually exclusive (see above), and Stall Guard conflicts with RPM PI Control (both write to PWM outputs). The full compatibility matrix:
 
-| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | Temp Curve Triple Indep. | RPM PI Control | RPM Status LEDs | Stall Guard | Fallback Mode | USR Buttons | USR Buttons Mode |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Temperature PID** | n/a | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Linear** | ❌ | n/a | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve** | ❌ | ❌ | n/a | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Dual** | ❌ | ❌ | ❌ | n/a | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | n/a | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Temperature Curve Triple Independent** | ❌ | ❌ | ❌ | ❌ | ❌ | n/a | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ✅ | ❌ | ❌ | ✅ | ✅ |
-| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ |
-| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | n/a | ✅ | ✅ | ✅ |
-| **[Fallback Mode](/reference/modules/fallback-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | n/a | ✅ | ✅ |
-| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ❌ |
-| **[USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | n/a |
+| | Temp PID | Temp Linear | Temp Curve | Temp Curve Dual | Temp Curve Triple | Temp Curve Triple Indep. | RPM PI Control | RPM Status LEDs | Stall Guard | Fallback Mode | USR Buttons | USR Buttons Mode | Temp Curve Per Fan |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:| :---: |
+| **Temperature PID** | n/a | ❌ | ❌ | ❌ | ❌ | ❌ | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Temperature Linear** | ❌ | n/a | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Temperature Curve** | ❌ | ❌ | n/a | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Temperature Curve Dual** | ❌ | ❌ | ❌ | n/a | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Temperature Curve Triple** | ❌ | ❌ | ❌ | ❌ | n/a | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **Temperature Curve Triple Independent** | ❌ | ❌ | ❌ | ❌ | ❌ | n/a | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **RPM PI Control** | ⚠️ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
+| **RPM Status LEDs** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **Stall Guard** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | n/a | ✅ | ✅ | ✅ | ✅ |
+| **[Fallback Mode](/reference/modules/fallback-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | n/a | ✅ | ✅ | ✅ |
+| **USR Buttons** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a | ❌ | ✅ |
+| **[USR Buttons with Auto/Manual Mode](/reference/modules/usr-buttons-mode/)** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | n/a | ✅ |
+| **Temperature Curve Per Fan** | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | n/a |
 
 ## Module List
 
@@ -169,6 +173,8 @@ Most modules can be combined freely. The two exceptions are: temperature modules
 - **[Temperature Curve Triple](/reference/modules/temperature-curve-triple/)** -- Three fan profiles over one shared 5-point temperature axis, picked from Home Assistant with a select entity. Sharing the axis means the third profile costs no extra entities. Use it when the temperature breakpoints stay fixed and only the aggressiveness changes.
 
 - **[Temperature Curve Triple Independent](/reference/modules/temperature-curve-triple-independent/)** -- Three fan profiles that share nothing: each has its own 5-point temperature axis, its own speeds, and its own source sensor. Use it when the breakpoints differ per profile, when profiles read different sensors, or when one profile has to run inverted. Costs ten more entities than the shared-axis version.
+
+- **[Temperature Curve Per Fan](/reference/modules/temperature-curve-per-fan/)** -- Four independent five-point curves, one per fan, with Manual, Silent, Balanced, Aggressive, Server, and Custom selectors. Use this optional module when the fan channels need different temperature responses.
 
 ### RPM Control
 

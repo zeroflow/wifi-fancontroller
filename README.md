@@ -219,6 +219,13 @@ No manual pin configuration needed - just import the package and customize your 
 
 Beyond the basic hardware configuration, this project includes optional control modules that implement different fan control strategies. These modules can be imported into your configuration to add temperature-based fan control or status displays.
 
+For independent temperature rules on all four fans, add the optional
+[`temperature_curve_per_fan` module](modules/temperature_curve_per_fan.yaml).
+Each fan has Manual, Silent, Balanced, Aggressive, Server, and Custom profiles;
+Server commands 75% at 30°C. This requires a custom ESPHome build and leaves
+standard firmware unchanged. See the [per-fan example](examples/with-temperature-curve-per-fan-rev-3.3.yaml)
+and [module guide](https://fancontroller.arthofer.dev/reference/modules/temperature-curve-per-fan/).
+
 ### Available Modules
 
 #### 1. RPM Status LEDs (`modules/rpm_status_leds.yaml`)

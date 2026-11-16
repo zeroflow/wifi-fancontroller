@@ -1,0 +1,94 @@
+# Temperature Curve Per Fan Control Module
+#
+# Opt-in, independent five-point temperature curves for all four fan channels.
+# Each fan has a persisted Manual / Silent / Balanced / Aggressive / Server /
+# Custom selector, plus ten editable temperature/speed values. Starts in Manual.
+# Selecting a preset replaces only that fan's points and applies it immediately.
+# Editing an active curve selects Custom; editing Manual rules keeps Manual.
+# Manual speed writes do not change the profile; an active curve reapplies on
+# the next 10-second tick. To hold a fan off, select Manual and turn it off.
+# Respects usr_override_fanN and fanN_safety_floor from the hardware package.
+#
+# Cannot be combined with other temperature-control modules (temperature_curve,
+# temperature_linear, temperature_pid, dual/triple curves), or RPM PI Control:
+# concurrent controllers would fight over the same fan channels.
+# No dependency on the shared temperature_curve.yaml module or its IDs.
+#
+# Usage:
+#   packages:
+#     hardware: github://zeroflow/wifi-fancontroller/hardware-rev-3.3.yaml@main
+#     per_fan: github://zeroflow/wifi-fancontroller/modules/temperature_curve_per_fan.yaml@main
+#
+# Variables: temperature_sensor_id defaults to fancontroller_temperature.
+# fanN_curve_temp1..5 / fanN_curve_speed1..5 customize initial points for N=1..4.
+# Values restore across reboot; selecting a named preset replaces these points.
+# See examples/with-temperature-curve-per-fan-rev-3.3.yaml and
+# /reference/modules/temperature-curve-per-fan/ for tuning and integration.
+substitutions:
+  temperature_sensor_id: fancontroller_temperature
+  fan1_curve_temp1: "20"
+  fan1_curve_speed1: "0"
+  fan1_curve_temp2: "25"
+  fan1_curve_speed2: "25"
+  fan1_curve_temp3: "30"
+  fan1_curve_speed3: "50"
+  fan1_curve_temp4: "40"
+  fan1_curve_speed4: "75"
+  fan1_curve_temp5: "50"
+  fan1_curve_speed5: "100"
+  fan2_curve_temp1: "20"
+  fan2_curve_speed1: "0"
+  fan2_curve_temp2: "25"
+  fan2_curve_speed2: "25"
+  fan2_curve_temp3: "30"
+  fan2_curve_speed3: "50"
+  fan2_curve_temp4: "40"
+  fan2_curve_speed4: "75"
+  fan2_curve_temp5: "50"
+  fan2_curve_speed5: "100"
+  fan3_curve_temp1: "20"
+  fan3_curve_speed1: "0"
+  fan3_curve_temp2: "25"
+  fan3_curve_speed2: "25"
+  fan3_curve_temp3: "30"
+  fan3_curve_speed3: "50"
+  fan3_curve_temp4: "40"
+  fan3_curve_speed4: "75"
+  fan3_curve_temp5: "50"
+  fan3_curve_speed5: "100"
+  fan4_curve_temp1: "20"
+  fan4_curve_speed1: "0"
+  fan4_curve_temp2: "25"
+  fan4_curve_speed2: "25"
+  fan4_curve_temp3: "30"
+  fan4_curve_speed3: "50"
+  fan4_curve_temp4: "40"
+  fan4_curve_speed4: "75"
+  fan4_curve_temp5: "50"
+  fan4_curve_speed5: "100"
+
+packages:
+  fan1_profile: !include
+    file: temperature_curve_per_fan_channel.yaml
+    vars:
+      fan: "1"
+  fan2_profile: !include
+    file: temperature_curve_per_fan_channel.yaml
+    vars:
+      fan: "2"
+  fan3_profile: !include
+    file: temperature_curve_per_fan_channel.yaml
+    vars:
+      fan: "3"
+  fan4_profile: !include
+    file: temperature_curve_per_fan_channel.yaml
+    vars:
+      fan: "4"
+
+interval:
+  - interval: 10s
+    then:
+      - script.execute: fan1_apply_profile
+      - script.execute: fan2_apply_profile
+      - script.execute: fan3_apply_profile
+      - script.execute: fan4_apply_profile
