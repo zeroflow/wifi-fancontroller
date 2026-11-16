@@ -63,3 +63,12 @@ For initial device flashing, use the factory images instead:
 - `fancontroller-rev3.1-esp32s2.factory.yaml`
 
 Factory images include additional provisioning features like improv_serial and are meant for first-time setup.
+
+### Independent profiles per fan
+
+[`with-temperature-curve-per-fan-rev-3.3.yaml`](with-temperature-curve-per-fan-rev-3.3.yaml)
+adds the optional per-fan curve module on Rev 3.3. Each fan has its own Manual,
+Silent, Balanced, Aggressive, Server, or Custom selector and five editable rules.
+Select Manual before setting a fixed speed or holding a fan off. Use one
+temperature-control module per configuration. The [Rev 1.0 example](with-temperature-curve-per-fan-rev-1.0.yaml)
+provides the same controls on an ESP32 board.

@@ -122,8 +122,8 @@ jobs:
           fi
           echo "All configs valid."
 
-      - name: Check default profiles and manual-control defaults
-        run: python3 tools/test-default-fan-profiles.py
+      - name: Check opt-in per-fan profiles
+        run: python3 tools/test-temperature-curve-per-fan.py
 
   compile-affected:
     name: Compile affected examples
