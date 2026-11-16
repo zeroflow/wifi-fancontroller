@@ -20,6 +20,7 @@ Examples showing additional features and modules:
 - **`with-temperature-curve-rev-3.1.yaml`** - Shows how to use the temperature curve module for flexible multi-point fan control (recommended!)
 - **`with-temperature-control-rev-3.1.yaml`** - Shows how to use temperature control modules (linear/PID) for automatic fan speed adjustment
 - **`with-temperature-curve-external-sensor-rev-3.1.yaml`** - Shows how to drive the temperature curve from an external Qwiic BME680 instead of the onboard sensor, via `temperature_sensor_id`
+- **`standalone-humidity-curve-rev-3.3.yaml`** - Standalone Rev 3.3 config without Home Assistant that drives the fans from the onboard humidity sensor through the temperature curve module, adjustable in the built-in web UI
 
 ## Usage
 

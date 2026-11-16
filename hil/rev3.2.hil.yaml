@@ -1,0 +1,44 @@
+# HIL wrapper for Rev 3.2 (ESP32-S2, arduino framework).
+#
+# This file layers the hardware-in-the-loop test settings on top of the
+# customer config WITHOUT editing it (D-05). The customer config is included
+# as a package from .hil-build/, where hil/tools/build_image.py writes a copy
+# whose single github:// hardware reference is rewritten to a local include,
+# so the image is built from the working tree and never from @main.
+#
+# The framework stays arduino: it comes from the base and is not touched here.
+# Rev 1.0 through 3.3 keep the framework they shipped with, permanently.
+#
+# Values are injected by hil/tools/build_image.py as esphome substitutions
+# (-s name value). There are deliberately no WiFi or API key defaults below, so
+# a config that was not built by the script fails closed.
+#
+# Never build this file by hand with real credentials into a tracked path.
+
+substitutions:
+  hil_commit: "devbuild"
+
+packages:
+  base: !include ../.hil-build/fancontroller-rev3.2-esp32s2.yaml
+
+esphome:
+  project:
+    # Read back over the API as device_info().project_version.
+    version: "3.2+hil.${hil_commit}"
+
+logger:
+  hardware_uart: UART0
+
+wifi:
+  ssid: ${hil_wifi_ssid}
+  password: ${hil_wifi_password}
+
+api:
+  encryption:
+    key: ${hil_dut_api_key}
+
+ota:
+  # A plain "- platform: esphome" entry fails with "ID ota_esphome redefined!",
+  # so extend the base entry. An empty encryption block reuses the API key.
+  - id: !extend ota_esphome
+    encryption: {}

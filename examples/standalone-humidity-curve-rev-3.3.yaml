@@ -1,0 +1,218 @@
+# Example: Standalone Rev 3.3 fan control by humidity (no Home Assistant)
+#
+# What this file does:
+#   The fans follow the relative humidity measured by the onboard HDC1080
+#   sensor. You adjust the curve in a browser, using the built-in web UI at
+#   the IP address of the device. No Home Assistant is needed.
+#
+# How to use it:
+#   1. Copy this file to your ESPHome folder.
+#   2. Create a file called secrets.yaml next to it with two lines:
+#        wifi_ssid: "YourNetworkName"
+#        wifi_password: "YourPassword"
+#   3. Flash it over USB the first time. Later updates can go over WiFi.
+#
+# How it works:
+#   The temperature curve module does not care what it measures. The line
+#   temperature_sensor_id below points it at fancontroller_humidity instead of
+#   the temperature. The four curve_input variables widen the five sliders to
+#   a range of 0 to 100 percent in steps of 1 percent.
+#
+# Things worth knowing:
+#
+#   (a) The sliders are still called "Curve Temperature 1" to "Curve
+#   Temperature 5", and the boot log still says "Temperature point". In this
+#   config they hold humidity values. The names are kept on purpose, because
+#   renaming them would break existing Home Assistant setups.
+#
+#   (b) The device remembers the slider values across reboots and reflashes.
+#   The curve points in this file only apply on a board that has never stored
+#   them. If this board ran the temperature curve before, set the five Curve
+#   Temperature sliders once in the web UI.
+#
+#   (c) The sensor sits on the board, which runs slightly warm, so the
+#   humidity reads a few percent lower than the room. Shift the curve points
+#   down a little, or add a humidity offset filter as described at
+#   /reference/modules/usr-buttons-mode/#sensor-offset
+#
+#   (d) The board is rated for 5 to 85 percent relative humidity,
+#   non-condensing. That is why this curve reaches full speed at 80 percent.
+#   Do not mount the board where water condenses on it.
+#
+#   (e) The live Humidity reading shows in the regular sensor list of the web
+#   UI. It cannot be moved into the curve group, because it is a nested id.
+#
+#   (f) The curve module ships four preset buttons (Silent, Balanced,
+#   Aggressive, Server) that load fixed temperature curves. On a humidity curve
+#   they would overwrite your humidity points with temperature values, so this
+#   file removes them (see the button: block at the end).
+
+packages:
+  # The Rev 3.3 hardware definition: pins, fans, onboard sensor, LEDs.
+  hardware:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files: [hardware-rev-3.3.yaml]
+  temperature_curve:
+    url: https://github.com/zeroflow/wifi-fancontroller
+    ref: main
+    files:
+      - path: modules/temperature_curve.yaml
+        vars:
+          # The output sensor then reads "Humidity Curve Output".
+          friendly_name: "Humidity"
+          # This one line is what switches the curve from temperature to humidity.
+          temperature_sensor_id: "fancontroller_humidity"
+          # Slider range 0 to 100, steps of 1, unit shown as percent.
+          curve_input_min: "0"
+          curve_input_max: "100"
+          curve_input_step: "1"
+          curve_input_unit: "%"
+          # The curve, in humidity terms: below 50 % the fans are off, then they
+          # ramp up and reach full speed at 80 %. The ramp is steeper at the top
+          # so full speed is reached before the board's 85 % limit.
+          curve_temp1: "50.0"
+          curve_speed1: "0.0"
+          curve_temp2: "60.0"
+          curve_speed2: "25.0"
+          curve_temp3: "70.0"
+          curve_speed3: "50.0"
+          curve_temp4: "75.0"
+          curve_speed4: "75.0"
+          curve_temp5: "80.0"
+          curve_speed5: "100.0"
+
+esphome:
+  name: humidity-fancontroller
+  friendly_name: Humidity Fan Controller
+
+esp32:
+  board: esp32-s2-saola-1
+  framework:
+    # Rev 3.3 boards ship with the arduino framework. Never change this:
+    # switching the framework can brick the board.
+    type: arduino
+
+# Enable logging
+logger:
+
+# No api: block. This is the standalone case: without Home Assistant there
+# is nothing for the API to connect to. See /reference/standalone/ for the
+# alternative (set reboot_timeout: 0s) if you keep api: for other reasons.
+
+# Enable OTA updates
+ota:
+  - platform: esphome
+
+# WiFi configuration
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot in case wifi connection fails
+  ap:
+    ssid: "Fancontroller Fallback"
+
+# Enable captive portal for WiFi setup
+captive_portal:
+
+# Enable Improv Serial for first-time WiFi provisioning over USB, no app or
+# Home Assistant required. See /reference/standalone/ for the walkthrough.
+improv_serial:
+
+# Security: web_server serves plain, unauthenticated HTTP on port 80.
+#   - Trusted LAN only. Do not forward this port through your router.
+#   - Never expose it to the internet.
+#   - If your network is shared, set auth: -- see /reference/web-server/
+#     for the walkthrough.
+web_server:
+  version: 3
+  local: true
+  sorting_groups:
+    - id: grp_humidity_curve
+      name: "Humidity Curve"
+      sorting_weight: 100
+
+number:
+  - id: !extend curve_temp1
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 10
+  - id: !extend curve_speed1
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 20
+  - id: !extend curve_temp2
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 30
+  - id: !extend curve_speed2
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 40
+  - id: !extend curve_temp3
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 50
+  - id: !extend curve_speed3
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 60
+  - id: !extend curve_temp4
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 70
+  - id: !extend curve_speed4
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 80
+  - id: !extend curve_temp5
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 90
+  - id: !extend curve_speed5
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 100
+
+sensor:
+  - id: !extend curve_output_value
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 110
+
+switch:
+  - id: !extend auto_control_fan1
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 120
+  - id: !extend auto_control_fan2
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 130
+  - id: !extend auto_control_fan3
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 140
+  - id: !extend auto_control_fan4
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 150
+
+binary_sensor:
+  - id: !extend curve_config_warning_sensor
+    web_server:
+      sorting_group_id: grp_humidity_curve
+      sorting_weight: 900
+
+# The temperature curve module adds four preset buttons that load ready-made
+# TEMPERATURE curves (points between 15 and 55). In this humidity setup one
+# press would replace the humidity curve with temperature values and make the
+# fans behave unexpectedly, so these lines remove the buttons from this device.
+# !remove works on the module's top-level ids even though the module is loaded
+# from GitHub. The buttons are not part of the web UI group.
+button:
+  - id: !remove curve_preset_silent
+  - id: !remove curve_preset_balanced
+  - id: !remove curve_preset_aggressive
+  - id: !remove curve_preset_server
