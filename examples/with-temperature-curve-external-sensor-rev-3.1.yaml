@@ -89,7 +89,9 @@ captive_portal:
 # Startup behaviour worth knowing about:
 #
 # An external sensor reports no value until its first reading lands. While that
-# is true the curve has no temperature to interpolate and commands the fans OFF.
+# is true the curve has no temperature to interpolate: it holds the last speed for
+# 60 s and then runs the fans at curve_failsafe_speed (default 100%); right after
+# boot there is no last speed, so the fans start at the failsafe speed.
 # The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window
 # is normally too short to notice; a BME680 left on its 60 second default, an
 # SCD41 warming up, or a Dallas probe can stretch it considerably. bme680_interval

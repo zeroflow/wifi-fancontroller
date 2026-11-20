@@ -30,6 +30,8 @@
 #   - curveB_temp[1-5] / curveB_speed[1-5]: Curve B points (switch on)
 #   - temperature_sensor_id: Id of the sensor supplying the control temperature
 #       (default: fancontroller_temperature, the onboard sensor).
+#   - curve_failsafe_speed: Speed % once the control sensor has read NAN for 60 s; the last
+#       speed is held until then (default: "100.0").
 #
 # Features:
 #   - Two independent 5-point curves, switchable from Home Assistant
@@ -51,6 +53,9 @@ substitutions:
   friendly_name: "Fancontroller"
   # Sensor supplying the control temperature. Defaults to the onboard sensor
   temperature_sensor_id: fancontroller_temperature
+  # Speed (%) commanded once the control sensor has read NAN for 60 s (no reading after boot, a
+  # source that reports NAN, a timeout filter). Default 100 = fail high, as temperature_curve_triple.
+  curve_failsafe_speed: "100.0"
   # Curve A - aggressive (switch off)
   curveA_temp1: "20.0"
   curveA_speed1: "0.0"
@@ -88,6 +93,12 @@ esphome:
       then:
         - lambda: |-
             ESP_LOGI("temperature_curve_dual", "Control sensor: ${temperature_sensor_id}");
+
+            const float boot_failsafe_pct = ${curve_failsafe_speed};
+            if (boot_failsafe_pct < 0.0f || boot_failsafe_pct > 100.0f) {
+              ESP_LOGW("temperature_curve_dual", "curve_failsafe_speed (%.1f) is outside the 0 to 100 percent range.",
+                       boot_failsafe_pct);
+            }
 
             float a[5] = {${curveA_temp1}, ${curveA_temp2}, ${curveA_temp3}, ${curveA_temp4}, ${curveA_temp5}};
             float b[5] = {${curveB_temp1}, ${curveB_temp2}, ${curveB_temp3}, ${curveB_temp4}, ${curveB_temp5}};
@@ -417,6 +428,40 @@ sensor:
     update_interval: 10s
     lambda: |-
       float temp = id(${temperature_sensor_id}).state;
+
+      // Unavailable control sensor (NAN: no reading yet after boot, a source that reports NAN, or a
+      // timeout filter after missed readings). Every comparison below is false for NAN, so the lambda
+      // used to fall through to its 0 % fallback, and fans without a minimum speed stop at 0 %.
+      // Like temperature_curve_triple: hold the last speed for 60 s (a single failed read is normal),
+      // then command curve_failsafe_speed until the sensor returns. The float local keeps a bare
+      // integer substitution ("40") away from the %f conversions; the flags log each change once.
+      const float failsafe_speed_pct = ${curve_failsafe_speed};
+      static uint32_t unavailable_since = 0;
+      static bool failsafe_active = false;
+      if (isnan(temp)) {
+        const uint32_t now = millis();
+        if (unavailable_since == 0) {
+          unavailable_since = (now == 0) ? 1 : now;
+          ESP_LOGW("temperature_curve_dual",
+                   "Control sensor unavailable (NAN). Holding the last speed for up to 60 s.");
+        }
+        const float last_speed = id(curve_output_value).state;
+        if (!failsafe_active && !isnan(last_speed) && (now - unavailable_since) < 60000) {
+          return last_speed;
+        }
+        if (!failsafe_active) {
+          ESP_LOGW("temperature_curve_dual",
+                   "Control sensor still unavailable. Running fans at %.1f%% until it returns.",
+                   failsafe_speed_pct);
+          failsafe_active = true;
+        }
+        return failsafe_speed_pct;
+      }
+      if (unavailable_since != 0) {
+        ESP_LOGW("temperature_curve_dual", "Control sensor available again (%.1f), resuming curve control.", temp);
+        unavailable_since = 0;
+        failsafe_active = false;
+      }
 
       struct Point {
         float temp;
