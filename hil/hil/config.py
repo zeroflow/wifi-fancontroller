@@ -6,11 +6,12 @@ Every failure raises RigError naming the key, never the value.
 import ipaddress
 import os
 import re
+import sys
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import RigError
+from . import RigError, caps
 
 NETWORK_FILE = Path(__file__).resolve().parent.parent / "hil-network.yaml"
 DUT_KEY_NAME = "hil_dut_api_key"
@@ -20,6 +21,7 @@ NETWORK_LINE_RE = re.compile(r'^(hil_[a-z_]+):[ \t]*"([^"]*)"[ \t]*(#.*)?$')
 KEY_LIKE_RE = re.compile(r"^([A-Za-z0-9_.-]+):")
 MAC_RE = re.compile(r"^([0-9a-f]{2}:){5}[0-9a-f]{2}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
+RELEASE_TAG_RE = re.compile(r"v\d+\.\d+\.\d+")  # fullmatch: vX.Y.Z, CalVer included
 
 DUT_REQUIRED = (
     "rev",
@@ -33,7 +35,10 @@ DUT_REQUIRED = (
     "nvs_backup",
     "nvs_offset",
     "nvs_size",
+    "nvs_release_tag",
     "last_green_dir",
+    "framework",
+    "capabilities",
 )
 DUT_B_REQUIRED = ("rev", "chip", "host", "mac")
 HEX_FIELDS = ("flash_offset", "nvs_offset", "nvs_size")
@@ -41,11 +46,13 @@ HEX_FIELDS = ("flash_offset", "nvs_offset", "nvs_size")
 
 @dataclass(frozen=True)
 class DutConfig:
+    # host and mac stay out of repr: pytest truncates a long repr in a traceback ("192.0.2..."),
+    # and no full-value log mask matches a truncated address (03-14, run p1).
     id: str
     rev: str
     chip: str
-    host: str
-    mac: str
+    host: str = field(repr=False)
+    mac: str = field(repr=False)
     flash_offset: str = ""
     known_good_image: str = ""
     known_good_sha256: str = ""
@@ -53,14 +60,17 @@ class DutConfig:
     nvs_backup: str = ""
     nvs_offset: str = ""
     nvs_size: str = ""
+    nvs_release_tag: str = ""  # the release the NVS dump was captured with (D-37); required for DUT A
     last_green_dir: str = ""
+    framework: str = ""
+    capabilities: tuple = ()
 
 
 @dataclass(frozen=True)
 class RigConfig:
-    # The keys stay out of repr: a RigConfig in a traceback or log line would
-    # otherwise print them into public CI logs.
-    supervisor_host: str
+    # The keys and the supervisor address stay out of repr: a RigConfig in a traceback or log line
+    # would otherwise print them into public CI logs (a truncated address escapes the masks).
+    supervisor_host: str = field(repr=False)
     supervisor_key: str = field(repr=False)
     duts: dict
     dut_api_key: str = field(repr=False)
@@ -103,6 +113,17 @@ def _host(table, name, key="host"):
         raise RigError("rig.toml: %s.%s is not an IPv4 address" % (name, key)) from None
 
 
+def _capabilities(name, raw):
+    """Capability names as a tuple. Errors name the key, never the list."""
+    if not isinstance(raw, list) or not all(isinstance(item, str) for item in raw):
+        raise RigError("rig.toml: %s.capabilities must be a list of names" % name)
+    if caps.unknown(raw):
+        raise RigError("rig.toml: %s.capabilities has an unknown name" % name)
+    if len(set(raw)) != len(raw):
+        raise RigError("rig.toml: %s.capabilities has a duplicate" % name)
+    return tuple(raw)
+
+
 def _dut(dut_id, table, required):
     name = "dut." + dut_id.lower()
     for key in required:
@@ -129,10 +150,20 @@ def _dut(dut_id, table, required):
         for key in ("known_good_image", "nvs_backup"):
             if not isinstance(table[key], str) or not table[key]:
                 raise RigError("rig.toml: %s.%s is empty" % (name, key))
+        # D-37: the baseline's tag is compared with it; a drift warns or names the re-capture to do.
+        if not isinstance(table["nvs_release_tag"], str) or not RELEASE_TAG_RE.fullmatch(table["nvs_release_tag"]):
+            raise RigError("rig.toml: %s.nvs_release_tag is not vX.Y.Z" % name)
         # The directory itself may be missing: last_green.load() reports that and the caller falls back.
         if not isinstance(table["last_green_dir"], str) or not os.path.isabs(table["last_green_dir"]):
             raise RigError("rig.toml: %s.last_green_dir must be an absolute path" % name)
-        extra = {k: table[k] for k in DUT_REQUIRED if k not in ("rev", "chip", "host", "mac")}
+        extra = {k: table[k] for k in DUT_REQUIRED if k not in ("rev", "chip", "host", "mac", "framework", "capabilities")}
+    # Optional for either DUT here; DUT_REQUIRED makes them mandatory for DUT A (HARN-02).
+    if "framework" in table:
+        if not isinstance(table["framework"], str) or table["framework"] not in caps.FRAMEWORKS:
+            raise RigError("rig.toml: %s.framework is not arduino or esp-idf" % name)
+        extra["framework"] = table["framework"]
+    if "capabilities" in table:
+        extra["capabilities"] = _capabilities(name, table["capabilities"])
     return DutConfig(id=dut_id, rev=table["rev"], chip=table["chip"], host=host, mac=mac, **extra)
 
 
@@ -218,6 +249,15 @@ def firmware_dir(env=None):
     return Path(value)
 
 
+def baseline_dir(env=None):
+    """The verified release baseline (hil-baseline artifact of the prepare job, 03-09)."""
+    env = os.environ if env is None else env
+    value = env.get("HIL_BASELINE_DIR")
+    if not value:
+        raise RigError("HIL_BASELINE_DIR is not set")
+    return Path(value)
+
+
 MIN_MASK_LEN = 6
 
 
@@ -231,6 +271,16 @@ def _mac_forms(mac):
     return forms
 
 
+def _prefix24(value):
+    """The address up to and including its third dot ("192.0.2." for "192.0.2.10"); "" for anything
+    that does not parse as a dotted IPv4 address (the push-check rule, tools/push-check.py)."""
+    try:
+        ipaddress.IPv4Address(value)
+    except ValueError:
+        return ""
+    return value.rsplit(".", 1)[0] + "."
+
+
 def _named_literals(cfg, env, network_file):
     network_file = network_file or NETWORK_FILE
     named = [("rig.toml supervisor.host", cfg.supervisor_host)]
@@ -238,6 +288,8 @@ def _named_literals(cfg, env, network_file):
         name = "dut." + dut_id.lower()
         named.append(("rig.toml %s.host" % name, dut.host))
         named.extend(("rig.toml %s.mac (%s)" % (name, label), value) for label, value in _mac_forms(dut.mac))
+    hosts = [cfg.supervisor_host] + [dut.host for dut in cfg.duts.values()]
+    named.extend(("rig.toml /24 prefix", _prefix24(host)) for host in hosts)
     named.append(("HIL_SUPERVISOR_KEY", cfg.supervisor_key))
     named.append(("DUT API key in use", cfg.dut_api_key))
     try:
@@ -266,10 +318,30 @@ def mask_literals(cfg, env=None, network_file=None):
     return literals
 
 
+def safe_mask_literals(cfg, env=None, network_file=None):
+    """mask_literals for the places that print on an error path (annotations, cut message lines).
+
+    Never raises: a config that did not load (None, a half-built object) or a literal that is too short
+    gives [] and the caller masks by pattern only (IPv4, MAC, socket URL). The run's real failure is the
+    one that must be reported, not this helper's."""
+    try:
+        return mask_literals(cfg, env=env, network_file=network_file)
+    except Exception:  # noqa: BLE001 - a masking helper must not hide the fault it is annotating
+        return []
+
+
 def emit_masks(cfg, env=None, network_file=None):
-    """Under GitHub Actions print ::add-mask:: for every literal, before any other output."""
+    """Under GitHub Actions print ::add-mask:: for every literal, before any other output.
+
+    The lines are flushed before returning. stdout on the runner is a block-buffered pipe, while
+    aioesphomeapi logs connection errors (with the address) to unbuffered stderr: without the flush
+    the masks reached the runner after such a line and it was published unmasked (03-14, run p1).
+
+    The /24 prefix of every IPv4 host is masked as well: a repr or message cut after the third octet
+    matched no full-address mask and was published (03-14, run p1)."""
     env = os.environ if env is None else env
     literals = mask_literals(cfg, env, network_file)
     if env.get("GITHUB_ACTIONS") == "true":
         for literal in literals:
             print("::add-mask::%s" % literal)
+        sys.stdout.flush()

@@ -1,0 +1,53 @@
+# Hash-pinned tools for GitHub-hosted jobs and the dev host ONLY.
+#
+# uv and ruff run in the hil-harness job of .github/workflows/validate.yml (a
+# pull_request job on a hosted runner, no secrets) and in the dev-host venv at
+# $HOME/.local/share/hil/ci-tools. They never go on the hil runner (it has LAN
+# reach) and never into hil/uv.lock.
+#
+# Install (hash-checked, wheels only, no transitive packages):
+#   python3 -m venv <dir>
+#   <dir>/bin/pip install --require-hashes --only-binary :all: --no-deps -r hil/ci-tools.txt
+#
+# uv 0.10.2 is the version the runner already uses (hil-rig runner/provision-lxc.sh);
+# here it is the PyPI wheel. The hashes cover every file of each release; they come
+# from the PyPI JSON API (https://pypi.org/pypi/<name>/<version>/json).
+# Approved by the maintainer 2026-11-01 (plan 02-03, package legitimacy gate).
+uv==0.10.2 \
+    --hash=sha256:69e35aa3e91a245b015365e5e6ca383ecf72a07280c6d00c17c9173f2d3b68ab \
+    --hash=sha256:0b7eef95c36fe92e7aac399c0dce555474432cbfeaaa23975ed83a63923f78fd \
+    --hash=sha256:acc08e420abab21de987151059991e3f04bc7f4044d94ca58b5dd547995b4843 \
+    --hash=sha256:aefbcd749ab2ad48bb533ec028607607f7b03be11c83ea152dbb847226cd6285 \
+    --hash=sha256:fad554c38d9988409ceddfac69a465e6e5f925a8b689e7606a395c20bb4d1d78 \
+    --hash=sha256:6dd2dc41043e92b3316d7124a7bf48c2affe7117c93079419146f083df71933c \
+    --hash=sha256:111c05182c5630ac523764e0ec2e58d7b54eb149dbe517b578993a13c2f71aff \
+    --hash=sha256:45c3deaba0343fd27ab5385d6b7cde0765df1a15389ee7978b14a51c32895662 \
+    --hash=sha256:bb2cac4f3be60b64a23d9f035019c30a004d378b563c94f60525c9591665a56b \
+    --hash=sha256:937687df0380d636ceafcb728cf6357f0432588e721892128985417b283c3b54 \
+    --hash=sha256:f90bca8703ae66bccfcfb7313b4b697a496c4d3df662f4a1a2696a6320c47598 \
+    --hash=sha256:cca026c2e584788e1264879a123bf499dd8f169b9cafac4a2065a416e09d3823 \
+    --hash=sha256:9f878837938103ee1307ed3ed5d9228118e3932816ab0deb451e7e16dc8ce82a \
+    --hash=sha256:6ec75cfe638b316b329474aa798c3988e5946ead4d9e977fe4dc6fc2ea3e0b8b \
+    --hash=sha256:f7f3c7e09bf53b81f55730a67dd86299158f470dffb2bd279b6432feb198d231 \
+    --hash=sha256:7b3685aa1da15acbe080b4cba8684afbb6baf11c9b04d4d4b347cc18b7b9cfa0 \
+    --hash=sha256:abdd5b3c6b871b17bf852a90346eb7af881345706554fd082346b000a9393afd \
+    --hash=sha256:b5016f038e191cc9ef00e17be802f44363d1b1cc3ef3454d1d76839a4246c10a
+ruff==0.17.3 \
+    --hash=sha256:ab86b84cd9d05e56d329742c0cabdcbe2d1d56c98f4a04aab9b5b66196febfb4 \
+    --hash=sha256:e407b4a6852853a9a2cdce96963e94ad9775578bb44e7561a0f2829f3cc04b11 \
+    --hash=sha256:b75cc113b3aca388933d8296b667b1ac401a80317ea3074c9b0a66541199da29 \
+    --hash=sha256:ab5fa7ed5ce18554ea69d850ad162cbaa0c85fc47c08d83a569f806681c9a6ad \
+    --hash=sha256:c673c170e27834d1262e3a9c1e97bdc9b9c3b180c63d89173ce69747232474c1 \
+    --hash=sha256:6a754c0341bc9ca151b7b335988b3263921c08859f84ca219b70cee825571b6f \
+    --hash=sha256:4590b9d86c0b1543ebb09094254e191cd43fe8edaf330baa035aab03da251532 \
+    --hash=sha256:bbde18beccd98c29a227c63c99022e3443b99258e08326df6425dfe0443705ef \
+    --hash=sha256:7fa4b0f931cdbcb8a52044f370a3eb429fb42eb88807b0e800fcaa98dd42b24e \
+    --hash=sha256:39405f341deec934b4289634324ad695f72df2970f9121582872eaf5b722f0f5 \
+    --hash=sha256:68074094f55ca3d29ab19491f640282f7a84061c4c7977aa5094b968ca457e9a \
+    --hash=sha256:27bb571ac78fef178fe5118d2827df95c2aae74a48fff2b15f6acd03af5ff5bb \
+    --hash=sha256:029c37cbd3de48ca37aa12117bead2d065f15da17d66bf84e0d4274013705db2 \
+    --hash=sha256:692fdb46d0fd9c71e380947dc5fc72f2c3f881073bc1f739e4579376231affbe \
+    --hash=sha256:46539cb031b01fd29ae0a02142483c46640b233ee12bb1c1b690bffa1555d5ca \
+    --hash=sha256:56b8ffb3f3b3cbccb8b76b71b38261b7ed982ef5d20f5b447b1b61a7f4949b24 \
+    --hash=sha256:81fce74bcd6be0e9da7c67c7553fd0f1f12964a2052cd728ef917b937a5ca1d9 \
+    --hash=sha256:a57049c8addb3662073859bb55a7ad35aa54f8a7c9ed268911d1333c5aadaaa9

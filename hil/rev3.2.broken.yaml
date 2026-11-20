@@ -1,0 +1,59 @@
+# HIL broken image for Rev 3.2 (ESP32-S2, arduino framework).
+#
+# A DELIBERATELY UNREACHABLE IMAGE (D-40, REC-01, REC-02): the commit wrapper with
+# wifi, api, ota, update, http_request, captive_portal, improv_serial and
+# dashboard_import removed. It boots clean and logs on UART0, but it can never join a
+# network and can never take an OTA update, so the only way back to a working board is
+# the UART recovery (esptool through the supervisor bridge).
+#
+# Never a final image, never last-green and never a heal image (D-25, D-32): it travels
+# as an OTA file only, under its own manifest role, and has no factory file. The framework
+# is inherited from rev3.2.hil.yaml and is not touched here (arduino for Rev 3.2).
+#
+# Without safe_mode the image prints no "Bootloader rollback:" line, which is what D-39
+# reads for every other OTA. The on_boot lambda below is the broken image's own
+# measurement: it logs the OTA state of the running partition once per boot on UART0
+# ("HIL broken image OTA state: <state>"). 03-06 requires `valid` (D-41: the image counts
+# as marked valid at once, so the bootloader never rolls it back) and 03-13 records the
+# value next to the D-39 states, so D-41 is settled by a measurement and not assumed.
+
+packages:
+  hil: !include rev3.2.hil.yaml
+
+esphome:
+  # At most 24 characters: the customer config adds a MAC suffix to the name.
+  name: fancontroller-brk-r3-2
+  project:
+    version: "3.2+broken.${hil_commit}"
+  # The lambda below needs the ESP-IDF OTA declarations, which the generated main.cpp does not
+  # pull in once the ota component is gone (the first build failed with "not declared").
+  includes:
+    - <esp_ota_ops.h>
+  on_boot:
+    # A one-item list, so an on_boot of the base config is extended and not replaced.
+    - priority: -100
+      then:
+        - lambda: |-
+            const esp_partition_t *running = esp_ota_get_running_partition();
+            esp_ota_img_states_t state;
+            const char *name = "unknown";
+            if (running != nullptr && esp_ota_get_state_partition(running, &state) == ESP_OK) {
+              switch (state) {
+                case ESP_OTA_IMG_NEW: name = "new"; break;
+                case ESP_OTA_IMG_PENDING_VERIFY: name = "pending verify"; break;
+                case ESP_OTA_IMG_VALID: name = "valid"; break;
+                case ESP_OTA_IMG_INVALID: name = "invalid"; break;
+                case ESP_OTA_IMG_ABORTED: name = "aborted"; break;
+                case ESP_OTA_IMG_UNDEFINED: name = "undefined"; break;
+              }
+            }
+            ESP_LOGI("hil", "HIL broken image OTA state: %s", name);
+
+wifi: !remove
+api: !remove
+ota: !remove
+update: !remove
+http_request: !remove
+captive_portal: !remove
+improv_serial: !remove
+dashboard_import: !remove

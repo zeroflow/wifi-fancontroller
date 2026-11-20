@@ -11,3 +11,12 @@ class RigError(Exception):
 
     Messages name configuration keys and entity names, never secret values.
     """
+
+
+class FirmwareFailure(AssertionError):
+    """A device-side outcome of the firmware under test: a failed OTA, the wrong image after an OTA.
+
+    An AssertionError, so pytest reports it as a failure and the verdict is FAIL (D-26),
+    unlike RigError, which stays a rig or tooling fault (RIG ERROR). Messages name
+    roles and build IDs, never keys.
+    """

@@ -50,5 +50,6 @@ pat_token
 # HIL harness (hil/)
 .hil-build/
 hil-out/
+hil-baseline/
 hil/.venv/
 hil/reports/

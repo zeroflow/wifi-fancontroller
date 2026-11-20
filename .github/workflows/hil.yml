@@ -21,8 +21,20 @@ name: HIL
 # indirection, see the comment there); it is the one job whose run script
 # interpolates an expression, copied verbatim.
 #
-# Only two files go into the hil-firmware artifact: the build directory holds
-# generated sources and caches that have no business in a public artifact.
+# The hil-firmware artifact carries the firmware images and the manifest only, never
+# the build directory (generated sources and caches have no business in a public
+# artifact). The qc-auto and canary OTA images carry the published HIL values like
+# the factory image does (D-01); the broken OTA image carries no network values at all
+# (no wifi, api or ota section, D-40) and is never a final or heal image.
+#
+# The prepare job resolves the latest release once and fetches its Rev 3.2 factory image
+# by that tag on a GitHub-hosted runner (REG-01). It checks the image against three
+# independent digests (the release's .sha256 sidecar, the release manifest and GitHub's
+# asset digest) and uploads only the image and baseline.json as hil-baseline. So the LAN
+# runner needs neither a GitHub token nor egress to release storage: its only token is
+# this job's github.token (contents: read), in the one step that calls gh. The hil job
+# needs prepare and downloads hil-baseline, so a failed prepare job skips it: the run is
+# red and no hardware was touched (fail-closed, RESEARCH Pitfall 18).
 on:
   push:
     branches:
@@ -73,7 +85,7 @@ jobs:
     name: Build the HIL image
     runs-on: ubuntu-latest
     needs: release-version
-    timeout-minutes: 30
+    timeout-minutes: 40
     container:
       image: ghcr.io/esphome/esphome:${{ needs.release-version.outputs.version }}
     steps:
@@ -92,7 +104,7 @@ jobs:
         shell: bash
         env:
           HIL_COMMIT: ${{ github.sha }}
-        run: python3 hil/tools/build_image.py --out hil-out --commit "$HIL_COMMIT"
+        run: python3 hil/tools/build_image.py --all --out hil-out --commit "$HIL_COMMIT"
 
       - name: Upload firmware and manifest
         uses: actions/upload-artifact@v7
@@ -100,23 +112,68 @@ jobs:
           name: hil-firmware
           path: |
             hil-out/firmware.factory.bin
+            hil-out/firmware.ota.bin
+            hil-out/qc-auto-3.2.ota.bin
+            hil-out/canary-3.2.ota.bin
+            hil-out/broken-3.2.ota.bin
             hil-out/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
+  prepare:
+    name: Resolve the release baseline
+    # Hosted, no environment, no secret, first-party actions only. fetch_baseline.py writes
+    # nothing into hil-baseline/ unless all digests agree, and exits 1 naming what disagreed.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout fetch tool
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          sparse-checkout: hil/tools
+
+      - name: Resolve, download and verify the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 hil/tools/fetch_baseline.py --repo "$GITHUB_REPOSITORY" --rev 3.2 --out hil-baseline
+
+      - name: Upload release baseline
+        uses: actions/upload-artifact@v7
+        with:
+          name: hil-baseline
+          path: |
+            hil-baseline/fancontroller-r3-2-esp32s2.factory.bin
+            hil-baseline/baseline.json
           if-no-files-found: error
           retention-days: 7
 
   hil:
     name: Hardware check on DUT A
     runs-on: [self-hosted, hil]
-    needs: build
+    needs: [build, prepare]
     environment: hil
-    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + sync 4 + run 12 +
-    # teardown 15 + upload 3 = 45, so the job deadline can never fall inside Teardown
-    # and cut a flash mid-write. Teardown's own worst case (every deadline hit, known-good
-    # attempt plus the commit-image fallback) is about 14 minutes; test_timeouts.py
-    # computes both sums from the code and fails if they drift. A user cancel is
+    # Only main and claude/main may reach the LAN runner. The environment's branch rule lives in
+    # the repository settings, outside this file; this condition keeps a workflow_dispatch from any
+    # other branch off the rig even if that rule were loosened (WR-07). The refuse job below turns
+    # such a run red.
+    if: ${{ github.ref == 'refs/heads/main' || github.ref == 'refs/heads/claude/main' }}
+    # Step budgets (minutes): checkout 3 + canary 5 + download 3 + baseline 3 + sync 4 +
+    # preflight 14 + run 38 + teardown 15 + upload 3 = 88, so the job deadline can never fall inside Teardown
+    # and cut a flash mid-write. Preflight (D-43) checks the rig before any test and heals DUT A
+    # at most once: about 7 s on a healthy rig, about 200 s with a heal, and about 13.4 minutes
+    # with every deadline hit (two bridge evictions, a heal with both flash attempts, the
+    # recheck). A failed preflight exits 3 and ends the job red (D-45); the run step is skipped,
+    # Teardown and the log upload still run. The run step holds the session deadline (25 min),
+    # one test started just before it (10 min) and the connect and release phases around them
+    # (37.7 min). Teardown's own worst case (every deadline hit, known-good attempt plus the
+    # commit-image fallback, a 40 s bridge wait) is about 14 minutes; test_timeouts.py
+    # computes all three sums from the code and fails if they drift. A user cancel is
     # different: GitHub gives always() steps a fixed 5 minutes and the job syntax has no
-    # key to change it; a nominal teardown needs about 2 minutes.
-    timeout-minutes: 50
+    # key to change it; a nominal teardown needs about 2 minutes. The 89 minute job deadline
+    # (step sum + 1, the baseline download added 3 in 03-14) sits under the 90 minute policy
+    # cap the maintainer chose in 03-04.
+    timeout-minutes: 89
     steps:
       - name: Checkout harness
         uses: actions/checkout@v7
@@ -139,18 +196,40 @@ jobs:
           name: hil-firmware
           path: hil-fw
 
+      - name: Download release baseline
+        # The latest release's Rev 3.2 factory image and baseline.json, verified by the hosted
+        # prepare job (REG-01). Only the run step reads it, through HIL_BASELINE_DIR.
+        uses: actions/download-artifact@v8
+        timeout-minutes: 3
+        with:
+          name: hil-baseline
+          path: hil-baseline
+
       - name: Sync environment
         timeout-minutes: 4
         working-directory: hil
         run: uv sync --frozen
 
-      - name: Run hardware check
-        timeout-minutes: 12
+      - name: Preflight
+        # The rig checks itself before any test (D-43): supervisor, contract, released lines,
+        # free bridges, watchdog counters, DUT A booting; one heal of DUT A at most. Exit 3 is
+        # RIG ERROR and skips the run step; no continue-on-error, by design (D-45).
+        timeout-minutes: 14
         working-directory: hil
         env:
           HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
           HIL_FW_DIR: ${{ github.workspace }}/hil-fw
           HIL_EXPECTED_COMMIT: ${{ github.sha }}
+        run: exec .venv/bin/python -m hil preflight
+
+      - name: Run hardware check
+        timeout-minutes: 38
+        working-directory: hil
+        env:
+          HIL_SUPERVISOR_KEY: ${{ secrets.HIL_SUPERVISOR_KEY }}
+          HIL_FW_DIR: ${{ github.workspace }}/hil-fw
+          HIL_EXPECTED_COMMIT: ${{ github.sha }}
+          HIL_BASELINE_DIR: ${{ github.workspace }}/hil-baseline
         run: exec .venv/bin/python -m hil run
 
       - name: Teardown
@@ -175,3 +254,18 @@ jobs:
           path: hil/reports/redacted/
           if-no-files-found: ignore
           retention-days: 14
+
+  refuse:
+    name: Refuse the hardware check on this ref
+    # A skipped hil job alone would leave a dispatch from another branch green without any
+    # hardware check having run. This hosted job makes such a run red. Its condition is exactly
+    # the inverse of the hil job's; it has no environment, no secret and no action, and it
+    # touches no hardware. On main and claude/main it is skipped.
+    if: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/claude/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Fail the run
+        run: |
+          echo "::error title=HIL refused::the hardware check runs only on main and claude/main; this run touched no hardware"
+          exit 1

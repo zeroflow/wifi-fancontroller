@@ -122,6 +122,53 @@ jobs:
           fi
           echo "All configs valid."
 
+      - name: Validate HIL configs
+        # The HIL, qc-auto and canary configs resolve against the committed
+        # framework table (hil/frameworks.toml), so a wrong framework or a
+        # missing QC entity fails here on every pull request and push to main,
+        # before any image is built. Same dash comment as the step above.
+        shell: bash
+        run: python3 hil/tools/build_image.py --check-configs
+
+  hil-harness:
+    name: HIL harness (no hardware)
+    # Runs on pull requests, including forks, so it gets no secrets and no write
+    # permission, and never the self-hosted label. ruff and the uv wheel come from
+    # hil/ci-tools.txt (hash-pinned) and stay on hosted runners and the dev host;
+    # they never reach the LAN runner or hil/uv.lock.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install pinned tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/ci-tools"
+          "$RUNNER_TEMP/ci-tools/bin/pip" install --require-hashes --only-binary :all: --no-deps -r hil/ci-tools.txt
+
+      - name: Sync harness environment
+        working-directory: hil
+        env:
+          UV_PYTHON_DOWNLOADS: never
+        run: '"$RUNNER_TEMP/ci-tools/bin/uv" sync --frozen'
+
+      - name: Unit tests
+        working-directory: hil
+        run: .venv/bin/python -m pytest tests/unit -q
+
+      - name: Collect rig tests
+        working-directory: hil
+        run: .venv/bin/python -m pytest --collect-only -q tests/rig
+
+      - name: Lint
+        working-directory: hil
+        run: '"$RUNNER_TEMP/ci-tools/bin/ruff" check .'
+
   compile-affected:
     name: Compile affected examples
     runs-on: ubuntu-latest
