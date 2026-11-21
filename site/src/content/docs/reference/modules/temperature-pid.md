@@ -43,6 +43,7 @@ This module cooperates with [Stall Guard](/reference/modules/stall-guard/) via a
 | `output_averaging_samples`     | `"1"`                         | Output smoothing samples                           |
 | `derivative_averaging_samples` | `"5"`                         | Derivative smoothing samples                       |
 | `temperature_sensor_id`        | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
+| `pid_failsafe_speed`           | `"100.0"`                     | Speed (%) while the control sensor reads NAN        |
 
 ## Home Assistant Entities
 
@@ -329,5 +330,5 @@ If you also run the [SSD1306 OLED](/reference/qwiic/examples/ssd1306/) module, n
 The module names the sensor it is reading in its boot log, so you can confirm from a log dump that the override took effect.
 
 :::caution[External sensors and startup]
-A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. The PID controller has no process variable during that window. Keep the sensor's `update_interval` short if that matters to you. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
+A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. The PID controller has no process variable during that window. The first write to the fans at boot comes from the manual-override fan restoring its state through the same output; with no reading yet, the module runs the fans at `pid_failsafe_speed` (default **100%**) instead of 0 %, until the first reading lands. The same applies later to a NAN reading (a sensor that reports NAN on a failed read, or a timeout filter). With the thermostat set to OFF the fans stay off. Keep the sensor's `update_interval` short if that matters to you. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
 :::

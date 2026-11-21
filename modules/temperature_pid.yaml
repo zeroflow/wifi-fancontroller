@@ -41,6 +41,7 @@
 #   - derivative_averaging_samples: Derivative averaging samples (default: 5)
 #   - temperature_sensor_id: Id of the sensor supplying the control temperature
 #       (default: fancontroller_temperature, the onboard sensor).
+#   - pid_failsafe_speed: Speed % while the control sensor reads NAN (default: "100.0")
 #   - min_temperature: Minimum Temperature shown for the climate component range
 #   - max_temperature: Maximum Temperature shown for the climate component range
 #   - target_temperature_step: Granularity allowed in the climate component  input
@@ -64,6 +65,9 @@ substitutions:
   friendly_name: "Fancontroller" # default
   # Sensor supplying the control temperature. Defaults to the onboard sensor
   temperature_sensor_id: fancontroller_temperature
+  # Speed (%) commanded while the control sensor reads NAN. The PID climate writes 0 for a NAN
+  # temperature, which would turn the fans off. Default 100 = fail high.
+  pid_failsafe_speed: "100.0"
   kp: "3.0"   # UI scale (×100): 3 ≈ 3% fan per °C
   ki: "0.005" # UI scale (×100)
   kd: "0.0"   # UI scale (×100)
@@ -82,6 +86,11 @@ esphome:
       then:
         - lambda: |-
             ESP_LOGI("temperature_pid", "Control sensor: ${temperature_sensor_id}");
+            const float boot_pid_failsafe_pct = ${pid_failsafe_speed};
+            if (boot_pid_failsafe_pct < 0.0f || boot_pid_failsafe_pct > 100.0f) {
+              ESP_LOGW("temperature_pid", "pid_failsafe_speed (%.1f) is outside the 0 to 100 percent range.",
+                       boot_pid_failsafe_pct);
+            }
 
 number:
   ## OPTIONAL:
@@ -206,6 +215,24 @@ output:
         float write_val = 
           (id(manual_fan_control).state) ?
             id(manual_fan_control).speed : state*100.0;
+        // Unavailable control sensor: the PID climate writes 0 for a NAN temperature, which would
+        // turn the fans off. Command pid_failsafe_speed until the sensor returns (manual control
+        // is left alone). The flag logs each change once.
+        static bool pid_failsafe_active = false;
+        // Thermostat OFF is a deliberate stop: the failsafe applies only while PID is in control.
+        if (!id(manual_fan_control).state && id(pid_thermostat).mode != climate::CLIMATE_MODE_OFF &&
+            isnan(id(${temperature_sensor_id}).state)) {
+          const float pid_failsafe_pct = ${pid_failsafe_speed};
+          if (!pid_failsafe_active) {
+            ESP_LOGW("temperature_pid", "Control sensor unavailable (NAN). Running fans at %.1f%%.",
+                     pid_failsafe_pct);
+            pid_failsafe_active = true;
+          }
+          write_val = pid_failsafe_pct;
+        } else if (pid_failsafe_active) {
+          ESP_LOGW("temperature_pid", "Control sensor available again, resuming PID control.");
+          pid_failsafe_active = false;
+        }
         float pwm_min = id(pwm_minimum_pid).state;
         if (write_val < pwm_min) {
           write_val = pwm_min;

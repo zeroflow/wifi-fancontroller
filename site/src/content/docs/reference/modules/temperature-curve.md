@@ -43,6 +43,7 @@ A fan put into manual mode, from Home Assistant or from the board, is skipped by
 | `curve_temp5`           | `"50.0"`                      | Temperature point 5 (C)                            |
 | `curve_speed5`          | `"100.0"`                     | Fan speed at point 5 (%)                           |
 | `temperature_sensor_id` | `"fancontroller_temperature"` | Id of the sensor supplying the control temperature |
+| `curve_failsafe_speed`  | `"100.0"`                     | Speed (%) once the sensor has read NAN for 60 s    |
 | `curve_input_min`       | `"0"`                         | Lowest value the Curve Temperature sliders accept  |
 | `curve_input_max`       | `"60"`                        | Highest value the sliders accept                   |
 | `curve_input_step`      | `"0.5"`                       | Slider step                                        |
@@ -365,7 +366,7 @@ If you also run the [SSD1306 OLED](/reference/qwiic/examples/ssd1306/) module, n
 The module names the sensor it is reading in its boot log, so you can confirm from a log dump that the override took effect.
 
 :::caution[External sensors and startup]
-A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. During that window this module commands the fans **off**. Keep the sensor's `update_interval` short if that matters to you, and expect the fans not to spin until the first reading lands. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
+A sensor that needs time before its first reading -- an SCD41 warming up, a BME680 on a long update interval, a Dallas probe -- reports no value for a while after boot. With no reading this module holds the last speed for 60 seconds and then commands `curve_failsafe_speed` (default **100%**) until a reading lands; right after boot there is no last speed, so if the module evaluates before the first reading (it polls every 10 seconds) the fans run at the failsafe speed until that reading lands. The same applies when a sensor stops answering later. Keep the sensor's `update_interval` short so the fans are not held at full speed longer than needed. The onboard HDC1080 polls every 10 seconds and needs no warm-up, so the window is normally too short to notice; `modules/bme680.yaml` defaults to a 60 second interval, which stretches it considerably.
 :::
 
 ## Controlling From Humidity
